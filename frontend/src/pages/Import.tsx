@@ -12,6 +12,7 @@ export function Import() {
   const batches = useQuery({ queryKey: ["batches"], queryFn: () => api.get<ImportBatch[]>("/api/imports") });
 
   const [file, setFile] = useState<File | null>(null);
+  const [localPath, setLocalPath] = useState("");
   const [accountId, setAccountId] = useState<number | "">("");
   const [importerName, setImporterName] = useState<string>("");
   const [preview, setPreview] = useState<ImportPreview | null>(null);
@@ -19,7 +20,15 @@ export function Import() {
 
   const previewMut = useMutation({
     mutationFn: async () => {
-      if (!file || !accountId) throw new Error("file and account required");
+      if (!accountId) throw new Error("account required");
+      if (localPath.trim()) {
+        return api.post<ImportPreview>("/api/imports/preview-path", {
+          path: localPath.trim(),
+          account_id: accountId,
+          importer_name: importerName || null,
+        });
+      }
+      if (!file) throw new Error("file or local path required");
       const fd = new FormData();
       fd.append("file", file);
       fd.append("account_id", String(accountId));
@@ -40,6 +49,7 @@ export function Import() {
       invalidateTxQueries(qc);
       setPreview(null);
       setFile(null);
+      setLocalPath("");
     },
   });
 
@@ -59,11 +69,13 @@ export function Import() {
         accountId={accountId}
         importerName={importerName}
         file={file}
+        localPath={localPath}
         pending={previewMut.isPending}
         error={previewMut.isError ? String((previewMut.error as Error).message) : null}
         onAccountId={setAccountId}
         onImporterName={setImporterName}
         onFile={setFile}
+        onLocalPath={setLocalPath}
         onPreview={() => previewMut.mutate()}
       />
       <ImportPreviewPanel
@@ -89,28 +101,33 @@ function ImportUploadPanel({
   accountId,
   importerName,
   file,
+  localPath,
   pending,
   error,
   onAccountId,
   onImporterName,
   onFile,
+  onLocalPath,
   onPreview,
 }: {
   accounts: Account[];
   accountId: number | "";
   importerName: string;
   file: File | null;
+  localPath: string;
   pending: boolean;
   error: string | null;
   onAccountId: (value: number | "") => void;
   onImporterName: (value: string) => void;
   onFile: (value: File | null) => void;
+  onLocalPath: (value: string) => void;
   onPreview: () => void;
 }) {
+  const hasSource = Boolean(file || localPath.trim());
   return (
     <div className="card p-4">
-      <div className="text-sm font-medium mb-3">Upload a CSV</div>
-      <div className="grid grid-cols-3 gap-3">
+      <div className="text-sm font-medium mb-3">Upload a CSV or XLSX</div>
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-3">
         <label className="block">
           <div className="label mb-1">Account</div>
           <select className="input" value={accountId} onChange={(e) => onAccountId(e.target.value ? parseInt(e.target.value, 10) : "")}>
@@ -127,15 +144,31 @@ function ImportUploadPanel({
             <option value="chase_credit">Chase Credit Card</option>
             <option value="wells_fargo_checking">Wells Fargo Checking</option>
             <option value="amex">Amex (charges positive)</option>
+            <option value="amex_xlsx">Amex XLSX</option>
+            <option value="contribution_history">Contribution History</option>
           </select>
         </label>
         <label className="block">
-          <div className="label mb-1">CSV file</div>
-          <input type="file" accept=".csv,.CSV,text/csv" className="input" onChange={(e) => onFile(e.target.files?.[0] ?? null)} />
+          <div className="label mb-1">File</div>
+          <input
+            type="file"
+            accept=".csv,.CSV,.xlsx,.XLSX,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            className="input"
+            onChange={(e) => onFile(e.target.files?.[0] ?? null)}
+          />
+        </label>
+        <label className="block">
+          <div className="label mb-1">Local path</div>
+          <input
+            className="input"
+            value={localPath}
+            onChange={(e) => onLocalPath(e.target.value)}
+            placeholder="/path/to/export.csv"
+          />
         </label>
       </div>
       <div className="mt-3 flex items-center gap-2">
-        <button className="btn-primary" disabled={!file || !accountId || pending} onClick={onPreview}>Preview</button>
+        <button className="btn-primary" disabled={!hasSource || !accountId || pending} onClick={onPreview}>Preview</button>
         {error && <span className="text-sm text-bad-600">{error}</span>}
       </div>
     </div>

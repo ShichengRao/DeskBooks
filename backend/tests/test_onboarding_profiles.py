@@ -91,6 +91,16 @@ def test_profiles_create_default_registry_on_first_run(tmp_path, monkeypatch):
     }
 
 
+def test_profile_create_schema_can_request_blank_profile():
+    from app.schemas import ProfileCreate
+
+    default_body = ProfileCreate(name="Demo")
+    blank_body = ProfileCreate(name="Mirror", seed_starter_data=False)
+
+    assert default_body.seed_starter_data is True
+    assert blank_body.seed_starter_data is False
+
+
 def test_duplicate_active_profile_copies_sqlite_database(tmp_path, monkeypatch):
     monkeypatch.setattr(profiles, "DATA_DIR", tmp_path)
     monkeypatch.setattr(profiles, "REGISTRY_PATH", tmp_path / "profiles.json")

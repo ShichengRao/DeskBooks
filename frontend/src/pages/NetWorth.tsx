@@ -46,6 +46,11 @@ type AccountFormBody = {
   is_closed: boolean;
   sort_order: number;
 };
+type WorkbookImportResult = {
+  imported: number;
+  skipped_existing: number;
+  missing_accounts: string[];
+};
 
 const ACCOUNT_CATEGORIES: AccountCategory[] = ["bank", "investment", "tax_advantaged", "credit", "liability", "nonsense", "cash"];
 const ACCOUNT_TYPES: AccountType[] = ["checking", "savings", "cd", "brokerage", "crypto", "wallet", "retirement", "college", "hsa", "credit_card", "cash", "other"];
@@ -74,6 +79,7 @@ export function NetWorth() {
   const [showLog, setShowLog] = useState(false);
   const [editingSnapId, setEditingSnapId] = useState<number | "new" | null>(null);
   const [creatingAccount, setCreatingAccount] = useState(false);
+  const [importingWorkbook, setImportingWorkbook] = useState(false);
 
   const chartData =
     series.data?.map((p) => {
@@ -106,6 +112,7 @@ export function NetWorth() {
         showLog={showLog}
         onShowLog={setShowLog}
         onNewAccount={() => setCreatingAccount(true)}
+        onImportWorkbook={() => setImportingWorkbook(true)}
         onNewSnapshot={() => setEditingSnapId("new")}
       />
       <NetWorthValuePanel
@@ -161,6 +168,15 @@ export function NetWorth() {
           setCreatingAccount(false);
         }}
       />
+      <WorkbookImportDialog
+        open={importingWorkbook}
+        onClose={() => setImportingWorkbook(false)}
+        onImported={() => {
+          qc.invalidateQueries({ queryKey: ["snapshots"] });
+          qc.invalidateQueries({ queryKey: ["nw-series"] });
+          qc.invalidateQueries({ queryKey: ["goal-progress"] });
+        }}
+      />
     </div>
   );
 }
@@ -169,11 +185,13 @@ function NetWorthHeader({
   showLog,
   onShowLog,
   onNewAccount,
+  onImportWorkbook,
   onNewSnapshot,
 }: {
   showLog: boolean;
   onShowLog: (value: boolean) => void;
   onNewAccount: () => void;
+  onImportWorkbook: () => void;
   onNewSnapshot: () => void;
 }) {
   return (
@@ -185,9 +203,94 @@ function NetWorthHeader({
           log scale
         </label>
         <button className="btn" onClick={onNewAccount}>+ Account</button>
+        <button className="btn" onClick={onImportWorkbook}>Import workbook</button>
         <button className="btn-primary" onClick={onNewSnapshot}>+ New snapshot</button>
       </div>
     </div>
+  );
+}
+
+function WorkbookImportDialog({
+  open,
+  onClose,
+  onImported,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onImported: () => void;
+}) {
+  if (!open) return null;
+  return <WorkbookImportPanel onClose={onClose} onImported={onImported} />;
+}
+
+function WorkbookImportPanel({ onClose, onImported }: { onClose: () => void; onImported: () => void }) {
+  const [path, setPath] = useState("");
+  const [accountMap, setAccountMap] = useState("");
+  const [result, setResult] = useState<WorkbookImportResult | null>(null);
+  const save = useMutation({
+    mutationFn: () => {
+      let parsedMap: Record<string, string> = {};
+      const trimmedMap = accountMap.trim();
+      if (trimmedMap) {
+        const parsed = JSON.parse(trimmedMap);
+        if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") {
+          throw new Error("Account map must be a JSON object.");
+        }
+        parsedMap = Object.fromEntries(
+          Object.entries(parsed).map(([key, value]) => {
+            if (typeof value !== "string") throw new Error("Account map values must be account names.");
+            return [key, value];
+          }),
+        );
+      }
+      return api.post<WorkbookImportResult>("/api/snapshots/import-workbook", {
+        path: path.trim(),
+        account_map: parsedMap,
+      });
+    },
+    onSuccess: (data) => {
+      setResult(data);
+      onImported();
+    },
+  });
+
+  return (
+    <SidePanel title="Import net worth workbook" onClose={onClose} onSubmit={() => save.mutate()} maxWidth="max-w-xl">
+      <div className="space-y-3">
+        <Field label="Local workbook path">
+          <input
+            className="input"
+            value={path}
+            onChange={(e) => setPath(e.target.value)}
+            placeholder="/path/to/net-worth.xlsx"
+            required
+          />
+        </Field>
+        <Field label="Account row map (optional JSON)">
+          <textarea
+            className="input min-h-[8rem] font-mono text-xs"
+            value={accountMap}
+            onChange={(e) => setAccountMap(e.target.value)}
+            placeholder={'{\n  "Sheet name!12": "Account name"\n}'}
+          />
+        </Field>
+        {result && (
+          <div className="rounded-md border border-ink-200 bg-ink-50 p-3 text-sm text-ink-700">
+            Imported {result.imported} snapshot(s); skipped {result.skipped_existing} existing date(s).
+            {result.missing_accounts.length > 0 && (
+              <div className="mt-1 text-bad-600">Missing accounts: {result.missing_accounts.join(", ")}</div>
+            )}
+          </div>
+        )}
+      </div>
+      <div className="sticky bottom-0 z-10 -mx-6 mt-4 flex items-center gap-2 border-t border-ink-100 bg-white px-6 py-3">
+        <button type="submit" className="btn-primary" disabled={save.isPending || !path.trim()}>
+          Import workbook
+        </button>
+        <button type="button" className="btn" onClick={onClose}>Close</button>
+      </div>
+      {save.isError && <div className="mt-2 text-sm text-bad-600">{String((save.error as Error).message)}</div>}
+    </SidePanel>
   );
 }
 

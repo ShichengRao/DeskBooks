@@ -38,11 +38,12 @@ def create_profile(body: schemas.ProfileCreate):
     profiles.set_active_profile(created.slug)
     reset_engine()
     init_db()
-    db = SessionLocal()
-    try:
-        seed_starter_data(db)
-    finally:
-        db.close()
+    if body.seed_starter_data:
+        db = SessionLocal()
+        try:
+            seed_starter_data(db)
+        finally:
+            db.close()
     return _profile_list()
 
 

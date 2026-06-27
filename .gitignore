@@ -32,6 +32,7 @@ backend/data/uploads/
 *.sqlite
 *.sqlite3
 data/local/
+repro_v*
 
 # OS
 .DS_Store

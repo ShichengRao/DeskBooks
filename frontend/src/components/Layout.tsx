@@ -1,7 +1,10 @@
+import { useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import clsx from "clsx";
 import { api } from "../api/client";
+import { Field } from "./Field";
+import { SidePanel } from "./SidePanel";
 import type { ProfileList } from "../api/types";
 
 const tabs: { to: string; label: string; end?: boolean; group?: "view" | "edit" }[] = [
@@ -20,6 +23,10 @@ const tabs: { to: string; label: string; end?: boolean; group?: "view" | "edit" 
 ];
 
 export function Layout() {
+  const [profileEditor, setProfileEditor] = useState<{
+    mode: "create" | "duplicate";
+    initialName: string;
+  } | null>(null);
   const profiles = useQuery({
     queryKey: ["profiles"],
     queryFn: () => api.get<ProfileList>("/api/profiles"),
@@ -30,7 +37,8 @@ export function Layout() {
     onSuccess: () => window.location.reload(),
   });
   const createProfile = useMutation({
-    mutationFn: (name: string) => api.post<ProfileList>("/api/profiles", { name }),
+    mutationFn: (body: { name: string; seed_starter_data: boolean }) =>
+      api.post<ProfileList>("/api/profiles", body),
     onSuccess: () => window.location.reload(),
   });
   const duplicateProfile = useMutation({
@@ -48,16 +56,15 @@ export function Layout() {
   };
 
   const addProfile = () => {
-    const name = prompt("New local profile name");
-    if (!name?.trim()) return;
-    createProfile.mutate(name.trim());
+    setProfileEditor({ mode: "create", initialName: "" });
   };
 
   const copyProfile = () => {
     const active = profiles.data?.profiles.find((p) => p.slug === profiles.data?.active_slug);
-    const name = prompt("Duplicate active profile as", active ? `${active.name} copy` : "Profile copy");
-    if (!name?.trim()) return;
-    duplicateProfile.mutate(name.trim());
+    setProfileEditor({
+      mode: "duplicate",
+      initialName: active ? `${active.name} copy` : "Profile copy",
+    });
   };
 
   return (
@@ -144,6 +151,85 @@ export function Layout() {
       <main className="flex-1 p-6 max-w-[1600px] w-full mx-auto">
         <Outlet />
       </main>
+      {profileEditor && (
+        <ProfileEditor
+          mode={profileEditor.mode}
+          initialName={profileEditor.initialName}
+          isSaving={createProfile.isPending || duplicateProfile.isPending}
+          error={createProfile.error || duplicateProfile.error}
+          onClose={() => setProfileEditor(null)}
+          onSubmit={(name, seedStarterData) => {
+            if (profileEditor.mode === "create") {
+              createProfile.mutate({ name, seed_starter_data: seedStarterData });
+            } else {
+              duplicateProfile.mutate(name);
+            }
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+function ProfileEditor({
+  mode,
+  initialName,
+  isSaving,
+  error,
+  onClose,
+  onSubmit,
+}: {
+  mode: "create" | "duplicate";
+  initialName: string;
+  isSaving: boolean;
+  error: Error | null;
+  onClose: () => void;
+  onSubmit: (name: string, seedStarterData: boolean) => void;
+}) {
+  const [name, setName] = useState(initialName);
+  const [seedStarterData, setSeedStarterData] = useState(true);
+  const trimmed = name.trim();
+  const title = mode === "create" ? "New local profile" : "Duplicate active profile";
+
+  return (
+    <SidePanel title={title} onClose={onClose} onSubmit={() => onSubmit(trimmed, seedStarterData)} maxWidth="max-w-md">
+      <div className="space-y-3">
+        <Field label="Profile name">
+          <input
+            className="input"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder={mode === "create" ? "Personal" : "Profile copy"}
+            autoFocus
+            required
+          />
+        </Field>
+        {mode === "duplicate" && (
+          <p className="text-sm text-ink-500">
+            This creates a separate local SQLite file from the currently active profile and switches to it.
+          </p>
+        )}
+        {mode === "create" && (
+          <label className="flex items-start gap-2 text-sm text-ink-700">
+            <input
+              type="checkbox"
+              className="mt-1"
+              checked={seedStarterData}
+              onChange={(e) => setSeedStarterData(e.target.checked)}
+            />
+            <span>
+              Seed starter accounts, categories, and demo notes.
+            </span>
+          </label>
+        )}
+      </div>
+      <div className="sticky bottom-0 z-10 -mx-6 mt-4 flex items-center gap-2 border-t border-ink-100 bg-white px-6 py-3">
+        <button type="submit" className="btn-primary" disabled={isSaving || !trimmed}>
+          {mode === "create" ? "Create profile" : "Duplicate profile"}
+        </button>
+        <button type="button" className="btn" onClick={onClose}>Cancel</button>
+      </div>
+      {error && <div className="mt-2 text-sm text-bad-600">{error.message}</div>}
+    </SidePanel>
   );
 }

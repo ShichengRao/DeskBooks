@@ -29,6 +29,7 @@ class ORMBase(BaseModel):
 
 class ProfileCreate(BaseModel):
     name: str = Field(min_length=1, max_length=80)
+    seed_starter_data: bool = True
 
 
 class ProfileActivate(BaseModel):
@@ -401,6 +402,17 @@ class NetWorthSnapshotOut(ORMBase):
     balances: list[AccountBalanceOut]
 
 
+class NetWorthWorkbookImportRequest(BaseModel):
+    path: str
+    account_map: dict[str, str] = Field(default_factory=dict)
+
+
+class NetWorthWorkbookImportResult(BaseModel):
+    imported: int
+    skipped_existing: int
+    missing_accounts: list[str] = []
+
+
 class NetWorthSeriesPoint(BaseModel):
     snapshot_date: _date
     total: Decimal
@@ -523,6 +535,12 @@ class ImportPreview(BaseModel):
     source_filename: str
     rows: list[ImportDraftRow]
     sniff_notes: list[str] = []
+
+
+class ImportPathPreviewRequest(BaseModel):
+    path: str
+    account_id: int
+    importer_name: str | None = None
 
 
 class ImportApplyRequest(BaseModel):

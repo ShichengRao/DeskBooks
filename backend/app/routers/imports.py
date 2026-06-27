@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
@@ -9,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from .. import importers, models, schemas
 from .. import rules as rules_engine
+from ..importers.amex_xlsx import parse_amex_xlsx_bytes
 from ..models import SignConvention
 from .common import DbSession, get_or_404
 
@@ -46,35 +48,52 @@ def _existing_key_counts(db: Session, account_id: int) -> Counter:
 
 @router.get("/importers")
 def list_importers():
-    return [{"name": i.name, "label": i.label} for i in importers.all_importers()]
+    rows = [{"name": i.name, "label": i.label} for i in importers.all_importers()]
+    rows.append({"name": "amex_xlsx", "label": "Amex XLSX"})
+    return rows
 
 
-@router.post("/preview", response_model=schemas.ImportPreview)
-async def preview(
+def _preview_from_bytes(
     db: DbSession,
-    file: Annotated[UploadFile, File()],
-    account_id: Annotated[int, Form()],
-    importer_name: Annotated[str | None, Form()] = None,
-):
-    raw = (await file.read()).decode("utf-8", errors="replace")
+    *,
+    data: bytes,
+    filename: str,
+    account_id: int,
+    importer_name: str | None,
+) -> schemas.ImportPreview:
     account = db.get(models.Account, account_id)
     if not account:
         raise HTTPException(404, "account not found")
-    matched = importers.sniff(raw)
-    if importer_name:
+    is_xlsx = filename.lower().endswith(".xlsx")
+    raw = "" if is_xlsx else data.decode("utf-8", errors="replace")
+    matched = [] if is_xlsx else importers.sniff(raw)
+    if importer_name == "amex_xlsx":
+        rows = parse_amex_xlsx_bytes(data)
+        chosen_name = "amex_xlsx"
+        sniff_notes = ["matched importers: amex_xlsx"]
+    elif is_xlsx:
+        rows = parse_amex_xlsx_bytes(data)
+        if not rows:
+            raise HTTPException(400, "no importer can handle this file")
+        chosen_name = "amex_xlsx"
+        sniff_notes = ["matched importers: amex_xlsx"]
+    elif importer_name:
         chosen = importers.get_by_name(importer_name)
         if not chosen:
             raise HTTPException(400, f"unknown importer: {importer_name}")
+        rows = chosen.parse(raw)
+        chosen_name = chosen.name
+        sniff_notes = [f"matched importers: {', '.join(m.name for m in matched)}"]
     else:
         if not matched:
             raise HTTPException(400, "no importer can handle this file")
         chosen = matched[0]
-
-    rows = chosen.parse(raw)
+        rows = chosen.parse(raw)
+        chosen_name = chosen.name
+        sniff_notes = [f"matched importers: {', '.join(m.name for m in matched)}"]
     # Normalize sign to account convention (csv → outflow-negative DB convention)
     # All importers already produce outflow-negative output, so we don't flip
     # unless the source convention says otherwise (Amex flips internally).
-    sniff_notes = [f"matched importers: {', '.join(m.name for m in matched)}"]
 
     # Duplicate detection (counter-based; see _existing_key_counts).
     existing_counts = _existing_key_counts(db, account_id)
@@ -108,11 +127,41 @@ async def preview(
             r.is_duplicate = True
 
     return schemas.ImportPreview(
-        importer_name=chosen.name,
+        importer_name=chosen_name,
         account_id=account_id,
-        source_filename=file.filename or "uploaded.csv",
+        source_filename=filename,
         rows=rows,
         sniff_notes=sniff_notes,
+    )
+
+
+@router.post("/preview", response_model=schemas.ImportPreview)
+async def preview(
+    db: DbSession,
+    file: Annotated[UploadFile, File()],
+    account_id: Annotated[int, Form()],
+    importer_name: Annotated[str | None, Form()] = None,
+):
+    return _preview_from_bytes(
+        db,
+        data=await file.read(),
+        filename=file.filename or "uploaded.csv",
+        account_id=account_id,
+        importer_name=importer_name,
+    )
+
+
+@router.post("/preview-path", response_model=schemas.ImportPreview)
+def preview_path(body: schemas.ImportPathPreviewRequest, db: DbSession):
+    path = Path(body.path).expanduser()
+    if not path.exists() or not path.is_file():
+        raise HTTPException(404, "file not found")
+    return _preview_from_bytes(
+        db,
+        data=path.read_bytes(),
+        filename=path.name,
+        account_id=body.account_id,
+        importer_name=body.importer_name,
     )
 
 

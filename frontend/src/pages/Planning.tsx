@@ -605,6 +605,17 @@ function FireCalculator() {
       total: num(y.total),
       target,
     })) ?? [];
+  const fireFields = [
+    form?.annual_retirement_spending,
+    form?.withdrawal_rate,
+    form?.growth_bank,
+    form?.growth_investment,
+    form?.growth_tax_advantaged,
+    form?.growth_nonsense,
+    form?.growth_cash,
+    form?.growth_credit,
+  ];
+  const canSaveFire = Boolean(form) && fireFields.every((value) => String(value ?? "").trim() !== "");
 
   return (
     <div className="card p-4">
@@ -679,8 +690,8 @@ function FireCalculator() {
           </div>
           <button
             className="btn-primary"
-            onClick={() => form && save.mutate(form)}
-            disabled={!form || save.isPending}
+            onClick={() => form && canSaveFire && save.mutate(form)}
+            disabled={!canSaveFire || save.isPending}
           >
             Save & re-project
           </button>

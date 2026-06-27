@@ -12,8 +12,23 @@ import type {
   BudgetReport,
   BudgetReportRow,
   Category,
+  CategoryKind,
 } from "../api/types";
+import { transactionKindLabel } from "../lib/labels";
 import { currency, monthLabel, num } from "../lib/fmt";
+
+const CATEGORY_KINDS: CategoryKind[] = [
+  "expense",
+  "income",
+  "transfer",
+  "investment",
+  "donation",
+  "tax",
+  "cc_payment",
+  "refund",
+  "reimbursement",
+  "other_non_expense",
+];
 
 type RangePreset = "6m" | "12m" | "custom";
 
@@ -522,7 +537,8 @@ function CategoryEditor({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const expenseParents = categories.filter((category) => category.kind === "expense" && !category.archived);
+  const [kind, setKind] = useState<CategoryKind>("expense");
+  const parentOptions = categories.filter((category) => category.kind === kind && !category.archived);
   const [name, setName] = useState("");
   const [parentId, setParentId] = useState("");
   const save = useMutation({
@@ -530,7 +546,7 @@ function CategoryEditor({
       api.post<Category>("/api/categories", {
         name: name.trim(),
         parent_id: parentId ? Number(parentId) : null,
-        kind: "expense",
+        kind,
         color: null,
         sort_order: categories.length + 1,
         archived: false,
@@ -539,15 +555,29 @@ function CategoryEditor({
   });
 
   return (
-    <SidePanel title="New budget category" onClose={onClose} onSubmit={() => save.mutate()} maxWidth="max-w-lg">
+    <SidePanel title="New category" onClose={onClose} onSubmit={() => save.mutate()} maxWidth="max-w-lg">
       <div className="space-y-3">
         <Field label="Name">
           <input className="input" value={name} onChange={(e) => setName(e.target.value)} required />
         </Field>
+        <Field label="Kind">
+          <select
+            className="input"
+            value={kind}
+            onChange={(e) => {
+              setKind(e.target.value as CategoryKind);
+              setParentId("");
+            }}
+          >
+            {CATEGORY_KINDS.map((value) => (
+              <option key={value} value={value}>{transactionKindLabel(value)}</option>
+            ))}
+          </select>
+        </Field>
         <Field label="Parent category">
           <select className="input" value={parentId} onChange={(e) => setParentId(e.target.value)}>
-            <option value="">Top-level expense category</option>
-            {expenseParents.map((category) => (
+            <option value="">Top-level {transactionKindLabel(kind).toLowerCase()} category</option>
+            {parentOptions.map((category) => (
               <option key={category.id} value={category.id}>
                 {category.name}
               </option>
