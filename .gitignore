@@ -8,6 +8,7 @@ __pycache__/
 venv/
 env/
 *.egg-info/
+backend/uv.lock
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
@@ -20,6 +21,7 @@ dist/
 .mdlr/
 
 # Data (local user data — never commit)
+.env.local
 backend/data/profiles.json
 backend/data/profiles/
 backend/data/*.db

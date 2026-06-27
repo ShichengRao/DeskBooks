@@ -362,10 +362,31 @@ export function Reconcile() {
   const [statementInput, setStatementInput] = useState<string>("");
   const [statementNotes, setStatementNotes] = useState<string>("");
 
-  // Default to the first account the first time accounts load.
+  // Default to the most statement-like account the first time accounts load.
   useEffect(() => {
     if (!accountId && accounts.data) {
-      if (accounts.data.length) setAccountId(accounts.data[0].id);
+      const preferred =
+        accounts.data.find(
+          (a) =>
+            !a.is_closed &&
+            a.account_category === "bank" &&
+            a.type === "checking" &&
+            /checking/i.test(a.name) &&
+            !/business/i.test(a.name),
+        ) ??
+        accounts.data.find(
+          (a) =>
+            !a.is_closed &&
+            a.account_category === "bank" &&
+            a.type === "checking" &&
+            !/business/i.test(a.name),
+        ) ??
+        accounts.data.find(
+          (a) => !a.is_closed && a.account_category === "bank" && a.type === "checking",
+        ) ??
+        accounts.data.find((a) => !a.is_closed && a.type === "checking") ??
+        accounts.data[0];
+      if (preferred) setAccountId(preferred.id);
     }
   }, [accounts.data, accountId]);
 

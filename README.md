@@ -38,6 +38,18 @@ make open
 
 To stop the app, press `Ctrl-C` in the terminal running `./run.sh`.
 
+If another local copy is already using the default ports, run DeskBooks on
+alternate ports:
+
+```bash
+make dev PORT=5172
+# or:
+./run.sh --port 5172
+```
+
+When `PORT` is not `5173`, the launcher defaults the backend to port `8766`.
+Override it with `API_PORT=8767` or `./run.sh --api-port 8767`.
+
 ## App Panels
 
 ### Dashboard
@@ -137,6 +149,12 @@ SQLite files under `profiles/` inside that data directory.
 
 Set `PFA_DATA_DIR` to use a different location, such as repo-local data during
 development. A profile registry is expected in the active data directory.
+For machine-local settings that should never be committed, create `.env.local`
+with shell-style exports such as:
+
+```bash
+export PFA_DATA_DIR="$HOME/Library/Application Support/DeskBooks"
+```
 
 To wipe local app state and rebuild generic starter data when using the
 repo-local development data directory:

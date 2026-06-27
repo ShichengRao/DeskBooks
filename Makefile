@@ -1,7 +1,10 @@
+PORT ?= 5173
+API_PORT ?= $(if $(filter 5173,$(PORT)),8765,8766)
+
 .PHONY: dev backend frontend open bootstrap install test typecheck build clean reset-db
 
 dev:
-	./run.sh
+	./run.sh --port "$(PORT)" --api-port "$(API_PORT)" $(if $(DATA_DIR),--data-dir "$(DATA_DIR)")
 
 install:
 	cd backend && uv venv --python 3.11 .venv && uv pip install -e .
@@ -14,13 +17,13 @@ test:
 	cd backend && uv run pytest
 
 backend:
-	cd backend && uv run uvicorn app.main:app --host 127.0.0.1 --port 8765 --log-level warning --reload --reload-dir app
+	cd backend && uv run uvicorn app.main:app --host 127.0.0.1 --port "$(API_PORT)" --log-level warning --reload --reload-dir app
 
 frontend:
-	cd frontend && npm run dev
+	cd frontend && PFA_API_TARGET="http://127.0.0.1:$(API_PORT)" npm run dev -- --host 127.0.0.1 --port "$(PORT)" --strictPort
 
 open:
-	open http://localhost:5173
+	open "http://localhost:$(PORT)"
 
 typecheck:
 	cd frontend && npm run typecheck
