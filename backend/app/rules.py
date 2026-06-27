@@ -217,7 +217,7 @@ def _generalize_description(value: str) -> str:
     s = re.sub(r"\b[Xx]{2,}\d{3,}\b", "", s)
     s = re.sub(r"\b\d{10,}\b", "", s)
     # Bank-transfer exports often include YYMMDD or YYYYMMDD in the middle of
-    # otherwise stable descriptions: "Robinhood Funds 251201 ...".
+    # otherwise stable descriptions: "Brokerage Funds 251201 ...".
     s = re.sub(r"\b\d{6,8}\b", "", s)
     # Strip likely person-name tokens from bank descriptions.
     s = re.sub(r"\b[A-Z][a-z]+\s+[A-Z][a-z]+\b", "", s)
@@ -244,7 +244,7 @@ def _proposal_pattern(key: str) -> str:
     if not tokens:
         return ""
     # Keep rules readable but flexible about whitespace/noise between stable
-    # tokens. Example: "Robinhood Funds" -> "Robinhood.*Funds".
+    # tokens. Example: "Brokerage Funds" -> "Brokerage.*Funds".
     return r".*".join(re.escape(t) for t in tokens)
 
 

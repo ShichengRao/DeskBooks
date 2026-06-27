@@ -40,7 +40,10 @@ deskbooks/
 │   │   ├── db.py              # engine, session, init
 │   │   ├── models.py          # SQLAlchemy models
 │   │   ├── schemas.py         # Pydantic models
-│   │   ├── seed.py            # demo data loader
+│   │   ├── onboarding.py      # starter data loader
+│   │   ├── profiles.py        # local profile registry
+│   │   ├── backups.py         # profile-scoped SQLite backups
+│   │   ├── budgets.py         # budget rollups
 │   │   ├── importers/
 │   │   │   ├── base.py        # CsvImporter ABC + sniffing
 │   │   │   ├── chase_credit.py

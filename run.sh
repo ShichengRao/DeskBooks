@@ -31,9 +31,7 @@ if [[ ! -d .venv ]]; then
   uv pip install -e .
 fi
 
-# Bootstrap is idempotent. The default Personal profile can still use the
-# private workflow files when present; other local profiles get generic
-# starter data so they stay separate.
+# Bootstrap is idempotent and seeds generic starter data for empty profiles.
 echo "[setup] bootstrapping active profile (idempotent)…"
 uv run python -m app.bootstrap
 

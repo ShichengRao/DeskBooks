@@ -412,7 +412,7 @@ class FireSettings(Base):
 class MonthlyReconciliation(Base):
     """Per-(account, month) user-entered statement total + notes.
 
-    Lets the user record "Wells Fargo says I withdrew $X net in May" and
+    Lets the user record "the bank says I withdrew $X net in May" and
     compare against what the app's imported transactions sum to.
     """
 

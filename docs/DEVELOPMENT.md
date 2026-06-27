@@ -10,9 +10,7 @@ make dev              # full app: backend API + frontend UI, then open localhost
 make backend          # API only, at http://127.0.0.1:8765/docs
 make frontend         # UI only, at http://localhost:5173
 make open             # open the frontend URL if servers are already running
-make seed             # re-seed accounts / categories / planning data
-make demo-csvs        # re-import the sample CSVs
-make reset-db         # wipe repo-local dev data/app.db and re-seed it
+make reset-db         # wipe repo-local dev app state and rebuild starter data
 make typecheck        # TypeScript on the frontend
 make build            # production build of frontend
 make clean            # nuke venv and node_modules
@@ -30,7 +28,7 @@ The backend OpenAPI docs are available at:
 ```text
 backend/             FastAPI + SQLAlchemy + SQLite
 frontend/            React + Vite + TypeScript + Tailwind + Recharts/Plotly
-docs/                Architecture, roadmap, development, and private audit notes
+docs/                Architecture, roadmap, and development notes
 samples/             Synthetic import examples
 ```
 
@@ -54,7 +52,6 @@ First run:
 - installs frontend dependencies
 - creates the active profile database in the OS user data directory
 - seeds starter data if the active profile is empty
-- for the private Personal workflow only, uses `current-workflow/` when present
 
 Later runs are faster and mostly just start the servers.
 

@@ -362,12 +362,10 @@ export function Reconcile() {
   const [statementInput, setStatementInput] = useState<string>("");
   const [statementNotes, setStatementNotes] = useState<string>("");
 
-  // Default to WF Checking the first time accounts load.
+  // Default to the first account the first time accounts load.
   useEffect(() => {
     if (!accountId && accounts.data) {
-      const wf = accounts.data.find((a) => a.name === "Wells Fargo Checking");
-      if (wf) setAccountId(wf.id);
-      else if (accounts.data.length) setAccountId(accounts.data[0].id);
+      if (accounts.data.length) setAccountId(accounts.data[0].id);
     }
   }, [accounts.data, accountId]);
 

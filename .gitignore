@@ -20,7 +20,6 @@ dist/
 .mdlr/
 
 # Data (local user data — never commit)
-current-workflow/
 backend/data/profiles.json
 backend/data/profiles/
 backend/data/*.db

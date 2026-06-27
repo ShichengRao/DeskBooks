@@ -69,3 +69,22 @@ def test_profiles_map_to_separate_sqlite_files(tmp_path, monkeypatch):
     assert active.slug == "household"
     assert personal.db_path != household.db_path
     assert household.db_path.name == "household.db"
+
+
+def test_profiles_create_default_registry_on_first_run(tmp_path, monkeypatch):
+    monkeypatch.setattr(profiles, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(profiles, "REGISTRY_PATH", tmp_path / "profiles.json")
+    monkeypatch.setattr(profiles, "PROFILES_DIR", tmp_path / "profiles")
+
+    active = profiles.get_active_profile()
+
+    assert active.slug == "personal"
+    assert active.name == "Personal"
+    assert active.db_path == tmp_path / "app.db"
+    registry = json.loads((tmp_path / "profiles.json").read_text(encoding="utf-8"))
+    assert registry == {
+        "active": "personal",
+        "profiles": [
+            {"db_file": "app.db", "name": "Personal", "slug": "personal"}
+        ],
+    }

@@ -28,12 +28,12 @@ typecheck:
 build:
 	cd frontend && npm run build
 
-# Drops the repo-local development SQLite file and rebuilds starter data.
+# Drops the repo-local development SQLite state and rebuilds starter data.
 # Prompts because this is unrecoverable.
 reset-db:
-	@read -p "Delete repo-local backend/data/app.db and re-seed? [y/N] " ans; \
+	@read -p "Delete repo-local backend/data app state and rebuild starter data? [y/N] " ans; \
 	case "$$ans" in y|Y|yes) ;; *) echo "aborted"; exit 1;; esac
-	rm -f backend/data/app.db backend/data/app.db-*
+	rm -f backend/data/app.db backend/data/app.db-* backend/data/profiles.json
 	cd backend && PFA_DATA_DIR="$(CURDIR)/backend/data" uv run python -m app.bootstrap
 
 clean:

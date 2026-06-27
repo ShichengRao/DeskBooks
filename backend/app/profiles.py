@@ -33,7 +33,21 @@ def _default_db_file(slug: str) -> str:
     return str(Path("profiles") / f"{slug}.db")
 
 
+def ensure_profile_registry() -> None:
+    if REGISTRY_PATH.exists():
+        return
+    _write_registry(
+        {
+            "active": "personal",
+            "profiles": [
+                {"slug": "personal", "name": "Personal", "db_file": DEFAULT_DB_FILE}
+            ],
+        }
+    )
+
+
 def _read_registry() -> dict:
+    ensure_profile_registry()
     if not REGISTRY_PATH.exists():
         raise FileNotFoundError(f"profile registry not found: {REGISTRY_PATH}")
     try:

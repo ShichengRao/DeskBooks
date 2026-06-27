@@ -1,10 +1,8 @@
 """Amex xlsx exports.
 
 Amex switched their consumer export to .xlsx with metadata rows before
-the actual header. Sheet "Transaction Details" has rows 1–6 of header
-metadata; row 7 is the real column header
-(`Date | Description | Amount | Extended Details | Appears On Your Statement As | Address | City/State`)
-and data starts at row 8.
+the actual header. Sheet "Transaction Details" usually has several metadata
+rows first, then a transaction header row where column A is "Date".
 
 Charges are still positive — we invert to outflow-negative on the way in
 to keep the rest of the app uniform.

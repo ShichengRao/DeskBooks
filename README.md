@@ -138,7 +138,7 @@ SQLite files under `profiles/` inside that data directory.
 Set `PFA_DATA_DIR` to use a different location, such as repo-local data during
 development. A profile registry is expected in the active data directory.
 
-To wipe local app state and rebuild from seed/sample data when using the
+To wipe local app state and rebuild generic starter data when using the
 repo-local development data directory:
 
 ```bash
