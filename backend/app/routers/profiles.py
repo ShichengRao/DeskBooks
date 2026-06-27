@@ -46,6 +46,14 @@ def create_profile(body: schemas.ProfileCreate):
     return _profile_list()
 
 
+@router.post("/duplicate", response_model=schemas.ProfileList)
+def duplicate_profile(body: schemas.ProfileCreate):
+    profiles.duplicate_active_profile(body.name)
+    reset_engine()
+    init_db()
+    return _profile_list()
+
+
 @router.post("/active", response_model=schemas.ProfileList)
 def activate_profile(body: schemas.ProfileActivate):
     try:

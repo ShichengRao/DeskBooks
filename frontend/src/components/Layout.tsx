@@ -33,6 +33,10 @@ export function Layout() {
     mutationFn: (name: string) => api.post<ProfileList>("/api/profiles", { name }),
     onSuccess: () => window.location.reload(),
   });
+  const duplicateProfile = useMutation({
+    mutationFn: (name: string) => api.post<ProfileList>("/api/profiles/duplicate", { name }),
+    onSuccess: () => window.location.reload(),
+  });
 
   const stopApp = async () => {
     if (!confirm("Stop the local app servers?")) return;
@@ -49,6 +53,13 @@ export function Layout() {
     createProfile.mutate(name.trim());
   };
 
+  const copyProfile = () => {
+    const active = profiles.data?.profiles.find((p) => p.slug === profiles.data?.active_slug);
+    const name = prompt("Duplicate active profile as", active ? `${active.name} copy` : "Profile copy");
+    if (!name?.trim()) return;
+    duplicateProfile.mutate(name.trim());
+  };
+
   return (
     <div className="min-h-full flex flex-col">
       <header className="border-b border-ink-200 bg-white">
@@ -59,7 +70,7 @@ export function Layout() {
             <select
               className="input min-w-32 py-1 text-xs"
               value={profiles.data?.active_slug ?? ""}
-              disabled={profiles.isLoading || switchProfile.isPending || createProfile.isPending}
+              disabled={profiles.isLoading || switchProfile.isPending || createProfile.isPending || duplicateProfile.isPending}
               onChange={(e) => {
                 if (!e.target.value || e.target.value === profiles.data?.active_slug) return;
                 switchProfile.mutate(e.target.value);
@@ -77,10 +88,19 @@ export function Layout() {
               type="button"
               className="btn-ghost px-2 py-1 text-xs"
               onClick={addProfile}
-              disabled={createProfile.isPending}
+              disabled={createProfile.isPending || duplicateProfile.isPending}
               title="Create local profile"
             >
               +
+            </button>
+            <button
+              type="button"
+              className="btn-ghost px-2 py-1 text-xs"
+              onClick={copyProfile}
+              disabled={!profiles.data || createProfile.isPending || duplicateProfile.isPending}
+              title="Duplicate active profile"
+            >
+              Duplicate
             </button>
           </div>
           <nav className="flex items-center gap-1 text-sm">

@@ -29,6 +29,15 @@ Examples:
 EOF
 }
 
+validate_port() {
+  local label="$1"
+  local value="$2"
+  if [[ ! "$value" =~ ^[0-9]+$ ]] || (( value < 1 || value > 65535 )); then
+    echo "$label must be an integer port from 1 to 65535; got: $value" >&2
+    exit 2
+  fi
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -p|--port)
@@ -78,6 +87,8 @@ if [[ -z "$BACKEND_PORT" ]]; then
     BACKEND_PORT=8766
   fi
 fi
+validate_port "frontend port" "$FRONTEND_PORT"
+validate_port "backend port" "$BACKEND_PORT"
 
 BACKEND_PID=""
 FRONTEND_PID=""

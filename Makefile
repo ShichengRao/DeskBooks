@@ -1,5 +1,5 @@
-PORT ?= 5173
-API_PORT ?= $(if $(filter 5173,$(PORT)),8765,8766)
+PORT ?= $(or $(FRONTEND_PORT),5173)
+API_PORT ?= $(or $(BACKEND_PORT),$(if $(filter 5173,$(PORT)),8765,8766))
 
 .PHONY: dev backend frontend open bootstrap install test typecheck build clean reset-db
 

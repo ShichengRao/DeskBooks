@@ -42,13 +42,14 @@ If another local copy is already using the default ports, run DeskBooks on
 alternate ports:
 
 ```bash
-make dev PORT=5172
+make dev PORT=5172 API_PORT=8766
 # or:
-./run.sh --port 5172
+./run.sh --port 5172 --api-port 8766
 ```
 
 When `PORT` is not `5173`, the launcher defaults the backend to port `8766`.
-Override it with `API_PORT=8767` or `./run.sh --api-port 8767`.
+Both ports can be any valid TCP port from `1` to `65535`. `FRONTEND_PORT`
+and `BACKEND_PORT` are accepted as aliases for `PORT` and `API_PORT`.
 
 ## App Panels
 

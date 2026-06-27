@@ -7,7 +7,7 @@ Technical notes for working on the app. The user-facing guide is in
 
 ```bash
 make dev              # full app: backend API + frontend UI, then open localhost:5173
-make dev PORT=5172    # alternate frontend port; backend defaults to 8766
+make dev PORT=5172 API_PORT=8766
 make backend          # API only, at http://127.0.0.1:8765/docs
 make frontend         # UI only, at http://localhost:5173
 make open             # open the frontend URL if servers are already running
@@ -19,9 +19,10 @@ make clean            # nuke venv and node_modules
 
 `./run.sh` starts both servers. The frontend is Vite on port 5173. The
 backend is FastAPI/uvicorn on port 8765 with auto-reload enabled. Use
-`./run.sh --port 5172` or `make dev PORT=5172` to run a second local copy;
-when the frontend port is not 5173, the launcher defaults the backend to
-8766 unless `API_PORT` or `--api-port` is set.
+`./run.sh --port 5172 --api-port 8766` or
+`make dev PORT=5172 API_PORT=8766` to run a second local copy. Both ports can
+be any valid TCP port from `1` to `65535`; `FRONTEND_PORT` and `BACKEND_PORT`
+are accepted as aliases for `PORT` and `API_PORT`.
 
 The backend OpenAPI docs are available at:
 

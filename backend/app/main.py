@@ -36,9 +36,9 @@ app = FastAPI(title="DeskBooks", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    # Allow any localhost Vite dev port (5173 default, plus auto-incremented
-    # ports when 5173 is taken). Production builds don't go through here.
-    allow_origin_regex=r"^http://(localhost|127\.0\.0\.1):(5173|5174|5175|5176|5177|5178|5179|5180)$",
+    # Allow any localhost dev-server port. Production builds don't go through
+    # CORS because the frontend and API are same-origin behind the launcher.
+    allow_origin_regex=r"^http://(localhost|127\.0\.0\.1):([1-9][0-9]{0,4})$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

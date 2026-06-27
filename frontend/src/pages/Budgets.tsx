@@ -3,12 +3,15 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { QueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
 import { api, qs } from "../api/client";
+import { Field } from "../components/Field";
+import { SidePanel } from "../components/SidePanel";
 import type {
   BudgetDefault,
   BudgetMonthSummary,
   BudgetOverride,
   BudgetReport,
   BudgetReportRow,
+  Category,
 } from "../api/types";
 import { currency, monthLabel, num } from "../lib/fmt";
 
@@ -108,6 +111,7 @@ export function Budgets() {
   const [customStart, setCustomStart] = useState(addMonths(current, -5));
   const [customEnd, setCustomEnd] = useState(current);
   const [focusMonth, setFocusMonth] = useState<string | null>(current);
+  const [creatingCategory, setCreatingCategory] = useState(false);
 
   const startMonth = preset === "custom" ? customStart : addMonths(rangeEnd, preset === "6m" ? -5 : -11);
   const endMonth = preset === "custom" ? customEnd : rangeEnd;
@@ -127,6 +131,10 @@ export function Budgets() {
           focus_month: focusMonth ? monthDate(focusMonth) : undefined,
         })}`,
       ),
+  });
+  const categories = useQuery({
+    queryKey: ["categories"],
+    queryFn: () => api.get<Category[]>("/api/categories"),
   });
 
   const [defaultDrafts, setDefaultDrafts] = useState<Record<number, string>>({});
@@ -244,6 +252,7 @@ export function Budgets() {
         rangeEnd={rangeEnd}
         customStart={customStart}
         customEnd={customEnd}
+        onNewCategory={() => setCreatingCategory(true)}
         onPreset={setPreset}
         onRangeEnd={setRangeEnd}
         onCustomStart={setCustomStart}
@@ -284,6 +293,16 @@ export function Budgets() {
         onSaveDefault={(row) => saveDefault.mutate(row)}
         onSaveOverride={(row) => saveOverride.mutate(row)}
       />
+      <CategoryEditorDialog
+        open={creatingCategory}
+        categories={categories.data ?? []}
+        onClose={() => setCreatingCategory(false)}
+        onSaved={() => {
+          qc.invalidateQueries({ queryKey: ["categories"] });
+          invalidateBudgets(qc);
+          setCreatingCategory(false);
+        }}
+      />
     </div>
   );
 }
@@ -293,6 +312,7 @@ function BudgetsHeader({
   rangeEnd,
   customStart,
   customEnd,
+  onNewCategory,
   onPreset,
   onRangeEnd,
   onCustomStart,
@@ -302,6 +322,7 @@ function BudgetsHeader({
   rangeEnd: string;
   customStart: string;
   customEnd: string;
+  onNewCategory: () => void;
   onPreset: (preset: RangePreset) => void;
   onRangeEnd: (month: string) => void;
   onCustomStart: (month: string) => void;
@@ -309,7 +330,10 @@ function BudgetsHeader({
 }) {
   return (
     <div className="flex flex-wrap items-end justify-between gap-3">
-      <h1 className="text-2xl font-semibold tracking-tight">Budgets</h1>
+      <div className="flex items-center gap-3">
+        <h1 className="text-2xl font-semibold tracking-tight">Budgets</h1>
+        <button type="button" className="btn" onClick={onNewCategory}>+ Category</button>
+      </div>
       <div className="flex flex-wrap items-end gap-3">
         <label className="block">
           <div className="label mb-1">Range</div>
@@ -464,13 +488,81 @@ function BudgetRowsTable({
           {rows.length === 0 && (
             <tr>
               <td colSpan={isRangeView ? 5 : 8} className="px-3 py-8 text-center text-ink-500">
-                No expense categories yet.
+                No budget categories found. You can add one by clicking the Category button in the top right.
               </td>
             </tr>
           )}
         </tbody>
       </table>
     </div>
+  );
+}
+
+function CategoryEditorDialog({
+  open,
+  categories,
+  onClose,
+  onSaved,
+}: {
+  open: boolean;
+  categories: Category[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  if (!open) return null;
+  return <CategoryEditor categories={categories} onClose={onClose} onSaved={onSaved} />;
+}
+
+function CategoryEditor({
+  categories,
+  onClose,
+  onSaved,
+}: {
+  categories: Category[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const expenseParents = categories.filter((category) => category.kind === "expense" && !category.archived);
+  const [name, setName] = useState("");
+  const [parentId, setParentId] = useState("");
+  const save = useMutation({
+    mutationFn: () =>
+      api.post<Category>("/api/categories", {
+        name: name.trim(),
+        parent_id: parentId ? Number(parentId) : null,
+        kind: "expense",
+        color: null,
+        sort_order: categories.length + 1,
+        archived: false,
+      }),
+    onSuccess: onSaved,
+  });
+
+  return (
+    <SidePanel title="New budget category" onClose={onClose} onSubmit={() => save.mutate()} maxWidth="max-w-lg">
+      <div className="space-y-3">
+        <Field label="Name">
+          <input className="input" value={name} onChange={(e) => setName(e.target.value)} required />
+        </Field>
+        <Field label="Parent category">
+          <select className="input" value={parentId} onChange={(e) => setParentId(e.target.value)}>
+            <option value="">Top-level expense category</option>
+            {expenseParents.map((category) => (
+              <option key={category.id} value={category.id}>
+                {category.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+      </div>
+      <div className="sticky bottom-0 z-10 -mx-6 mt-4 flex items-center gap-2 border-t border-ink-100 bg-white px-6 py-3">
+        <button type="submit" className="btn-primary" disabled={save.isPending || !name.trim()}>
+          Save category
+        </button>
+        <button type="button" className="btn" onClick={onClose}>Cancel</button>
+      </div>
+      {save.isError && <div className="mt-2 text-sm text-bad-600">{String((save.error as Error).message)}</div>}
+    </SidePanel>
   );
 }
 

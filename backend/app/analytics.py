@@ -120,9 +120,12 @@ def monthly_breakdown(db: Session, start: date, end: date) -> list[dict]:
         m = f"{d.year:04d}-{d.month:02d}"
         bucket = by_month[m]
         bucket["by_kind"][kind.value] += amount
-        cat_label = cat_name or "(uncategorized)"
+        cat_label = cat_name or "Uncategorized"
         if kind in EXPENSE_KINDS:
             bucket["by_expense_category"][cat_label] += -amount  # outflows -> positive
+            bucket["expenses_total"] += -amount
+        elif kind == TransactionKind.uncategorized and amount < 0:
+            bucket["by_expense_category"]["Uncategorized"] += -amount
             bucket["expenses_total"] += -amount
         elif kind in INCOME_KINDS:
             bucket["by_income_category"][cat_label] += amount

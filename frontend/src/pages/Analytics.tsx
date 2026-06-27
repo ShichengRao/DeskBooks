@@ -34,6 +34,10 @@ export function Analytics() {
     queryFn: () => api.get<MonthlyPoint[]>(`/api/analytics/monthly?start=${monthlyStart}&end=${monthlyEnd}`),
     enabled: Boolean(monthlyStart && monthlyEnd),
   });
+  const transactionCount = useQuery({
+    queryKey: ["transactions-count-all"],
+    queryFn: () => api.get<{ count: number }>("/api/transactions/count"),
+  });
   const sankey = useQuery({
     queryKey: ["sankey", sankeyStart, sankeyEnd],
     queryFn: () =>
@@ -125,6 +129,7 @@ export function Analytics() {
         sankey={sankey.data}
         visibleSankey={visibleSankey}
         loading={sankey.isLoading}
+        hasAnyTransactions={(transactionCount.data?.count ?? 0) > 0}
         start={sankeyStart}
         end={sankeyEnd}
         focused={focusedSankey}
@@ -135,6 +140,7 @@ export function Analytics() {
       />
       <MonthlyExpensesPanel
         loading={monthly.isLoading}
+        hasAnyTransactions={(transactionCount.data?.count ?? 0) > 0}
         start={monthlyStart}
         end={monthlyEnd}
         chart={monthlyChart}
@@ -148,6 +154,7 @@ export function Analytics() {
       <RecurringMerchantsPanel
         merchants={recurring.data ?? []}
         loading={recurring.isLoading}
+        hasAnyTransactions={(transactionCount.data?.count ?? 0) > 0}
         start={recurringStart}
         end={recurringEnd}
         minOccurrences={recurringMin}
@@ -190,6 +197,7 @@ function SankeyPanel({
   sankey,
   visibleSankey,
   loading,
+  hasAnyTransactions,
   start,
   end,
   focused,
@@ -201,6 +209,7 @@ function SankeyPanel({
   sankey?: SankeyResponse;
   visibleSankey?: SankeyResponse;
   loading: boolean;
+  hasAnyTransactions: boolean;
   start: string;
   end: string;
   focused: string | null;
@@ -223,7 +232,7 @@ function SankeyPanel({
           />
         </div>
       </div>
-      <SankeyChart data={visibleSankey} loading={loading} chartColors={chartColors} onFocus={onFocus} />
+      <SankeyChart data={visibleSankey} loading={loading} hasAnyTransactions={hasAnyTransactions} chartColors={chartColors} onFocus={onFocus} />
       {focused && (
         <button className="btn-ghost text-xs mt-2" onClick={() => onFocus(null)}>
           clear Sankey focus: {focused}
@@ -241,17 +250,25 @@ function SankeyPanel({
 function SankeyChart({
   data,
   loading,
+  hasAnyTransactions,
   chartColors,
   onFocus,
 }: {
   data?: SankeyResponse;
   loading: boolean;
+  hasAnyTransactions: boolean;
   chartColors: ChartColors;
   onFocus: (value: string | null) => void;
 }) {
   if (loading) return <ChartEmptyState>Loading Sankey data…</ChartEmptyState>;
   if (!data || data.nodes.length <= 1) {
-    return <ChartEmptyState>No transactions in this period yet — import a CSV to populate this chart.</ChartEmptyState>;
+    return (
+      <ChartEmptyState>
+        {hasAnyTransactions
+          ? "No Sankey transactions found within time range."
+          : "No transactions found. You can add data from the Transactions or Import pages."}
+      </ChartEmptyState>
+    );
   }
 
   return (
@@ -291,6 +308,7 @@ function SankeyChart({
 
 function MonthlyExpensesPanel({
   loading,
+  hasAnyTransactions,
   start,
   end,
   chart,
@@ -302,6 +320,7 @@ function MonthlyExpensesPanel({
   onFocus,
 }: {
   loading: boolean;
+  hasAnyTransactions: boolean;
   start: string;
   end: string;
   chart: MonthlyChartData;
@@ -327,10 +346,12 @@ function MonthlyExpensesPanel({
       <div className="h-80">
         {loading ? (
           <ChartEmptyState>Loading monthly expenses…</ChartEmptyState>
-        ) : chart.data.length > 0 ? (
+        ) : chart.data.length > 0 && chart.cats.length > 0 ? (
           <MonthlyExpenseChart chart={chart} focused={focused} chartColors={chartColors} onFocus={onFocus} />
+        ) : hasAnyTransactions ? (
+          <ChartEmptyState>No monthly expenses found within time range.</ChartEmptyState>
         ) : (
-          <ChartEmptyState>No data — import some transactions.</ChartEmptyState>
+          <ChartEmptyState>No transactions found. You can add data from the Transactions or Import pages.</ChartEmptyState>
         )}
       </div>
     </div>
@@ -401,6 +422,7 @@ function CoverageDots({ coverage, start, end }: { coverage: CoverageMonth[]; sta
 function RecurringMerchantsPanel({
   merchants,
   loading,
+  hasAnyTransactions,
   start,
   end,
   minOccurrences,
@@ -411,6 +433,7 @@ function RecurringMerchantsPanel({
 }: {
   merchants: RecurringMerchant[];
   loading: boolean;
+  hasAnyTransactions: boolean;
   start: string;
   end: string;
   minOccurrences: number;
@@ -435,10 +458,20 @@ function RecurringMerchantsPanel({
       ) : merchants.length ? (
         <RecurringMerchantsTable merchants={merchants} />
       ) : (
-        <div className="text-sm text-ink-500 italic">No recurring merchants detected yet.</div>
+        <div className="text-sm text-ink-500 italic">
+          {recurringEmptyMessage(hasAnyTransactions, Boolean(start || end))}
+        </div>
       )}
     </div>
   );
+}
+
+function recurringEmptyMessage(hasAnyTransactions: boolean, hasRangeFilter: boolean) {
+  if (!hasAnyTransactions) {
+    return "No recurring merchants found. You can add data from the Transactions or Import pages.";
+  }
+  if (hasRangeFilter) return "No recurring merchants found within time range.";
+  return "No recurring merchants detected yet.";
 }
 
 function RecurringMerchantsHeader({

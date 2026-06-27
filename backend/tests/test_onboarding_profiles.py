@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
@@ -88,3 +89,31 @@ def test_profiles_create_default_registry_on_first_run(tmp_path, monkeypatch):
             {"db_file": "app.db", "name": "Personal", "slug": "personal"}
         ],
     }
+
+
+def test_duplicate_active_profile_copies_sqlite_database(tmp_path, monkeypatch):
+    monkeypatch.setattr(profiles, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(profiles, "REGISTRY_PATH", tmp_path / "profiles.json")
+    monkeypatch.setattr(profiles, "PROFILES_DIR", tmp_path / "profiles")
+    (tmp_path / "profiles.json").write_text(
+        json.dumps(
+            {
+                "active": "personal",
+                "profiles": [
+                    {"slug": "personal", "name": "Personal", "db_file": "app.db"}
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    with sqlite3.connect(tmp_path / "app.db") as conn:
+        conn.execute("CREATE TABLE marker (value TEXT NOT NULL)")
+        conn.execute("INSERT INTO marker (value) VALUES ('copied')")
+
+    duplicate = profiles.duplicate_active_profile("Copied Profile")
+
+    assert duplicate.slug == "copied-profile"
+    assert duplicate.db_path == tmp_path / "profiles" / "copied-profile.db"
+    assert profiles.get_active_profile().slug == "copied-profile"
+    with sqlite3.connect(duplicate.db_path) as conn:
+        assert conn.execute("SELECT value FROM marker").fetchone()[0] == "copied"

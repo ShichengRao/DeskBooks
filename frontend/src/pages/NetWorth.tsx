@@ -14,8 +14,9 @@ import { api, qs } from "../api/client";
 import { ChartLegend } from "../components/ChartLegend";
 import { ChartColorControls, useChartColors } from "../components/ChartColorControls";
 import { DateRangeControls } from "../components/DateRangeControls";
+import { Field } from "../components/Field";
 import { SidePanel } from "../components/SidePanel";
-import type { Account, NetWorthSeriesPoint, NetWorthSnapshot } from "../api/types";
+import type { Account, AccountCategory, AccountType, NetWorthSeriesPoint, NetWorthSnapshot, SignConvention } from "../api/types";
 import { colorAt } from "../lib/chartColors";
 import { accountCategoryLabel } from "../lib/labels";
 import { compactCurrency, currency, dateLabel, num, shortDateLabel } from "../lib/fmt";
@@ -31,6 +32,24 @@ const ACCOUNT_CATEGORY_SERIES = [
 
 type ChartColors = ReturnType<typeof useChartColors>;
 type NetWorthChartRow = Record<string, number | string> & { date: string; total: number };
+type AccountFormBody = {
+  name: string;
+  institution: string | null;
+  account_category: AccountCategory;
+  type: AccountType;
+  is_liquid: boolean;
+  is_taxable: boolean;
+  currency: string;
+  sign_convention: SignConvention;
+  url: string | null;
+  notes: string | null;
+  is_closed: boolean;
+  sort_order: number;
+};
+
+const ACCOUNT_CATEGORIES: AccountCategory[] = ["bank", "investment", "tax_advantaged", "credit", "liability", "nonsense", "cash"];
+const ACCOUNT_TYPES: AccountType[] = ["checking", "savings", "cd", "brokerage", "crypto", "wallet", "retirement", "college", "hsa", "credit_card", "cash", "other"];
+const SIGN_CONVENTIONS: SignConvention[] = ["outflow_negative", "outflow_positive"];
 
 export function NetWorth() {
   const qc = useQueryClient();
@@ -54,6 +73,7 @@ export function NetWorth() {
 
   const [showLog, setShowLog] = useState(false);
   const [editingSnapId, setEditingSnapId] = useState<number | "new" | null>(null);
+  const [creatingAccount, setCreatingAccount] = useState(false);
 
   const chartData =
     series.data?.map((p) => {
@@ -82,13 +102,19 @@ export function NetWorth() {
 
   return (
     <div className="space-y-6">
-      <NetWorthHeader showLog={showLog} onShowLog={setShowLog} onNewSnapshot={() => setEditingSnapId("new")} />
+      <NetWorthHeader
+        showLog={showLog}
+        onShowLog={setShowLog}
+        onNewAccount={() => setCreatingAccount(true)}
+        onNewSnapshot={() => setEditingSnapId("new")}
+      />
       <NetWorthValuePanel
         data={chartData}
         focused={focusedValueSeries}
         showLog={showLog}
         start={rangeStart}
         end={rangeEnd}
+        snapshotCount={snapshots.data?.length ?? 0}
         chartColors={chartColors}
         onFocus={setFocusedValueSeries}
         onStart={setRangeStart}
@@ -101,6 +127,8 @@ export function NetWorth() {
       <NetWorthAllocationPanel
         data={chartData}
         focused={focusedPercentSeries}
+        snapshotCount={snapshots.data?.length ?? 0}
+        hasRangeFilter={Boolean(rangeStart || rangeEnd)}
         chartColors={chartColors}
         onFocus={setFocusedPercentSeries}
       />
@@ -123,6 +151,16 @@ export function NetWorth() {
           setEditingSnapId(null);
         }}
       />
+      <AccountEditorDialog
+        open={creatingAccount}
+        onClose={() => setCreatingAccount(false)}
+        onSaved={() => {
+          qc.invalidateQueries({ queryKey: ["accounts"] });
+          qc.invalidateQueries({ queryKey: ["snapshots"] });
+          qc.invalidateQueries({ queryKey: ["nw-series"] });
+          setCreatingAccount(false);
+        }}
+      />
     </div>
   );
 }
@@ -130,10 +168,12 @@ export function NetWorth() {
 function NetWorthHeader({
   showLog,
   onShowLog,
+  onNewAccount,
   onNewSnapshot,
 }: {
   showLog: boolean;
   onShowLog: (value: boolean) => void;
+  onNewAccount: () => void;
   onNewSnapshot: () => void;
 }) {
   return (
@@ -144,6 +184,7 @@ function NetWorthHeader({
           <input type="checkbox" checked={showLog} onChange={(e) => onShowLog(e.target.checked)} />
           log scale
         </label>
+        <button className="btn" onClick={onNewAccount}>+ Account</button>
         <button className="btn-primary" onClick={onNewSnapshot}>+ New snapshot</button>
       </div>
     </div>
@@ -156,6 +197,7 @@ function NetWorthValuePanel({
   showLog,
   start,
   end,
+  snapshotCount,
   chartColors,
   onFocus,
   onStart,
@@ -167,12 +209,14 @@ function NetWorthValuePanel({
   showLog: boolean;
   start: string;
   end: string;
+  snapshotCount: number;
   chartColors: ChartColors;
   onFocus: (value: string | null) => void;
   onStart: (value: string) => void;
   onEnd: (value: string) => void;
   onAllTime: () => void;
 }) {
+  const hasRangeFilter = Boolean(start || end);
   return (
     <div className="card p-4">
       <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
@@ -190,6 +234,9 @@ function NetWorthValuePanel({
         />
       </div>
       <div className="h-72">
+        {data.length === 0 ? (
+          <NetWorthEmptyState snapshotCount={snapshotCount} hasRangeFilter={hasRangeFilter} />
+        ) : (
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={data} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
             <CartesianGrid stroke="#eceef2" vertical={false} />
@@ -234,6 +281,7 @@ function NetWorthValuePanel({
             ))}
           </LineChart>
         </ResponsiveContainer>
+        )}
       </div>
     </div>
   );
@@ -271,11 +319,15 @@ function NetWorthChartControls({
 function NetWorthAllocationPanel({
   data,
   focused,
+  snapshotCount,
+  hasRangeFilter,
   chartColors,
   onFocus,
 }: {
   data: NetWorthChartRow[];
   focused: string | null;
+  snapshotCount: number;
+  hasRangeFilter: boolean;
   chartColors: ChartColors;
   onFocus: (value: string | null) => void;
 }) {
@@ -286,6 +338,9 @@ function NetWorthAllocationPanel({
         {focused && <button className="btn-ghost text-xs mt-1" onClick={() => onFocus(null)}>show all percentages</button>}
       </div>
       <div className="h-72">
+        {data.length === 0 ? (
+          <NetWorthEmptyState snapshotCount={snapshotCount} hasRangeFilter={hasRangeFilter} />
+        ) : (
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={data}>
             <CartesianGrid stroke="#eceef2" vertical={false} />
@@ -310,7 +365,26 @@ function NetWorthAllocationPanel({
             ))}
           </LineChart>
         </ResponsiveContainer>
+        )}
       </div>
+    </div>
+  );
+}
+
+function NetWorthEmptyState({
+  snapshotCount,
+  hasRangeFilter,
+}: {
+  snapshotCount: number;
+  hasRangeFilter: boolean;
+}) {
+  const message =
+    snapshotCount > 0 && hasRangeFilter
+      ? "No snapshots found within time range."
+      : "No snapshots found. You can add one by clicking the New snapshot button in the top right.";
+  return (
+    <div className="h-full flex items-center justify-center rounded-md border border-dashed border-ink-200 bg-ink-50 px-6 text-center text-sm text-ink-500">
+      {message}
     </div>
   );
 }
@@ -348,6 +422,13 @@ function NetWorthSnapshotsTable({
               onEdit={onEdit}
             />
           ))}
+          {snapshots.length === 0 && (
+            <tr>
+              <td colSpan={8} className="px-3 py-8 text-center text-ink-500">
+                No snapshots found. You can add one by clicking the New snapshot button in the top right.
+              </td>
+            </tr>
+          )}
         </tbody>
       </table>
     </div>
@@ -470,6 +551,7 @@ function SnapshotEditor({
   }, [accounts]);
 
   const total = Object.values(balances).reduce((a, v) => a + (parseFloat(v) || 0), 0);
+  const hasLoginLinks = accounts.some((a) => a.url && !a.is_closed);
 
   return (
     <SidePanel
@@ -499,21 +581,27 @@ function SnapshotEditor({
           </label>
         </div>
         <div className="flex items-center justify-between mb-2 text-xs text-ink-500">
-          <span>Click the ↗ icon next to any account to open its login in a new tab.</span>
-          <button
-            type="button"
-            className="btn-ghost text-xs"
-            onClick={() => {
-              for (const a of accounts) {
-                if (a.url && !a.is_closed && (balances[a.id] ?? "") === "") {
-                  window.open(a.url, "_blank", "noopener");
+          <span>
+            {hasLoginLinks
+              ? "Click the ↗ icon next to any account to open its login in a new tab."
+              : "No account login links yet. Add account URLs with the Account button on the Net Worth page."}
+          </span>
+          {hasLoginLinks && (
+            <button
+              type="button"
+              className="btn-ghost text-xs"
+              onClick={() => {
+                for (const a of accounts) {
+                  if (a.url && !a.is_closed && (balances[a.id] ?? "") === "") {
+                    window.open(a.url, "_blank", "noopener");
+                  }
                 }
-              }
-            }}
-            title="Open all unfilled accounts' login pages"
-          >
-            ↗ open all unfilled
-          </button>
+              }}
+              title="Open all unfilled accounts' login pages"
+            >
+              ↗ open all unfilled
+            </button>
+          )}
         </div>
         <div className="space-y-3">
           {Object.entries(grouped).map(([cat, accs]) => (
@@ -583,6 +671,115 @@ function SnapshotEditor({
         {save.isError && (
           <div className="mt-2 text-sm text-bad-600">{String((save.error as Error).message)}</div>
         )}
+    </SidePanel>
+  );
+}
+
+function AccountEditorDialog({
+  open,
+  onClose,
+  onSaved,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  if (!open) return null;
+  return <AccountEditor onClose={onClose} onSaved={onSaved} />;
+}
+
+function AccountEditor({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+  const [form, setForm] = useState<AccountFormBody>({
+    name: "",
+    institution: null,
+    account_category: "bank",
+    type: "checking",
+    is_liquid: true,
+    is_taxable: true,
+    currency: "USD",
+    sign_convention: "outflow_negative",
+    url: null,
+    notes: null,
+    is_closed: false,
+    sort_order: 0,
+  });
+
+  const save = useMutation({
+    mutationFn: () =>
+      api.post<Account>("/api/accounts", {
+        ...form,
+        name: form.name.trim(),
+        institution: form.institution?.trim() || null,
+        currency: form.currency.trim() || "USD",
+        url: form.url?.trim() || null,
+        notes: form.notes?.trim() || null,
+      }),
+    onSuccess: onSaved,
+  });
+
+  const update = <K extends keyof AccountFormBody>(key: K, value: AccountFormBody[K]) =>
+    setForm((prev) => ({ ...prev, [key]: value }));
+
+  return (
+    <SidePanel title="New account" onClose={onClose} onSubmit={() => save.mutate()} maxWidth="max-w-xl">
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Name">
+          <input className="input" value={form.name} onChange={(e) => update("name", e.target.value)} required />
+        </Field>
+        <Field label="Institution">
+          <input className="input" value={form.institution ?? ""} onChange={(e) => update("institution", e.target.value)} />
+        </Field>
+        <Field label="Category">
+          <select className="input" value={form.account_category} onChange={(e) => update("account_category", e.target.value as AccountCategory)}>
+            {ACCOUNT_CATEGORIES.map((category) => (
+              <option key={category} value={category}>{accountCategoryLabel(category)}</option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Type">
+          <select className="input" value={form.type} onChange={(e) => update("type", e.target.value as AccountType)}>
+            {ACCOUNT_TYPES.map((type) => (
+              <option key={type} value={type}>{type.replace(/_/g, " ")}</option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Sign convention">
+          <select className="input" value={form.sign_convention} onChange={(e) => update("sign_convention", e.target.value as SignConvention)}>
+            {SIGN_CONVENTIONS.map((convention) => (
+              <option key={convention} value={convention}>{convention.replace(/_/g, " ")}</option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Currency">
+          <input className="input" value={form.currency} onChange={(e) => update("currency", e.target.value)} />
+        </Field>
+        <Field label="Login URL">
+          <input className="input" value={form.url ?? ""} onChange={(e) => update("url", e.target.value)} />
+        </Field>
+        <Field label="Sort order">
+          <input type="number" className="input" value={form.sort_order} onChange={(e) => update("sort_order", Number(e.target.value) || 0)} />
+        </Field>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-3 text-sm text-ink-700">
+        <label className="flex items-center gap-2">
+          <input type="checkbox" checked={form.is_liquid} onChange={(e) => update("is_liquid", e.target.checked)} />
+          Liquid
+        </label>
+        <label className="flex items-center gap-2">
+          <input type="checkbox" checked={form.is_taxable} onChange={(e) => update("is_taxable", e.target.checked)} />
+          Taxable
+        </label>
+      </div>
+      <Field label="Notes">
+        <textarea className="input min-h-24" value={form.notes ?? ""} onChange={(e) => update("notes", e.target.value)} />
+      </Field>
+      <div className="sticky bottom-0 z-10 -mx-6 mt-4 flex items-center gap-2 border-t border-ink-100 bg-white px-6 py-3">
+        <button type="submit" className="btn-primary" disabled={save.isPending || !form.name.trim()}>
+          Save account
+        </button>
+        <button type="button" className="btn" onClick={onClose}>Cancel</button>
+      </div>
+      {save.isError && <div className="mt-2 text-sm text-bad-600">{String((save.error as Error).message)}</div>}
     </SidePanel>
   );
 }
