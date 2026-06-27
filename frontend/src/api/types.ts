@@ -442,7 +442,7 @@ export interface SankeyResponse {
   notes: string[];
 }
 
-export interface RecurringVendor {
+export interface RecurringMerchant {
   merchant: string;
   occurrences: number;
   avg_amount: string;

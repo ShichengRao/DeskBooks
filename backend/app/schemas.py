@@ -720,7 +720,7 @@ class SankeyResponse(BaseModel):
     notes: list[str] = []
 
 
-class RecurringVendor(BaseModel):
+class RecurringMerchant(BaseModel):
     merchant: str
     occurrences: int
     avg_amount: Decimal

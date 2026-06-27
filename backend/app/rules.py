@@ -15,7 +15,7 @@ from __future__ import annotations
 import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -111,7 +111,7 @@ def reapply_to_unreviewed(db: Session) -> tuple[int, int]:
             tx.matched_rule_id = ev.matched_rule_id
             fires[ev.matched_rule_id] += 1
     # Stamp only the rules that actually changed something.
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     for rule_id, n in fires.items():
         rule = rules_by_id.get(rule_id)
         if rule is None:
@@ -181,7 +181,7 @@ def stamp_rule_fires(db: Session, rule_ids: list[int]) -> None:
     if not rule_ids:
         return
     counts = Counter(rule_ids)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     rules = db.scalars(select(models.Rule).where(models.Rule.id.in_(list(counts.keys())))).all()
     for r in rules:
         n = counts.get(r.id, 0)
@@ -434,18 +434,6 @@ def backtest_rule_proposal(
         if tx.category_id != set_category_id or tx.kind != set_kind
     ]
     breakdown_counts = Counter((tx.category_id, tx.kind) for tx in matches)
-    examples = [
-        {
-            "transaction_id": tx.id,
-            "date": tx.date,
-            "description": tx.description_normalized or tx.description_raw,
-            "amount": tx.amount,
-            "category_id": tx.category_id,
-            "kind": tx.kind,
-            "correct": tx.category_id == set_category_id and tx.kind == set_kind,
-        }
-        for tx in (incorrect[:3] + correct[:3])[:6]
-    ]
     return {
         "key": key,
         "name": name,
@@ -468,7 +456,7 @@ def backtest_rule_proposal(
             {"category_id": cat_id, "kind": tx_kind, "count": count}
             for (cat_id, tx_kind), count in breakdown_counts.most_common()
         ],
-        "examples": examples,
+        "examples": _proposal_examples(correct, incorrect, set_category_id, set_kind),
     }
 
 

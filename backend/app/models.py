@@ -13,7 +13,6 @@ from sqlalchemy import (
     Boolean,
     Date,
     DateTime,
-    Enum as SAEnum,
     ForeignKey,
     Index,
     Integer,
@@ -22,6 +21,9 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+)
+from sqlalchemy import (
+    Enum as SAEnum,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -33,7 +35,7 @@ class Base(DeclarativeBase):
 # ---------- enums ----------
 
 
-class AccountCategory(str, enum.Enum):
+class AccountCategory(enum.StrEnum):
     bank = "bank"
     investment = "investment"
     nonsense = "nonsense"  # crypto/wallets/cash/misc
@@ -43,7 +45,7 @@ class AccountCategory(str, enum.Enum):
     cash = "cash"
 
 
-class AccountType(str, enum.Enum):
+class AccountType(enum.StrEnum):
     checking = "checking"
     savings = "savings"
     cd = "cd"
@@ -58,12 +60,12 @@ class AccountType(str, enum.Enum):
     other = "other"
 
 
-class SignConvention(str, enum.Enum):
+class SignConvention(enum.StrEnum):
     outflow_negative = "outflow_negative"  # Chase CC, WF checking
     outflow_positive = "outflow_positive"  # Amex CSV
 
 
-class TransactionKind(str, enum.Enum):
+class TransactionKind(enum.StrEnum):
     expense = "expense"
     income = "income"
     transfer = "transfer"
@@ -77,7 +79,7 @@ class TransactionKind(str, enum.Enum):
     uncategorized = "uncategorized"
 
 
-class CategoryKind(str, enum.Enum):
+class CategoryKind(enum.StrEnum):
     expense = "expense"
     income = "income"
     transfer = "transfer"
@@ -90,21 +92,21 @@ class CategoryKind(str, enum.Enum):
     other_non_expense = "other_non_expense"
 
 
-class GoalKind(str, enum.Enum):
+class GoalKind(enum.StrEnum):
     savings = "savings"
     purchase = "purchase"
     retirement = "retirement"
     other = "other"
 
 
-class GoalStatus(str, enum.Enum):
+class GoalStatus(enum.StrEnum):
     active = "active"
     met = "met"
     abandoned = "abandoned"
     paused = "paused"
 
 
-class ImportStatus(str, enum.Enum):
+class ImportStatus(enum.StrEnum):
     preview = "preview"
     applied = "applied"
     rolled_back = "rolled_back"
@@ -138,8 +140,8 @@ class Account(Base):
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
-    transactions: Mapped[list["Transaction"]] = relationship(back_populates="account")
-    balances: Mapped[list["AccountBalance"]] = relationship(back_populates="account")
+    transactions: Mapped[list[Transaction]] = relationship(back_populates="account")
+    balances: Mapped[list[AccountBalance]] = relationship(back_populates="account")
 
 
 class Category(Base):
@@ -153,10 +155,10 @@ class Category(Base):
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     archived: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    parent: Mapped["Category | None"] = relationship(remote_side=[id])
-    transactions: Mapped[list["Transaction"]] = relationship(back_populates="category")
-    budget_defaults: Mapped[list["BudgetDefault"]] = relationship(back_populates="category")
-    budget_overrides: Mapped[list["BudgetOverride"]] = relationship(back_populates="category")
+    parent: Mapped[Category | None] = relationship(remote_side=[id])
+    transactions: Mapped[list[Transaction]] = relationship(back_populates="category")
+    budget_defaults: Mapped[list[BudgetDefault]] = relationship(back_populates="category")
+    budget_overrides: Mapped[list[BudgetOverride]] = relationship(back_populates="category")
 
 
 class Transaction(Base):
@@ -193,9 +195,9 @@ class Transaction(Base):
 
     account: Mapped[Account] = relationship(back_populates="transactions")
     category: Mapped[Category | None] = relationship(back_populates="transactions")
-    batch: Mapped["ImportBatch | None"] = relationship(back_populates="transactions")
-    tags: Mapped[list["Tag"]] = relationship(secondary="transaction_tags", back_populates="transactions")
-    split: Mapped["TransactionSplit | None"] = relationship(
+    batch: Mapped[ImportBatch | None] = relationship(back_populates="transactions")
+    tags: Mapped[list[Tag]] = relationship(secondary="transaction_tags", back_populates="transactions")
+    split: Mapped[TransactionSplit | None] = relationship(
         back_populates="transaction", cascade="all, delete-orphan", uselist=False
     )
 
@@ -287,7 +289,7 @@ class NetWorthSnapshot(Base):
     notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
-    balances: Mapped[list["AccountBalance"]] = relationship(
+    balances: Mapped[list[AccountBalance]] = relationship(
         back_populates="snapshot", cascade="all, delete-orphan"
     )
 
@@ -329,19 +331,22 @@ class Goal(Base):
         DateTime, server_default=func.now(), onupdate=func.now()
     )
 
-    revisions: Mapped[list["GoalRevision"]] = relationship(
+    revisions: Mapped[list[GoalRevision]] = relationship(
         back_populates="goal", cascade="all, delete-orphan", order_by="GoalRevision.changed_at"
     )
 
 
-class GoalRevision(Base):
-    __tablename__ = "goal_revisions"
-
+class RevisionMetadataMixin:
     id: Mapped[int] = mapped_column(primary_key=True)
-    goal_id: Mapped[int] = mapped_column(ForeignKey("goals.id", ondelete="CASCADE"))
-    snapshot: Mapped[dict] = mapped_column(JSON)
     changed_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     change_summary: Mapped[str | None] = mapped_column(Text)
+
+
+class GoalRevision(RevisionMetadataMixin, Base):
+    __tablename__ = "goal_revisions"
+
+    goal_id: Mapped[int] = mapped_column(ForeignKey("goals.id", ondelete="CASCADE"))
+    snapshot: Mapped[dict] = mapped_column(JSON)
 
     goal: Mapped[Goal] = relationship(back_populates="revisions")
 
@@ -359,22 +364,19 @@ class JournalEntry(Base):
         DateTime, server_default=func.now(), onupdate=func.now()
     )
 
-    revisions: Mapped[list["JournalEntryRevision"]] = relationship(
+    revisions: Mapped[list[JournalEntryRevision]] = relationship(
         back_populates="entry", cascade="all, delete-orphan", order_by="JournalEntryRevision.changed_at"
     )
 
 
-class JournalEntryRevision(Base):
+class JournalEntryRevision(RevisionMetadataMixin, Base):
     __tablename__ = "journal_entry_revisions"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
     entry_id: Mapped[int] = mapped_column(ForeignKey("journal_entries.id", ondelete="CASCADE"))
     body_markdown: Mapped[str] = mapped_column(Text)
     title: Mapped[str | None] = mapped_column(String(255))
     entry_date: Mapped[date | None] = mapped_column(Date)
     goal_id: Mapped[int | None] = mapped_column(ForeignKey("goals.id", ondelete="SET NULL"))
-    changed_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-    change_summary: Mapped[str | None] = mapped_column(Text)
 
     entry: Mapped[JournalEntry] = relationship(back_populates="revisions")
 

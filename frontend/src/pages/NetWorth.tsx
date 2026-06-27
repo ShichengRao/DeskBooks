@@ -13,6 +13,7 @@ import {
 import { api, qs } from "../api/client";
 import { ChartLegend } from "../components/ChartLegend";
 import { ChartColorControls, useChartColors } from "../components/ChartColorControls";
+import { DateRangeControls } from "../components/DateRangeControls";
 import { SidePanel } from "../components/SidePanel";
 import type { Account, NetWorthSeriesPoint, NetWorthSnapshot } from "../api/types";
 import { colorAt } from "../lib/chartColors";
@@ -27,6 +28,9 @@ const ACCOUNT_CATEGORY_SERIES = [
   { category: "cash", key: "cat_cash", pctKey: "pct_cash", label: accountCategoryLabel("cash") },
   { category: "credit", key: "cat_credit", pctKey: "pct_credit", label: accountCategoryLabel("credit") },
 ] as const;
+
+type ChartColors = ReturnType<typeof useChartColors>;
+type NetWorthChartRow = Record<string, number | string> & { date: string; total: number };
 
 export function NetWorth() {
   const qc = useQueryClient();
@@ -72,261 +76,337 @@ export function NetWorth() {
   );
 
   const latest = snapshots.data?.[0];
+  const editingSnapshot = editingSnapId === "new"
+    ? null
+    : (snapshots.data?.find((snapshot) => snapshot.id === editingSnapId) ?? null);
 
   return (
     <div className="space-y-6">
-      <div className="flex items-baseline justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight">Net Worth</h1>
-        <div className="flex items-center gap-2">
-          <label className="flex items-center gap-1 text-sm text-ink-600">
-            <input
-              type="checkbox"
-              checked={showLog}
-              onChange={(e) => setShowLog(e.target.checked)}
-            />
-            log scale
-          </label>
-          <button className="btn-primary" onClick={() => setEditingSnapId("new")}>
-            + New snapshot
-          </button>
-        </div>
-      </div>
-
-      <div className="card p-4">
-        <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
-          <div>
-            <div className="text-sm font-medium">Net worth by account category</div>
-            {focusedValueSeries && (
-              <button className="btn-ghost text-xs mt-1" onClick={() => setFocusedValueSeries(null)}>
-                show all categories
-              </button>
-            )}
-          </div>
-          <div className="flex items-center gap-2 text-xs flex-wrap">
-            <DateRangeControls
-              start={rangeStart}
-              end={rangeEnd}
-              onStart={setRangeStart}
-              onEnd={setRangeEnd}
-            />
-            <button
-              type="button"
-              className="btn-ghost text-xs"
-              onClick={() => {
-                setRangeStart("");
-                setRangeEnd("");
-              }}
-            >
-              all time
-            </button>
-            <ChartColorControls
-              paletteId={chartColors.paletteId}
-              colors={chartColors.colors}
-              onPaletteChange={chartColors.setPaletteId}
-              onColorChange={chartColors.setColor}
-            />
-          </div>
-        </div>
-        <div className="h-72">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={chartData} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
-              <CartesianGrid stroke="#eceef2" vertical={false} />
-              <XAxis
-                dataKey="date"
-                tickFormatter={(d) => shortDateLabel(d)}
-                tick={{ fontSize: 12 }}
-                stroke="#7a8392"
-              />
-              <YAxis
-                // Log scale fails on 0/negative values. Pick a safe minimum
-                // bound when log is on, and skip non-positive points.
-                scale={showLog ? "log" : "auto"}
-                domain={showLog ? [1000, "auto"] : [0, "auto"]}
-                allowDataOverflow
-                tickFormatter={(v) => compactCurrency(v)}
-                tick={{ fontSize: 12 }}
-                stroke="#7a8392"
-                width={70}
-              />
-              <Tooltip
-                formatter={(v: number) => currency(v)}
-                labelFormatter={(l) => dateLabel(l as string)}
-              />
-              <Legend
-                content={(props) => (
-                  <ChartLegend
-                    payload={props.payload as any}
-                    focusedKey={focusedValueSeries}
-                    onToggle={(key) => setFocusedValueSeries(focusedValueSeries === key ? null : key)}
-                  />
-                )}
-              />
-              <Line
-                type="monotone"
-                dataKey="total"
-                stroke={colorAt(chartColors.colors, 0)}
-                strokeWidth={2}
-                dot={false}
-                name="Total Net Worth"
-                connectNulls
-                hide={focusedValueSeries !== null && focusedValueSeries !== "total"}
-              />
-              {ACCOUNT_CATEGORY_SERIES.map((seriesDef, index) => (
-                <Line
-                  key={seriesDef.key}
-                  type="monotone"
-                  dataKey={seriesDef.key}
-                  stroke={colorAt(chartColors.colors, index + 1)}
-                  strokeWidth={1.6}
-                  dot={false}
-                  name={seriesDef.label}
-                  connectNulls
-                  hide={focusedValueSeries !== null && focusedValueSeries !== seriesDef.key}
-                />
-              ))}
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      <div className="card p-4">
-        <div className="mb-2">
-          <div className="text-sm font-medium">Allocation by account category</div>
-          {focusedPercentSeries && (
-            <button className="btn-ghost text-xs mt-1" onClick={() => setFocusedPercentSeries(null)}>
-              show all percentages
-            </button>
-          )}
-        </div>
-        <div className="h-72">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={chartData}>
-              <CartesianGrid stroke="#eceef2" vertical={false} />
-              <XAxis
-                dataKey="date"
-                tickFormatter={(d) => shortDateLabel(d)}
-                tick={{ fontSize: 12 }}
-                stroke="#7a8392"
-              />
-              <YAxis
-                domain={["auto", "auto"]}
-                tickFormatter={(v) => `${Number(v).toFixed(0)}%`}
-                tick={{ fontSize: 12 }}
-                stroke="#7a8392"
-                width={70}
-              />
-              <Tooltip formatter={(v: number) => `${v.toFixed(1)}%`} labelFormatter={(l) => dateLabel(l as string)} />
-              <Legend
-                content={(props) => (
-                  <ChartLegend
-                    payload={props.payload as any}
-                    focusedKey={focusedPercentSeries}
-                    onToggle={(key) => setFocusedPercentSeries(focusedPercentSeries === key ? null : key)}
-                  />
-                )}
-              />
-              {ACCOUNT_CATEGORY_SERIES.map((seriesDef, index) => (
-                <Line
-                  key={seriesDef.pctKey}
-                  dataKey={seriesDef.pctKey}
-                  stroke={colorAt(chartColors.colors, index + 1)}
-                  name={seriesDef.label}
-                  dot={false}
-                  connectNulls
-                  hide={focusedPercentSeries !== null && focusedPercentSeries !== seriesDef.pctKey}
-                />
-              ))}
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      <div className="card overflow-x-auto">
-        <table className="text-sm w-full tabular">
-          <thead className="bg-ink-50">
-            <tr>
-              <th className="px-3 py-2 text-left">Snapshot</th>
-              <th className="px-3 py-2 text-right">Total</th>
-              <th className="px-3 py-2 text-right">Bank</th>
-              <th className="px-3 py-2 text-right">Investment</th>
-              <th className="px-3 py-2 text-right">Tax Advantaged</th>
-              <th className="px-3 py-2 text-right">Wallets / Crypto</th>
-              <th className="px-3 py-2 text-right">Cash</th>
-              <th className="px-3 py-2"></th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-ink-100">
-            {snapshots.data?.map((s) => {
-              const point = series.data?.find((p) => p.snapshot_date === s.snapshot_date);
-              return (
-                <tr key={s.id} className="table-row-hover">
-                  <td className="px-3 py-2">{dateLabel(s.snapshot_date)}</td>
-                  <td className="px-3 py-2 text-right font-medium">{currency(point?.total)}</td>
-                  <td className="px-3 py-2 text-right">{currency(point?.by_category.bank)}</td>
-                  <td className="px-3 py-2 text-right">{currency(point?.by_category.investment)}</td>
-                  <td className="px-3 py-2 text-right">{currency(point?.by_category.tax_advantaged)}</td>
-                  <td className="px-3 py-2 text-right">{currency(point?.by_category.nonsense)}</td>
-                  <td className="px-3 py-2 text-right">{currency(point?.by_category.cash)}</td>
-                  <td className="px-3 py-2 text-right">
-                    <button className="btn-ghost text-xs" onClick={() => setEditingSnapId(s.id)}>
-                      Edit
-                    </button>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-
-      {editingSnapId !== null && (
-        <SnapshotEditor
-          // Re-key on the editing target so reopening the panel for a different
-          // snapshot resets local state (the useState initializer only runs once).
-          key={String(editingSnapId)}
-          snapshot={
-            editingSnapId === "new"
-              ? null
-              : (snapshots.data?.find((s) => s.id === editingSnapId) ?? null)
-          }
-          prefillFrom={editingSnapId === "new" ? latest : undefined}
-          accounts={accounts.data ?? []}
-          accountById={accountById}
-          onClose={() => setEditingSnapId(null)}
-          onSaved={() => {
-            qc.invalidateQueries({ queryKey: ["snapshots"] });
-            qc.invalidateQueries({ queryKey: ["nw-series"] });
-            qc.invalidateQueries({ queryKey: ["goal-progress"] });
-            setEditingSnapId(null);
-          }}
-        />
-      )}
+      <NetWorthHeader showLog={showLog} onShowLog={setShowLog} onNewSnapshot={() => setEditingSnapId("new")} />
+      <NetWorthValuePanel
+        data={chartData}
+        focused={focusedValueSeries}
+        showLog={showLog}
+        start={rangeStart}
+        end={rangeEnd}
+        chartColors={chartColors}
+        onFocus={setFocusedValueSeries}
+        onStart={setRangeStart}
+        onEnd={setRangeEnd}
+        onAllTime={() => {
+          setRangeStart("");
+          setRangeEnd("");
+        }}
+      />
+      <NetWorthAllocationPanel
+        data={chartData}
+        focused={focusedPercentSeries}
+        chartColors={chartColors}
+        onFocus={setFocusedPercentSeries}
+      />
+      <NetWorthSnapshotsTable
+        snapshots={snapshots.data ?? []}
+        series={series.data ?? []}
+        onEdit={setEditingSnapId}
+      />
+      <SnapshotEditorDialog
+        editingSnapId={editingSnapId}
+        snapshot={editingSnapshot}
+        latest={latest}
+        accounts={accounts.data ?? []}
+        accountById={accountById}
+        onClose={() => setEditingSnapId(null)}
+        onSaved={() => {
+          qc.invalidateQueries({ queryKey: ["snapshots"] });
+          qc.invalidateQueries({ queryKey: ["nw-series"] });
+          qc.invalidateQueries({ queryKey: ["goal-progress"] });
+          setEditingSnapId(null);
+        }}
+      />
     </div>
   );
 }
 
-function DateRangeControls({
+function NetWorthHeader({
+  showLog,
+  onShowLog,
+  onNewSnapshot,
+}: {
+  showLog: boolean;
+  onShowLog: (value: boolean) => void;
+  onNewSnapshot: () => void;
+}) {
+  return (
+    <div className="flex items-baseline justify-between">
+      <h1 className="text-2xl font-semibold tracking-tight">Net Worth</h1>
+      <div className="flex items-center gap-2">
+        <label className="flex items-center gap-1 text-sm text-ink-600">
+          <input type="checkbox" checked={showLog} onChange={(e) => onShowLog(e.target.checked)} />
+          log scale
+        </label>
+        <button className="btn-primary" onClick={onNewSnapshot}>+ New snapshot</button>
+      </div>
+    </div>
+  );
+}
+
+function NetWorthValuePanel({
+  data,
+  focused,
+  showLog,
   start,
   end,
+  chartColors,
+  onFocus,
   onStart,
   onEnd,
+  onAllTime,
+}: {
+  data: NetWorthChartRow[];
+  focused: string | null;
+  showLog: boolean;
+  start: string;
+  end: string;
+  chartColors: ChartColors;
+  onFocus: (value: string | null) => void;
+  onStart: (value: string) => void;
+  onEnd: (value: string) => void;
+  onAllTime: () => void;
+}) {
+  return (
+    <div className="card p-4">
+      <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
+        <div>
+          <div className="text-sm font-medium">Net worth by account category</div>
+          {focused && <button className="btn-ghost text-xs mt-1" onClick={() => onFocus(null)}>show all categories</button>}
+        </div>
+        <NetWorthChartControls
+          start={start}
+          end={end}
+          chartColors={chartColors}
+          onStart={onStart}
+          onEnd={onEnd}
+          onAllTime={onAllTime}
+        />
+      </div>
+      <div className="h-72">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={data} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
+            <CartesianGrid stroke="#eceef2" vertical={false} />
+            <XAxis dataKey="date" tickFormatter={(date) => shortDateLabel(date)} tick={{ fontSize: 12 }} stroke="#7a8392" />
+            <YAxis
+              scale={showLog ? "log" : "auto"}
+              domain={showLog ? [1000, "auto"] : [0, "auto"]}
+              allowDataOverflow
+              tickFormatter={(value) => compactCurrency(value)}
+              tick={{ fontSize: 12 }}
+              stroke="#7a8392"
+              width={70}
+            />
+            <Tooltip formatter={(value: number) => currency(value)} labelFormatter={(label) => dateLabel(label as string)} />
+            <Legend
+              content={(props) => (
+                <ChartLegend payload={props.payload as any} focusedKey={focused} onToggle={(key) => onFocus(focused === key ? null : key)} />
+              )}
+            />
+            <Line
+              type="monotone"
+              dataKey="total"
+              stroke={colorAt(chartColors.colors, 0)}
+              strokeWidth={2}
+              dot={false}
+              name="Total Net Worth"
+              connectNulls
+              hide={focused !== null && focused !== "total"}
+            />
+            {ACCOUNT_CATEGORY_SERIES.map((seriesDef, index) => (
+              <Line
+                key={seriesDef.key}
+                type="monotone"
+                dataKey={seriesDef.key}
+                stroke={colorAt(chartColors.colors, index + 1)}
+                strokeWidth={1.6}
+                dot={false}
+                name={seriesDef.label}
+                connectNulls
+                hide={focused !== null && focused !== seriesDef.key}
+              />
+            ))}
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+function NetWorthChartControls({
+  start,
+  end,
+  chartColors,
+  onStart,
+  onEnd,
+  onAllTime,
 }: {
   start: string;
   end: string;
+  chartColors: ChartColors;
   onStart: (value: string) => void;
   onEnd: (value: string) => void;
+  onAllTime: () => void;
 }) {
   return (
-    <>
-      <label className="flex items-center gap-1">
-        <span className="text-ink-500">From</span>
-        <input type="date" className="input" value={start} onChange={(e) => onStart(e.target.value)} />
-      </label>
-      <label className="flex items-center gap-1">
-        <span className="text-ink-500">To</span>
-        <input type="date" className="input" value={end} onChange={(e) => onEnd(e.target.value)} />
-      </label>
-    </>
+    <div className="flex items-center gap-2 text-xs flex-wrap">
+      <DateRangeControls start={start} end={end} onStart={onStart} onEnd={onEnd} />
+      <button type="button" className="btn-ghost text-xs" onClick={onAllTime}>all time</button>
+      <ChartColorControls
+        paletteId={chartColors.paletteId}
+        colors={chartColors.colors}
+        onPaletteChange={chartColors.setPaletteId}
+        onColorChange={chartColors.setColor}
+      />
+    </div>
+  );
+}
+
+function NetWorthAllocationPanel({
+  data,
+  focused,
+  chartColors,
+  onFocus,
+}: {
+  data: NetWorthChartRow[];
+  focused: string | null;
+  chartColors: ChartColors;
+  onFocus: (value: string | null) => void;
+}) {
+  return (
+    <div className="card p-4">
+      <div className="mb-2">
+        <div className="text-sm font-medium">Allocation by account category</div>
+        {focused && <button className="btn-ghost text-xs mt-1" onClick={() => onFocus(null)}>show all percentages</button>}
+      </div>
+      <div className="h-72">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={data}>
+            <CartesianGrid stroke="#eceef2" vertical={false} />
+            <XAxis dataKey="date" tickFormatter={(date) => shortDateLabel(date)} tick={{ fontSize: 12 }} stroke="#7a8392" />
+            <YAxis domain={["auto", "auto"]} tickFormatter={(value) => `${Number(value).toFixed(0)}%`} tick={{ fontSize: 12 }} stroke="#7a8392" width={70} />
+            <Tooltip formatter={(value: number) => `${value.toFixed(1)}%`} labelFormatter={(label) => dateLabel(label as string)} />
+            <Legend
+              content={(props) => (
+                <ChartLegend payload={props.payload as any} focusedKey={focused} onToggle={(key) => onFocus(focused === key ? null : key)} />
+              )}
+            />
+            {ACCOUNT_CATEGORY_SERIES.map((seriesDef, index) => (
+              <Line
+                key={seriesDef.pctKey}
+                dataKey={seriesDef.pctKey}
+                stroke={colorAt(chartColors.colors, index + 1)}
+                name={seriesDef.label}
+                dot={false}
+                connectNulls
+                hide={focused !== null && focused !== seriesDef.pctKey}
+              />
+            ))}
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+function NetWorthSnapshotsTable({
+  snapshots,
+  series,
+  onEdit,
+}: {
+  snapshots: NetWorthSnapshot[];
+  series: NetWorthSeriesPoint[];
+  onEdit: (snapshotId: number) => void;
+}) {
+  return (
+    <div className="card overflow-x-auto">
+      <table className="text-sm w-full tabular">
+        <thead className="bg-ink-50">
+          <tr>
+            <th className="px-3 py-2 text-left">Snapshot</th>
+            <th className="px-3 py-2 text-right">Total</th>
+            <th className="px-3 py-2 text-right">Bank</th>
+            <th className="px-3 py-2 text-right">Investment</th>
+            <th className="px-3 py-2 text-right">Tax Advantaged</th>
+            <th className="px-3 py-2 text-right">Wallets / Crypto</th>
+            <th className="px-3 py-2 text-right">Cash</th>
+            <th className="px-3 py-2"></th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-ink-100">
+          {snapshots.map((snapshot) => (
+            <NetWorthSnapshotRow
+              key={snapshot.id}
+              snapshot={snapshot}
+              point={series.find((point) => point.snapshot_date === snapshot.snapshot_date)}
+              onEdit={onEdit}
+            />
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function NetWorthSnapshotRow({
+  snapshot,
+  point,
+  onEdit,
+}: {
+  snapshot: NetWorthSnapshot;
+  point?: NetWorthSeriesPoint;
+  onEdit: (snapshotId: number) => void;
+}) {
+  return (
+    <tr className="table-row-hover">
+      <td className="px-3 py-2">{dateLabel(snapshot.snapshot_date)}</td>
+      <td className="px-3 py-2 text-right font-medium">{currency(point?.total)}</td>
+      <td className="px-3 py-2 text-right">{currency(point?.by_category.bank)}</td>
+      <td className="px-3 py-2 text-right">{currency(point?.by_category.investment)}</td>
+      <td className="px-3 py-2 text-right">{currency(point?.by_category.tax_advantaged)}</td>
+      <td className="px-3 py-2 text-right">{currency(point?.by_category.nonsense)}</td>
+      <td className="px-3 py-2 text-right">{currency(point?.by_category.cash)}</td>
+      <td className="px-3 py-2 text-right">
+        <button className="btn-ghost text-xs" onClick={() => onEdit(snapshot.id)}>Edit</button>
+      </td>
+    </tr>
+  );
+}
+
+function SnapshotEditorDialog({
+  editingSnapId,
+  snapshot,
+  latest,
+  accounts,
+  accountById,
+  onClose,
+  onSaved,
+}: {
+  editingSnapId: number | "new" | null;
+  snapshot: NetWorthSnapshot | null;
+  latest?: NetWorthSnapshot;
+  accounts: Account[];
+  accountById: Record<number, Account>;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  if (editingSnapId === null) return null;
+  return (
+    <SnapshotEditor
+      key={String(editingSnapId)}
+      snapshot={snapshot}
+      prefillFrom={editingSnapId === "new" ? latest : undefined}
+      accounts={accounts}
+      accountById={accountById}
+      onClose={onClose}
+      onSaved={onSaved}
+    />
   );
 }
 

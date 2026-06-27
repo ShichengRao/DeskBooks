@@ -28,6 +28,8 @@ import { accountCategoryLabel } from "../lib/labels";
 import { compactCurrency, currency, dateLabel, num } from "../lib/fmt";
 
 const GOAL_KINDS: GoalKind[] = ["savings", "purchase", "retirement", "other"];
+type GoalForm = Partial<Goal> & { change_summary?: string };
+type GoalProgress = { current: string | null; target: string | null; percent: number | null; as_of?: string };
 
 export function Planning() {
   const goals = useQuery({ queryKey: ["goals"], queryFn: () => api.get<Goal[]>("/api/goals") });
@@ -136,10 +138,10 @@ function GoalEditor({ goalId, accounts, onClose }: { goalId: number | null; acco
   });
   const progress = useQuery({
     queryKey: ["goal-progress", goalId],
-    queryFn: () => api.get<{ current: string | null; target: string | null; percent: number | null; as_of?: string }>(`/api/goals/${goalId}/progress`),
+    queryFn: () => api.get<GoalProgress>(`/api/goals/${goalId}/progress`),
     enabled: goalId !== null,
   });
-  const [form, setForm] = useState<Partial<Goal> & { change_summary?: string }>({
+  const [form, setForm] = useState<GoalForm>({
     title: "",
     target_amount: null,
     target_date: null,
@@ -195,147 +197,201 @@ function GoalEditor({ goalId, accounts, onClose }: { goalId: number | null; acco
       onSubmit={() => save.mutate()}
       maxWidth="max-w-3xl"
     >
-        {progress.data && (
-          <div className="card p-3 mb-4 bg-brand-50">
-            <div className="flex items-baseline justify-between text-sm">
-              <span>Current progress</span>
-              <span className="font-semibold tabular">
-                {currency(progress.data.current)} / {currency(progress.data.target)}{" "}
-                {progress.data.percent !== null && `(${progress.data.percent.toFixed(1)}%)`}
-              </span>
-            </div>
-            {progress.data.as_of && (
-              <div className="text-xs text-ink-500 mt-1">as of {dateLabel(progress.data.as_of)}</div>
-            )}
-            <div className="mt-2 h-1.5 bg-white rounded-full overflow-hidden">
-              <div
-                className="h-full bg-brand-500"
-                style={{ width: `${Math.min(100, Math.max(0, progress.data.percent ?? 0))}%` }}
-              />
-            </div>
-          </div>
-        )}
-
-        <div className="space-y-3">
-          <Field label="Title">
-            <input className="input" value={form.title ?? ""} onChange={(e) => { setForm({ ...form, title: e.target.value }); setEdited(true); }} />
-          </Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Target amount">
-              <input
-                type="number"
-                step="0.01"
-                className="input tabular"
-                value={form.target_amount ?? ""}
-                onChange={(e) => { setForm({ ...form, target_amount: e.target.value || null }); setEdited(true); }}
-              />
-            </Field>
-            <Field label="Target date">
-              <input
-                type="date"
-                className="input"
-                value={form.target_date ?? ""}
-                onChange={(e) => { setForm({ ...form, target_date: e.target.value || null }); setEdited(true); }}
-              />
-            </Field>
-            <Field label="Kind">
-              <select
-                className="input"
-                value={form.kind ?? "savings"}
-                onChange={(e) => { setForm({ ...form, kind: e.target.value as GoalKind }); setEdited(true); }}
-              >
-                {GOAL_KINDS.map((k) => (
-                  <option key={k} value={k}>{k}</option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Status">
-              <select
-                className="input"
-                value={form.status ?? "active"}
-                onChange={(e) => { setForm({ ...form, status: e.target.value as Goal["status"] }); setEdited(true); }}
-              >
-                <option value="active">active</option>
-                <option value="met">met</option>
-                <option value="paused">paused</option>
-                <option value="abandoned">abandoned</option>
-              </select>
-            </Field>
-          </div>
-          <Field label="Linked accounts">
-            <select
-              className="input"
-              multiple
-              size={6}
-              value={(form.linked_account_ids ?? []).map(String)}
-              onChange={(e) => {
-                const ids = Array.from(e.target.selectedOptions).map((o) => parseInt(o.value, 10));
-                setForm({ ...form, linked_account_ids: ids });
-                setEdited(true);
-              }}
-            >
-              {accounts.map((a) => (
-                <option key={a.id} value={a.id}>{a.name} ({accountCategoryLabel(a.account_category)})</option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Notes (markdown)">
-            <textarea
-              className="input min-h-[10rem] font-mono text-xs"
-              value={form.notes_markdown ?? ""}
-              onChange={(e) => { setForm({ ...form, notes_markdown: e.target.value }); setEdited(true); }}
-            />
-          </Field>
-          {goalId !== null && (
-            <Field label="Change summary (shown in history)">
-              <input
-                className="input"
-                placeholder="why am I editing this goal?"
-                value={form.change_summary ?? ""}
-                onChange={(e) => setForm({ ...form, change_summary: e.target.value })}
-              />
-            </Field>
-          )}
-        </div>
-
-        <div className="sticky bottom-0 z-10 -mx-6 mt-4 flex items-center gap-2 border-t border-ink-100 bg-white px-6 py-3">
-          <button type="submit" className="btn-primary" disabled={save.isPending}>
-            Save
-          </button>
-          <button type="button" className="btn" onClick={onClose}>Cancel</button>
-          {goalId !== null && (
-            <button
-              type="button"
-              className="btn-danger ml-auto"
-              onClick={() => {
-                if (confirm("Delete this goal?")) remove.mutate();
-              }}
-              disabled={remove.isPending}
-            >
-              Delete goal
-            </button>
-          )}
-        </div>
-
-        {goalId !== null && (
-          <div className="mt-6">
-            <div className="text-sm font-medium mb-2">History</div>
-            <ul className="space-y-2">
-              {revisions.data?.map((r) => (
-                <li key={r.id} className="card p-3 text-xs">
-                  <div className="flex items-baseline justify-between">
-                    <span className="font-medium">{r.change_summary ?? "(no summary)"}</span>
-                    <span className="text-ink-500">{dateLabel(r.changed_at)}</span>
-                  </div>
-                  <pre className="mt-2 text-[11px] text-ink-600 overflow-x-auto whitespace-pre-wrap">
-                    {JSON.stringify(r.snapshot, null, 2)}
-                  </pre>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+        <GoalProgressCard progress={progress.data ?? null} />
+        <GoalFormFields
+          goalId={goalId}
+          form={form}
+          accounts={accounts}
+          onChange={(patch, markEdited = true) => {
+            setForm({ ...form, ...patch });
+            if (markEdited) setEdited(true);
+          }}
+        />
+        <GoalEditorActions
+          goalId={goalId}
+          savePending={save.isPending}
+          deletePending={remove.isPending}
+          onClose={onClose}
+          onDelete={() => remove.mutate()}
+        />
+        <GoalHistory goalId={goalId} revisions={revisions.data ?? []} />
     </SidePanel>
+  );
+}
+
+function GoalProgressCard({ progress }: { progress: GoalProgress | null }) {
+  if (!progress) return null;
+  return (
+    <div className="card p-3 mb-4 bg-brand-50">
+      <div className="flex items-baseline justify-between text-sm">
+        <span>Current progress</span>
+        <span className="font-semibold tabular">
+          {currency(progress.current)} / {currency(progress.target)}{" "}
+          {progress.percent !== null && `(${progress.percent.toFixed(1)}%)`}
+        </span>
+      </div>
+      {progress.as_of && <div className="text-xs text-ink-500 mt-1">as of {dateLabel(progress.as_of)}</div>}
+      <div className="mt-2 h-1.5 bg-white rounded-full overflow-hidden">
+        <div
+          className="h-full bg-brand-500"
+          style={{ width: `${Math.min(100, Math.max(0, progress.percent ?? 0))}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function GoalFormFields({
+  goalId,
+  form,
+  accounts,
+  onChange,
+}: {
+  goalId: number | null;
+  form: GoalForm;
+  accounts: Account[];
+  onChange: (patch: GoalForm, markEdited?: boolean) => void;
+}) {
+  return (
+    <div className="space-y-3">
+      <Field label="Title">
+        <input className="input" value={form.title ?? ""} onChange={(e) => onChange({ title: e.target.value })} />
+      </Field>
+      <GoalTargetFields form={form} onChange={onChange} />
+      <Field label="Linked accounts">
+        <select
+          className="input"
+          multiple
+          size={6}
+          value={(form.linked_account_ids ?? []).map(String)}
+          onChange={(e) => {
+            const ids = Array.from(e.target.selectedOptions).map((option) => parseInt(option.value, 10));
+            onChange({ linked_account_ids: ids });
+          }}
+        >
+          {accounts.map((account) => (
+            <option key={account.id} value={account.id}>{account.name} ({accountCategoryLabel(account.account_category)})</option>
+          ))}
+        </select>
+      </Field>
+      <Field label="Notes (markdown)">
+        <textarea
+          className="input min-h-[10rem] font-mono text-xs"
+          value={form.notes_markdown ?? ""}
+          onChange={(e) => onChange({ notes_markdown: e.target.value })}
+        />
+      </Field>
+      {goalId !== null && (
+        <Field label="Change summary (shown in history)">
+          <input
+            className="input"
+            placeholder="why am I editing this goal?"
+            value={form.change_summary ?? ""}
+            onChange={(e) => onChange({ change_summary: e.target.value }, false)}
+          />
+        </Field>
+      )}
+    </div>
+  );
+}
+
+function GoalTargetFields({
+  form,
+  onChange,
+}: {
+  form: GoalForm;
+  onChange: (patch: GoalForm, markEdited?: boolean) => void;
+}) {
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      <Field label="Target amount">
+        <input
+          type="number"
+          step="0.01"
+          className="input tabular"
+          value={form.target_amount ?? ""}
+          onChange={(e) => onChange({ target_amount: e.target.value || null })}
+        />
+      </Field>
+      <Field label="Target date">
+        <input
+          type="date"
+          className="input"
+          value={form.target_date ?? ""}
+          onChange={(e) => onChange({ target_date: e.target.value || null })}
+        />
+      </Field>
+      <Field label="Kind">
+        <select className="input" value={form.kind ?? "savings"} onChange={(e) => onChange({ kind: e.target.value as GoalKind })}>
+          {GOAL_KINDS.map((kind) => (
+            <option key={kind} value={kind}>{kind}</option>
+          ))}
+        </select>
+      </Field>
+      <Field label="Status">
+        <select className="input" value={form.status ?? "active"} onChange={(e) => onChange({ status: e.target.value as Goal["status"] })}>
+          <option value="active">active</option>
+          <option value="met">met</option>
+          <option value="paused">paused</option>
+          <option value="abandoned">abandoned</option>
+        </select>
+      </Field>
+    </div>
+  );
+}
+
+function GoalEditorActions({
+  goalId,
+  savePending,
+  deletePending,
+  onClose,
+  onDelete,
+}: {
+  goalId: number | null;
+  savePending: boolean;
+  deletePending: boolean;
+  onClose: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div className="sticky bottom-0 z-10 -mx-6 mt-4 flex items-center gap-2 border-t border-ink-100 bg-white px-6 py-3">
+      <button type="submit" className="btn-primary" disabled={savePending}>Save</button>
+      <button type="button" className="btn" onClick={onClose}>Cancel</button>
+      {goalId !== null && (
+        <button
+          type="button"
+          className="btn-danger ml-auto"
+          onClick={() => {
+            if (confirm("Delete this goal?")) onDelete();
+          }}
+          disabled={deletePending}
+        >
+          Delete goal
+        </button>
+      )}
+    </div>
+  );
+}
+
+function GoalHistory({ goalId, revisions }: { goalId: number | null; revisions: GoalRevision[] }) {
+  if (goalId === null) return null;
+  return (
+    <div className="mt-6">
+      <div className="text-sm font-medium mb-2">History</div>
+      <ul className="space-y-2">
+        {revisions.map((revision) => (
+          <li key={revision.id} className="card p-3 text-xs">
+            <div className="flex items-baseline justify-between">
+              <span className="font-medium">{revision.change_summary ?? "(no summary)"}</span>
+              <span className="text-ink-500">{dateLabel(revision.changed_at)}</span>
+            </div>
+            <pre className="mt-2 text-[11px] text-ink-600 overflow-x-auto whitespace-pre-wrap">
+              {JSON.stringify(revision.snapshot, null, 2)}
+            </pre>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

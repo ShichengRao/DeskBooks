@@ -1,15 +1,12 @@
 from __future__ import annotations
 
-import json
-from datetime import date
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from .. import models, schemas
-from ..db import get_db
+from .common import DbSession, get_or_404
 
 router = APIRouter(prefix="/api/goals", tags=["goals"])
 
@@ -29,7 +26,7 @@ def _goal_to_dict(g: models.Goal) -> dict:
 
 
 @router.get("", response_model=list[schemas.GoalOut])
-def list_goals(include_archived: bool = False, db: Session = Depends(get_db)):
+def list_goals(db: DbSession, include_archived: bool = False):
     stmt = select(models.Goal).order_by(models.Goal.sort_order, models.Goal.created_at.desc())
     if not include_archived:
         stmt = stmt.where(models.Goal.archived.is_(False))
@@ -37,7 +34,7 @@ def list_goals(include_archived: bool = False, db: Session = Depends(get_db)):
 
 
 @router.post("", response_model=schemas.GoalOut)
-def create_goal(body: schemas.GoalIn, db: Session = Depends(get_db)):
+def create_goal(body: schemas.GoalIn, db: DbSession):
     obj = models.Goal(**body.model_dump())
     db.add(obj)
     db.flush()
@@ -52,18 +49,13 @@ def create_goal(body: schemas.GoalIn, db: Session = Depends(get_db)):
 
 
 @router.get("/{goal_id}", response_model=schemas.GoalOut)
-def get_goal(goal_id: int, db: Session = Depends(get_db)):
-    obj = db.get(models.Goal, goal_id)
-    if not obj:
-        raise HTTPException(404)
-    return obj
+def get_goal(goal_id: int, db: DbSession):
+    return get_or_404(db, models.Goal, goal_id)
 
 
 @router.patch("/{goal_id}", response_model=schemas.GoalOut)
-def update_goal(goal_id: int, body: schemas.GoalUpdate, db: Session = Depends(get_db)):
-    obj = db.get(models.Goal, goal_id)
-    if not obj:
-        raise HTTPException(404)
+def update_goal(goal_id: int, body: schemas.GoalUpdate, db: DbSession):
+    obj = get_or_404(db, models.Goal, goal_id)
     data = body.model_dump(exclude_unset=True)
     change_summary = data.pop("change_summary", None)
     changed_fields: list[str] = []
@@ -85,10 +77,8 @@ def update_goal(goal_id: int, body: schemas.GoalUpdate, db: Session = Depends(ge
 
 
 @router.delete("/{goal_id}")
-def archive_goal(goal_id: int, db: Session = Depends(get_db)):
-    obj = db.get(models.Goal, goal_id)
-    if not obj:
-        raise HTTPException(404)
+def archive_goal(goal_id: int, db: DbSession):
+    obj = get_or_404(db, models.Goal, goal_id)
     obj.archived = True
     db.add(
         models.GoalRevision(
@@ -100,7 +90,7 @@ def archive_goal(goal_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{goal_id}/revisions", response_model=list[schemas.GoalRevisionOut])
-def list_revisions(goal_id: int, db: Session = Depends(get_db)):
+def list_revisions(goal_id: int, db: DbSession):
     return list(
         db.scalars(
             select(models.GoalRevision)
@@ -111,10 +101,8 @@ def list_revisions(goal_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{goal_id}/progress")
-def goal_progress(goal_id: int, db: Session = Depends(get_db)):
-    goal = db.get(models.Goal, goal_id)
-    if not goal:
-        raise HTTPException(404)
+def goal_progress(goal_id: int, db: DbSession):
+    goal = get_or_404(db, models.Goal, goal_id)
     linked = goal.linked_account_ids or []
     if not linked:
         return {"current": None, "target": goal.target_amount, "percent": None}

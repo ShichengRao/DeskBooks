@@ -7,11 +7,16 @@ to outflow-negative so the database is consistent regardless of source.
 """
 from __future__ import annotations
 
-from decimal import Decimal
-
 from ..models import TransactionKind
 from ..schemas import ImportDraftRow
-from .base import CsvImporter, _read_dictrows, guess_merchant, normalize_description, register
+from .base import (
+    CsvImporter,
+    _read_dictrows,
+    draft_row,
+    normalize_description,
+    register,
+    row_value,
+)
 
 
 @register
@@ -32,16 +37,16 @@ class AmexImporter(CsvImporter):
         _, rows = _read_dictrows(csv_text)
         out: list[ImportDraftRow] = []
         for i, r in enumerate(rows):
-            getv = lambda k: next((v for kk, v in r.items() if kk.upper() == k), "")
-            d = cls._parse_date(getv("DATE"))
+            d = cls._parse_date(row_value(r, "DATE"))
             if not d:
                 continue
-            amt = cls._parse_amount(getv("AMOUNT"))
+            amt = cls._parse_amount(row_value(r, "AMOUNT"))
             if amt is None:
                 continue
             # invert: Amex charges-positive -> outflow-negative
             amt = -amt
-            desc = normalize_description(getv("DESCRIPTION"))
+            raw_desc = row_value(r, "DESCRIPTION")
+            desc = normalize_description(raw_desc)
             kind = TransactionKind.uncategorized
             if (
                 "AUTOPAY PAYMENT" in desc.upper()
@@ -50,16 +55,14 @@ class AmexImporter(CsvImporter):
             ):
                 kind = TransactionKind.cc_payment
             out.append(
-                ImportDraftRow(
+                draft_row(
                     row_index=i,
                     date=d,
-                    post_date=None,
-                    description_raw=getv("DESCRIPTION"),
+                    description_raw=raw_desc,
                     description_normalized=desc,
-                    merchant=guess_merchant(desc),
                     amount=amt,
                     suggested_kind=kind,
-                    raw=dict(r),
+                    raw=r,
                 )
             )
         return out

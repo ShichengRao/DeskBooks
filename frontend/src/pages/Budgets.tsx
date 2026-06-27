@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
 import { api, qs } from "../api/client";
 import type {
@@ -35,6 +36,10 @@ function monthValue(dateValue: string) {
 function moneyInput(value: string | null) {
   if (value === null) return "";
   return Number(value).toFixed(2);
+}
+
+function invalidateBudgets(qc: QueryClient) {
+  qc.invalidateQueries({ queryKey: ["budgets"] });
 }
 
 function SummaryCard({
@@ -157,8 +162,6 @@ export function Budgets() {
     );
   }, [dirtyDefaults, dirtyOverrides, report.data]);
 
-  const refresh = () => qc.invalidateQueries({ queryKey: ["budgets"] });
-
   const saveDefault = useMutation({
     mutationFn: (row: BudgetReportRow) => {
       const raw = defaultDrafts[row.category_id]?.trim() ?? "";
@@ -178,7 +181,7 @@ export function Budgets() {
         next.delete(row.category_id);
         return next;
       });
-      refresh();
+      invalidateBudgets(qc);
     },
   });
 
@@ -202,7 +205,7 @@ export function Budgets() {
         next.delete(row.category_id);
         return next;
       });
-      refresh();
+      invalidateBudgets(qc);
     },
   });
 
@@ -236,167 +239,356 @@ export function Budgets() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <h1 className="text-2xl font-semibold tracking-tight">Budgets</h1>
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="block">
-            <div className="label mb-1">Range</div>
-            <select className="input w-36" value={preset} onChange={(e) => setPreset(e.target.value as RangePreset)}>
-              <option value="6m">Past 6 months</option>
-              <option value="12m">Past year</option>
-              <option value="custom">Custom</option>
-            </select>
-          </label>
-          {preset === "custom" ? (
-            <>
-              <label className="block">
-                <div className="label mb-1">Start</div>
-                <input type="month" className="input w-40" value={customStart} onChange={(e) => setCustomStart(e.target.value)} />
-              </label>
-              <label className="block">
-                <div className="label mb-1">End</div>
-                <input type="month" className="input w-40" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} />
-              </label>
-            </>
-          ) : (
+      <BudgetsHeader
+        preset={preset}
+        rangeEnd={rangeEnd}
+        customStart={customStart}
+        customEnd={customEnd}
+        onPreset={setPreset}
+        onRangeEnd={setRangeEnd}
+        onCustomStart={setCustomStart}
+        onCustomEnd={setCustomEnd}
+      />
+      <BudgetSummaryCards
+        report={report.data}
+        isRangeView={isRangeView}
+        focusSummary={focusSummary}
+        rangeDelta={rangeDelta}
+        focusDelta={focusDelta}
+      />
+      <BudgetMonthSelector
+        months={report.data?.months ?? []}
+        focusMonth={focusMonth}
+        onFocusMonth={(clicked) => setFocusMonth((currentFocus) => (currentFocus === clicked ? null : clicked))}
+      />
+      <BudgetRowsTable
+        rows={rows}
+        isRangeView={isRangeView}
+        startMonth={startMonth}
+        endMonth={endMonth}
+        focusMonth={focusMonth}
+        defaultDrafts={defaultDrafts}
+        overrideDrafts={overrideDrafts}
+        changedDefaults={changedDefaults}
+        changedOverrides={changedOverrides}
+        savingDefault={saveDefault.isPending}
+        savingOverride={saveOverride.isPending}
+        onDefaultDraft={(row, value) => {
+          setDefaultDrafts((prev) => ({ ...prev, [row.category_id]: value }));
+          setDirtyDefaults((prev) => new Set(prev).add(row.category_id));
+        }}
+        onOverrideDraft={(row, value) => {
+          setOverrideDrafts((prev) => ({ ...prev, [row.category_id]: value }));
+          setDirtyOverrides((prev) => new Set(prev).add(row.category_id));
+        }}
+        onSaveDefault={(row) => saveDefault.mutate(row)}
+        onSaveOverride={(row) => saveOverride.mutate(row)}
+      />
+    </div>
+  );
+}
+
+function BudgetsHeader({
+  preset,
+  rangeEnd,
+  customStart,
+  customEnd,
+  onPreset,
+  onRangeEnd,
+  onCustomStart,
+  onCustomEnd,
+}: {
+  preset: RangePreset;
+  rangeEnd: string;
+  customStart: string;
+  customEnd: string;
+  onPreset: (preset: RangePreset) => void;
+  onRangeEnd: (month: string) => void;
+  onCustomStart: (month: string) => void;
+  onCustomEnd: (month: string) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-end justify-between gap-3">
+      <h1 className="text-2xl font-semibold tracking-tight">Budgets</h1>
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="block">
+          <div className="label mb-1">Range</div>
+          <select className="input w-36" value={preset} onChange={(e) => onPreset(e.target.value as RangePreset)}>
+            <option value="6m">Past 6 months</option>
+            <option value="12m">Past year</option>
+            <option value="custom">Custom</option>
+          </select>
+        </label>
+        {preset === "custom" ? (
+          <>
             <label className="block">
-              <div className="label mb-1">Ending</div>
-              <input type="month" className="input w-40" value={rangeEnd} onChange={(e) => setRangeEnd(e.target.value)} />
+              <div className="label mb-1">Start</div>
+              <input type="month" className="input w-40" value={customStart} onChange={(e) => onCustomStart(e.target.value)} />
             </label>
-          )}
-        </div>
+            <label className="block">
+              <div className="label mb-1">End</div>
+              <input type="month" className="input w-40" value={customEnd} onChange={(e) => onCustomEnd(e.target.value)} />
+            </label>
+          </>
+        ) : (
+          <label className="block">
+            <div className="label mb-1">Ending</div>
+            <input type="month" className="input w-40" value={rangeEnd} onChange={(e) => onRangeEnd(e.target.value)} />
+          </label>
+        )}
       </div>
+    </div>
+  );
+}
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <SummaryCard label="Range planned" value={report.data?.planned_total ?? "0"} />
-        <SummaryCard label="Range actual" value={report.data?.actual_total ?? "0"} />
-        <SummaryCard label="Range delta" value={report.data?.delta_total ?? "0"} tone={rangeDelta >= 0 ? "good" : "bad"} />
-        <SummaryCard
-          label={isRangeView ? "Table delta" : "Selected delta"}
-          value={isRangeView ? (report.data?.delta_total ?? "0") : (focusSummary?.delta_total ?? "0")}
-          tone={(isRangeView ? rangeDelta : focusDelta) >= 0 ? "good" : "bad"}
-        />
-      </div>
+function BudgetSummaryCards({
+  report,
+  isRangeView,
+  focusSummary,
+  rangeDelta,
+  focusDelta,
+}: {
+  report?: BudgetReport;
+  isRangeView: boolean;
+  focusSummary: BudgetMonthSummary | null | undefined;
+  rangeDelta: number;
+  focusDelta: number;
+}) {
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <SummaryCard label="Range planned" value={report?.planned_total ?? "0"} />
+      <SummaryCard label="Range actual" value={report?.actual_total ?? "0"} />
+      <SummaryCard label="Range delta" value={report?.delta_total ?? "0"} tone={rangeDelta >= 0 ? "good" : "bad"} />
+      <SummaryCard
+        label={isRangeView ? "Table delta" : "Selected delta"}
+        value={isRangeView ? (report?.delta_total ?? "0") : (focusSummary?.delta_total ?? "0")}
+        tone={(isRangeView ? rangeDelta : focusDelta) >= 0 ? "good" : "bad"}
+      />
+    </div>
+  );
+}
 
-      <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-3">
-        {report.data?.months.map((month) => (
+function BudgetMonthSelector({
+  months,
+  focusMonth,
+  onFocusMonth,
+}: {
+  months: BudgetMonthSummary[];
+  focusMonth: string | null;
+  onFocusMonth: (month: string) => void;
+}) {
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-3">
+      {months.map((month) => {
+        const value = monthValue(month.month);
+        return (
           <MonthButton
             key={month.month}
             month={month}
-            active={focusMonth !== null && monthValue(month.month) === focusMonth}
-            onClick={() => {
-              const clicked = monthValue(month.month);
-              setFocusMonth((currentFocus) => (currentFocus === clicked ? null : clicked));
-            }}
+            active={focusMonth !== null && value === focusMonth}
+            onClick={() => onFocusMonth(value)}
           />
-        ))}
-      </div>
+        );
+      })}
+    </div>
+  );
+}
 
-      <div className="card overflow-hidden">
-        <div className="px-3 py-2 bg-ink-50 flex items-baseline justify-between">
-          <div className="text-sm font-medium">
-            {isRangeView
-              ? `${monthLabel(startMonth)} to ${monthLabel(endMonth)} category net`
-              : `${monthLabel(focusMonth)} category plan`}
-          </div>
-          <div className="text-xs text-ink-500">
-            {isRangeView
-              ? "Click a month above to edit defaults and overrides for that month."
-              : "Defaults apply every month; overrides replace the default for this month only."}
-          </div>
-        </div>
-        <table className="w-full text-sm tabular">
-          <thead className="bg-ink-50 text-left">
+function BudgetRowsTable({
+  rows,
+  isRangeView,
+  startMonth,
+  endMonth,
+  focusMonth,
+  defaultDrafts,
+  overrideDrafts,
+  changedDefaults,
+  changedOverrides,
+  savingDefault,
+  savingOverride,
+  onDefaultDraft,
+  onOverrideDraft,
+  onSaveDefault,
+  onSaveOverride,
+}: {
+  rows: BudgetReportRow[];
+  isRangeView: boolean;
+  startMonth: string;
+  endMonth: string;
+  focusMonth: string | null;
+  defaultDrafts: Record<number, string>;
+  overrideDrafts: Record<number, string>;
+  changedDefaults: Set<number>;
+  changedOverrides: Set<number>;
+  savingDefault: boolean;
+  savingOverride: boolean;
+  onDefaultDraft: (row: BudgetReportRow, value: string) => void;
+  onOverrideDraft: (row: BudgetReportRow, value: string) => void;
+  onSaveDefault: (row: BudgetReportRow) => void;
+  onSaveOverride: (row: BudgetReportRow) => void;
+}) {
+  return (
+    <div className="card overflow-hidden">
+      <BudgetTableHeader isRangeView={isRangeView} startMonth={startMonth} endMonth={endMonth} focusMonth={focusMonth} />
+      <table className="w-full text-sm tabular">
+        <thead className="bg-ink-50 text-left">
+          <tr>
+            <th className="px-3 py-2 font-medium">Category</th>
+            {!isRangeView && <th className="px-3 py-2 font-medium text-right">Default</th>}
+            {!isRangeView && <th className="px-3 py-2 font-medium text-right">Override</th>}
+            <th className="px-3 py-2 font-medium text-right">{isRangeView ? "Budget" : "Effective"}</th>
+            <th className="px-3 py-2 font-medium text-right">Actual</th>
+            <th className="px-3 py-2 font-medium text-right">Delta</th>
+            <th className="px-3 py-2 font-medium text-right">Rows</th>
+            {!isRangeView && <th className="px-3 py-2 font-medium text-right">Actions</th>}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-ink-100">
+          {rows.map((row) => (
+            <BudgetRow
+              key={row.category_id}
+              row={row}
+              isRangeView={isRangeView}
+              defaultDraft={defaultDrafts[row.category_id] ?? ""}
+              overrideDraft={overrideDrafts[row.category_id] ?? ""}
+              defaultChanged={changedDefaults.has(row.category_id)}
+              overrideChanged={changedOverrides.has(row.category_id)}
+              savingDefault={savingDefault}
+              savingOverride={savingOverride}
+              onDefaultDraft={onDefaultDraft}
+              onOverrideDraft={onOverrideDraft}
+              onSaveDefault={onSaveDefault}
+              onSaveOverride={onSaveOverride}
+            />
+          ))}
+          {rows.length === 0 && (
             <tr>
-              <th className="px-3 py-2 font-medium">Category</th>
-              {!isRangeView && <th className="px-3 py-2 font-medium text-right">Default</th>}
-              {!isRangeView && <th className="px-3 py-2 font-medium text-right">Override</th>}
-              <th className="px-3 py-2 font-medium text-right">{isRangeView ? "Budget" : "Effective"}</th>
-              <th className="px-3 py-2 font-medium text-right">Actual</th>
-              <th className="px-3 py-2 font-medium text-right">Delta</th>
-              <th className="px-3 py-2 font-medium text-right">Rows</th>
-              {!isRangeView && <th className="px-3 py-2 font-medium text-right">Actions</th>}
+              <td colSpan={isRangeView ? 5 : 8} className="px-3 py-8 text-center text-ink-500">
+                No expense categories yet.
+              </td>
             </tr>
-          </thead>
-          <tbody className="divide-y divide-ink-100">
-            {rows.map((row) => {
-              const rowDelta = row.delta === null ? null : num(row.delta);
-              const defaultChanged = changedDefaults.has(row.category_id);
-              const overrideChanged = changedOverrides.has(row.category_id);
-              return (
-                <tr key={row.category_id} className="table-row-hover">
-                  <td className="px-3 py-2">
-                    <div className={clsx("font-medium", row.has_children && "text-ink-900")} style={{ paddingLeft: `${row.depth * 18}px` }}>
-                      {row.category_name}
-                    </div>
-                    {row.parent_name && (
-                      <div className="text-xs text-ink-500" style={{ paddingLeft: `${row.depth * 18}px` }}>
-                        {row.parent_name}
-                      </div>
-                    )}
-                  </td>
-                  {!isRangeView && (
-                    <td className="px-3 py-2 w-36">
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        className={clsx("input text-right tabular", defaultChanged && "border-brand-400")}
-                        value={defaultDrafts[row.category_id] ?? ""}
-                        onChange={(e) => {
-                          setDefaultDrafts((prev) => ({ ...prev, [row.category_id]: e.target.value }));
-                          setDirtyDefaults((prev) => new Set(prev).add(row.category_id));
-                        }}
-                      />
-                    </td>
-                  )}
-                  {!isRangeView && (
-                    <td className="px-3 py-2 w-36">
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        className={clsx("input text-right tabular", overrideChanged && "border-brand-400")}
-                        placeholder="inherit"
-                        value={overrideDrafts[row.category_id] ?? ""}
-                        onChange={(e) => {
-                          setOverrideDrafts((prev) => ({ ...prev, [row.category_id]: e.target.value }));
-                          setDirtyOverrides((prev) => new Set(prev).add(row.category_id));
-                        }}
-                      />
-                    </td>
-                  )}
-                  <td className="px-3 py-2 text-right font-medium">{currency(row.target_amount)}</td>
-                  <td className="px-3 py-2 text-right">{currency(row.actual_amount)}</td>
-                  <td className={clsx("px-3 py-2 text-right font-medium", rowDelta === null ? "text-ink-400" : rowDelta >= 0 ? "text-good-600" : "text-bad-600")}>
-                    {row.delta === null ? "—" : currency(row.delta, { showSign: true })}
-                  </td>
-                  <td className="px-3 py-2 text-right text-ink-500">{row.transaction_count}</td>
-                  {!isRangeView && (
-                    <td className="px-3 py-2">
-                      <div className="flex items-center justify-end gap-2">
-                        <button className="btn-primary text-xs" disabled={!defaultChanged || saveDefault.isPending} onClick={() => saveDefault.mutate(row)}>
-                          Save default
-                        </button>
-                        <button className="btn text-xs" disabled={!overrideChanged || saveOverride.isPending} onClick={() => saveOverride.mutate(row)}>
-                          Save override
-                        </button>
-                      </div>
-                    </td>
-                  )}
-                </tr>
-              );
-            })}
-            {rows.length === 0 && (
-              <tr>
-                <td colSpan={isRangeView ? 5 : 8} className="px-3 py-8 text-center text-ink-500">
-                  No expense categories yet.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function BudgetTableHeader({
+  isRangeView,
+  startMonth,
+  endMonth,
+  focusMonth,
+}: {
+  isRangeView: boolean;
+  startMonth: string;
+  endMonth: string;
+  focusMonth: string | null;
+}) {
+  return (
+    <div className="px-3 py-2 bg-ink-50 flex items-baseline justify-between">
+      <div className="text-sm font-medium">
+        {isRangeView ? `${monthLabel(startMonth)} to ${monthLabel(endMonth)} category net` : `${monthLabel(focusMonth ?? endMonth)} category plan`}
+      </div>
+      <div className="text-xs text-ink-500">
+        {isRangeView
+          ? "Click a month above to edit defaults and overrides for that month."
+          : "Defaults apply every month; overrides replace the default for this month only."}
       </div>
     </div>
+  );
+}
+
+function BudgetRow({
+  row,
+  isRangeView,
+  defaultDraft,
+  overrideDraft,
+  defaultChanged,
+  overrideChanged,
+  savingDefault,
+  savingOverride,
+  onDefaultDraft,
+  onOverrideDraft,
+  onSaveDefault,
+  onSaveOverride,
+}: {
+  row: BudgetReportRow;
+  isRangeView: boolean;
+  defaultDraft: string;
+  overrideDraft: string;
+  defaultChanged: boolean;
+  overrideChanged: boolean;
+  savingDefault: boolean;
+  savingOverride: boolean;
+  onDefaultDraft: (row: BudgetReportRow, value: string) => void;
+  onOverrideDraft: (row: BudgetReportRow, value: string) => void;
+  onSaveDefault: (row: BudgetReportRow) => void;
+  onSaveOverride: (row: BudgetReportRow) => void;
+}) {
+  const rowDelta = row.delta === null ? null : num(row.delta);
+  return (
+    <tr className="table-row-hover">
+      <td className="px-3 py-2">
+        <div className={clsx("font-medium", row.has_children && "text-ink-900")} style={{ paddingLeft: `${row.depth * 18}px` }}>
+          {row.category_name}
+        </div>
+        {row.parent_name && (
+          <div className="text-xs text-ink-500" style={{ paddingLeft: `${row.depth * 18}px` }}>
+            {row.parent_name}
+          </div>
+        )}
+      </td>
+      {!isRangeView && (
+        <BudgetAmountInput value={defaultDraft} changed={defaultChanged} onChange={(value) => onDefaultDraft(row, value)} />
+      )}
+      {!isRangeView && (
+        <BudgetAmountInput value={overrideDraft} changed={overrideChanged} placeholder="inherit" onChange={(value) => onOverrideDraft(row, value)} />
+      )}
+      <td className="px-3 py-2 text-right font-medium">{currency(row.target_amount)}</td>
+      <td className="px-3 py-2 text-right">{currency(row.actual_amount)}</td>
+      <td className={clsx("px-3 py-2 text-right font-medium", rowDelta === null ? "text-ink-400" : rowDelta >= 0 ? "text-good-600" : "text-bad-600")}>
+        {row.delta === null ? "—" : currency(row.delta, { showSign: true })}
+      </td>
+      <td className="px-3 py-2 text-right text-ink-500">{row.transaction_count}</td>
+      {!isRangeView && (
+        <td className="px-3 py-2">
+          <div className="flex items-center justify-end gap-2">
+            <button className="btn-primary text-xs" disabled={!defaultChanged || savingDefault} onClick={() => onSaveDefault(row)}>
+              Save default
+            </button>
+            <button className="btn text-xs" disabled={!overrideChanged || savingOverride} onClick={() => onSaveOverride(row)}>
+              Save override
+            </button>
+          </div>
+        </td>
+      )}
+    </tr>
+  );
+}
+
+function BudgetAmountInput({
+  value,
+  changed,
+  placeholder,
+  onChange,
+}: {
+  value: string;
+  changed: boolean;
+  placeholder?: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <td className="px-3 py-2 w-36">
+      <input
+        type="number"
+        min="0"
+        step="0.01"
+        className={clsx("input text-right tabular", changed && "border-brand-400")}
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    </td>
   );
 }

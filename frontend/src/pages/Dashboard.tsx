@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { api, qs } from "../api/client";
 import { ChartColorControls, useChartColors } from "../components/ChartColorControls";
+import { DateRangeControls } from "../components/DateRangeControls";
 import type { FireProjection, Goal, NetWorthSeriesPoint } from "../api/types";
 import { colorAt } from "../lib/chartColors";
 import { accountCategoryLabel } from "../lib/labels";
@@ -176,31 +177,6 @@ export function Dashboard() {
         </div>
       </div>
     </div>
-  );
-}
-
-function DateRangeControls({
-  start,
-  end,
-  onStart,
-  onEnd,
-}: {
-  start: string;
-  end: string;
-  onStart: (value: string) => void;
-  onEnd: (value: string) => void;
-}) {
-  return (
-    <>
-      <label className="flex items-center gap-1">
-        <span className="text-ink-500">From</span>
-        <input type="date" className="input" value={start} onChange={(e) => onStart(e.target.value)} />
-      </label>
-      <label className="flex items-center gap-1">
-        <span className="text-ink-500">To</span>
-        <input type="date" className="input" value={end} onChange={(e) => onEnd(e.target.value)} />
-      </label>
-    </>
   );
 }
 

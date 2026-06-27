@@ -2,18 +2,18 @@ from __future__ import annotations
 
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 from sqlalchemy import select
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import selectinload
 
 from .. import analytics, models, schemas
-from ..db import get_db
+from .common import DbSession, get_or_404
 
 router = APIRouter(prefix="/api/snapshots", tags=["snapshots"])
 
 
 @router.get("", response_model=list[schemas.NetWorthSnapshotOut])
-def list_snapshots(db: Session = Depends(get_db)):
+def list_snapshots(db: DbSession):
     stmt = (
         select(models.NetWorthSnapshot)
         .options(selectinload(models.NetWorthSnapshot.balances))
@@ -23,7 +23,7 @@ def list_snapshots(db: Session = Depends(get_db)):
 
 
 @router.post("", response_model=schemas.NetWorthSnapshotOut)
-def create_snapshot(body: schemas.NetWorthSnapshotIn, db: Session = Depends(get_db)):
+def create_snapshot(body: schemas.NetWorthSnapshotIn, db: DbSession):
     existing = db.scalar(
         select(models.NetWorthSnapshot).where(models.NetWorthSnapshot.snapshot_date == body.snapshot_date)
     )
@@ -44,10 +44,8 @@ def create_snapshot(body: schemas.NetWorthSnapshotIn, db: Session = Depends(get_
 
 
 @router.patch("/{snap_id}", response_model=schemas.NetWorthSnapshotOut)
-def update_snapshot(snap_id: int, body: schemas.NetWorthSnapshotUpdate, db: Session = Depends(get_db)):
-    snap = db.get(models.NetWorthSnapshot, snap_id)
-    if not snap:
-        raise HTTPException(404)
+def update_snapshot(snap_id: int, body: schemas.NetWorthSnapshotUpdate, db: DbSession):
+    snap = get_or_404(db, models.NetWorthSnapshot, snap_id)
     if body.snapshot_date is not None:
         snap.snapshot_date = body.snapshot_date
     if body.notes is not None:
@@ -80,10 +78,8 @@ def update_snapshot(snap_id: int, body: schemas.NetWorthSnapshotUpdate, db: Sess
 
 
 @router.delete("/{snap_id}")
-def delete_snapshot(snap_id: int, db: Session = Depends(get_db)):
-    snap = db.get(models.NetWorthSnapshot, snap_id)
-    if not snap:
-        raise HTTPException(404)
+def delete_snapshot(snap_id: int, db: DbSession):
+    snap = get_or_404(db, models.NetWorthSnapshot, snap_id)
     db.delete(snap)
     db.commit()
     return {"status": "deleted"}
@@ -91,9 +87,9 @@ def delete_snapshot(snap_id: int, db: Session = Depends(get_db)):
 
 @router.get("/series")
 def snapshot_series(
+    db: DbSession,
     start: date | None = None,
     end: date | None = None,
-    db: Session = Depends(get_db),
 ):
     if start is not None and end is not None and end < start:
         raise HTTPException(400, "end must be on or after start")

@@ -5,11 +5,9 @@ Amounts are outflow-negative already.
 """
 from __future__ import annotations
 
-from decimal import Decimal
-
 from ..models import TransactionKind
 from ..schemas import ImportDraftRow
-from .base import CsvImporter, _read_dictrows, guess_merchant, normalize_description, register
+from .base import CsvImporter, _read_dictrows, draft_row, normalize_description, register
 
 
 @register
@@ -43,16 +41,15 @@ class ChaseCreditImporter(CsvImporter):
             elif tx_type == "return":
                 kind = TransactionKind.refund
             out.append(
-                ImportDraftRow(
+                draft_row(
                     row_index=i,
                     date=d,
                     post_date=cls._parse_date(r.get("Post Date", "")),
                     description_raw=r.get("Description", ""),
                     description_normalized=desc,
-                    merchant=guess_merchant(desc),
-                    amount=Decimal(amt),
+                    amount=amt,
                     suggested_kind=kind,
-                    raw=dict(r),
+                    raw=r,
                 )
             )
         return out

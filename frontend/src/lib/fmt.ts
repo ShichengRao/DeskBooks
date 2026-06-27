@@ -1,7 +1,12 @@
-export const currency = (val: string | number | null | undefined, opts?: { showSign?: boolean }) => {
-  if (val === null || val === undefined || val === "") return "—";
+const parseNumberish = (val: string | number | null | undefined, fallback: number | null = null) => {
+  if (val === null || val === undefined || val === "") return fallback;
   const n = typeof val === "string" ? parseFloat(val) : val;
-  if (Number.isNaN(n)) return "—";
+  return Number.isNaN(n) ? fallback : n;
+};
+
+export const currency = (val: string | number | null | undefined, opts?: { showSign?: boolean }) => {
+  const n = parseNumberish(val);
+  if (n === null) return "—";
   const formatted = n.toLocaleString("en-US", {
     style: "currency",
     currency: "USD",
@@ -13,9 +18,8 @@ export const currency = (val: string | number | null | undefined, opts?: { showS
 };
 
 export const compactCurrency = (val: string | number | null | undefined) => {
-  if (val === null || val === undefined || val === "") return "—";
-  const n = typeof val === "string" ? parseFloat(val) : val;
-  if (Number.isNaN(n)) return "—";
+  const n = parseNumberish(val);
+  if (n === null) return "—";
   const abs = Math.abs(n);
   if (abs >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`;
   if (abs >= 10_000) return `$${(n / 1_000).toFixed(1)}k`;
@@ -35,9 +39,7 @@ const localDate = (s: string) => {
 };
 
 export const dateLabel = (s: string | null | undefined) => {
-  if (!s) return "—";
-  const d = localDate(s);
-  return d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+  return formatLocalDate(s, { year: "numeric", month: "short", day: "numeric" });
 };
 
 export const monthLabel = (yyyymm: string) => {
@@ -49,13 +51,17 @@ export const monthLabel = (yyyymm: string) => {
 export const shortDateLabel = (s: string | null | undefined) => {
   // For chart axes where horizontal space matters: "Apr 2026" not
   // "Apr 26, 2026" (which dateLabel produces).
-  if (!s) return "—";
-  const d = localDate(s);
-  return d.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+  return formatLocalDate(s, { month: "short", year: "numeric" });
 };
 
 export const num = (val: string | number | null | undefined) => {
-  if (val === null || val === undefined || val === "") return 0;
-  const n = typeof val === "string" ? parseFloat(val) : val;
-  return Number.isNaN(n) ? 0 : n;
+  return parseNumberish(val, 0) ?? 0;
 };
+
+function formatLocalDate(
+  s: string | null | undefined,
+  options: Intl.DateTimeFormatOptions,
+) {
+  if (!s) return "—";
+  return localDate(s).toLocaleDateString("en-US", options);
+}

@@ -76,10 +76,33 @@ def _apply_filters(stmt, filters: TransactionFilters):
 
 @router.get("", response_model=list[schemas.TransactionOut])
 def list_transactions(
-    filters: Annotated[TransactionFilters, Query()],
-    page: Annotated[TransactionPage, Query()],
+    start: date | None = None,
+    end: date | None = None,
+    account_id: int | None = None,
+    account_category: Annotated[list[models.AccountCategory] | None, Query()] = None,
+    category_id: int | None = None,
+    kind: Annotated[list[models.TransactionKind] | None, Query()] = None,
+    amount_min: Decimal | None = None,
+    amount_max: Decimal | None = None,
+    q: str | None = None,
+    exclude_excluded: bool = False,
+    limit: Annotated[int, Query(ge=1)] = 100,
+    offset: Annotated[int, Query(ge=0)] = 0,
     db: Session = DB_DEP,
 ):
+    filters = TransactionFilters(
+        start=start,
+        end=end,
+        account_id=account_id,
+        account_category=account_category,
+        category_id=category_id,
+        kind=kind,
+        amount_min=amount_min,
+        amount_max=amount_max,
+        q=q,
+        exclude_excluded=exclude_excluded,
+    )
+    page = TransactionPage(limit=limit, offset=offset)
     stmt = (
         select(models.Transaction)
         .options(selectinload(models.Transaction.tags), selectinload(models.Transaction.split))
@@ -92,9 +115,30 @@ def list_transactions(
 
 @router.get("/count")
 def count_transactions(
-    filters: Annotated[TransactionFilters, Query()],
+    start: date | None = None,
+    end: date | None = None,
+    account_id: int | None = None,
+    account_category: Annotated[list[models.AccountCategory] | None, Query()] = None,
+    category_id: int | None = None,
+    kind: Annotated[list[models.TransactionKind] | None, Query()] = None,
+    amount_min: Decimal | None = None,
+    amount_max: Decimal | None = None,
+    q: str | None = None,
+    exclude_excluded: bool = False,
     db: Session = DB_DEP,
 ):
+    filters = TransactionFilters(
+        start=start,
+        end=end,
+        account_id=account_id,
+        account_category=account_category,
+        category_id=category_id,
+        kind=kind,
+        amount_min=amount_min,
+        amount_max=amount_max,
+        q=q,
+        exclude_excluded=exclude_excluded,
+    )
     stmt = select(func.count(models.Transaction.id))
     stmt = _apply_filters(stmt, filters)
     return {"count": db.scalar(stmt) or 0}

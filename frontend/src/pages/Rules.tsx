@@ -35,8 +35,6 @@ export function Rules() {
     [categories.data],
   );
   const visibleRules = (rules.data ?? []).filter((r) => r.is_active);
-  const selectedVisibleCount = visibleRules.filter((r) => selectedRuleIds.has(r.id)).length;
-  const allVisibleSelected = visibleRules.length > 0 && selectedVisibleCount === visibleRules.length;
 
   const reapply = useMutation({
     mutationFn: () => api.post<{ rows_changed: number }>("/api/rules/reapply"),
@@ -114,144 +112,36 @@ export function Rules() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-baseline justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight">Rules</h1>
-        <div className="flex items-center gap-2">
-          <label className="flex items-center gap-1.5 text-sm text-ink-600">
-            <input
-              type="checkbox"
-              checked={showProposals}
-              onChange={(e) => setShowProposals(e.target.checked)}
-            />
-            show proposals
-          </label>
-          <button className="btn" onClick={() => reapply.mutate()} disabled={reapply.isPending}>
-            Re-apply to unreviewed
-          </button>
-          <button className="btn-primary" onClick={() => setEditing("new")}>+ New rule</button>
-        </div>
-      </div>
+      <RulesHeader
+        showProposals={showProposals}
+        reapplyPending={reapply.isPending}
+        onShowProposals={setShowProposals}
+        onReapply={() => reapply.mutate()}
+        onCreate={() => setEditing("new")}
+      />
 
       <RuleCoverageSummary coverage={coverage.data ?? null} loading={coverage.isLoading} />
 
       <div className={clsx("grid gap-4", showProposals ? "grid-cols-1 xl:grid-cols-2" : "grid-cols-1")}>
-      <div className="card overflow-hidden">
-        <div className="px-3 py-2 border-b border-ink-100 flex items-baseline justify-between">
-          <div className="text-sm font-medium">Active rules</div>
-          <div className="flex items-center gap-2">
-            {selectedRuleIds.size > 0 && (
-              <>
-                <span className="text-xs text-ink-500">{selectedRuleIds.size} selected</span>
-                <button
-                  className="btn-danger text-xs"
-                  onClick={() => {
-                    if (confirm(`Delete ${selectedRuleIds.size} selected rule(s)?`)) {
-                      bulkDelete.mutate(Array.from(selectedRuleIds));
-                    }
-                  }}
-                  disabled={bulkDelete.isPending}
-                >
-                  Delete selected
-                </button>
-                <button className="btn-ghost text-xs" onClick={() => setSelectedRuleIds(new Set())}>
-                  Clear
-                </button>
-              </>
-            )}
-            <div className="text-xs text-ink-500">{visibleRules.length} active</div>
-          </div>
-        </div>
-        <table className="w-full text-sm">
-          <thead className="bg-ink-50 text-left">
-            <tr>
-              <th className="px-3 py-2 w-8">
-                <input
-                  type="checkbox"
-                  checked={allVisibleSelected}
-                  onChange={(e) =>
-                    setSelectedRuleIds(new Set(e.target.checked ? visibleRules.map((r) => r.id) : []))
-                  }
-                />
-              </th>
-              <th className="px-3 py-2 w-16">Prio</th>
-              <th className="px-3 py-2">Name</th>
-              <th className="px-3 py-2">Pattern</th>
-              <th className="px-3 py-2">Sets</th>
-              <th className="px-3 py-2 w-24 text-right">Applied</th>
-              <th className="px-3 py-2 w-20"></th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-ink-100">
-            {visibleRules.map((r) => {
-              const cat = r.set_category_id ? categoryById[r.set_category_id] : null;
-              return (
-                <tr key={r.id} className="table-row-hover">
-                  <td className="px-3 py-1.5">
-                    <input
-                      type="checkbox"
-                      checked={selectedRuleIds.has(r.id)}
-                      onChange={() => {
-                        setSelectedRuleIds((prev) => {
-                          const next = new Set(prev);
-                          if (next.has(r.id)) next.delete(r.id);
-                          else next.add(r.id);
-                          return next;
-                        });
-                      }}
-                    />
-                  </td>
-                  <td className="px-3 py-1.5 tabular">{r.priority}</td>
-                  <td className="px-3 py-1.5 font-medium">{r.name}</td>
-                  <td className="px-3 py-1.5 font-mono text-xs text-ink-700 max-w-md truncate">
-                    {r.match_description_pattern ?? "—"}
-                  </td>
-                  <td className="px-3 py-1.5 text-xs">
-                    <div className="flex flex-wrap items-center gap-1">
-                      {cat && <span className="pill bg-brand-100 text-brand-700">{cat.name}</span>}
-                      {cat && r.set_kind && <span className="text-ink-400">·</span>}
-                      {r.set_kind && <span className="pill bg-ink-200/60 text-ink-700">{transactionKindLabel(r.set_kind)}</span>}
-                    </div>
-                  </td>
-                  <td className="px-3 py-1.5 text-right tabular text-xs">
-                    <span
-                      className={clsx(
-                        "font-semibold",
-                        r.apply_count === 0 ? "text-ink-400" : "text-good-600",
-                      )}
-                      title={
-                        r.apply_count === 0
-                          ? "This rule has never matched a transaction."
-                          : `Matched ${r.apply_count} transactions.`
-                      }
-                    >
-                      {r.apply_count.toLocaleString()}×
-                    </span>
-                    <div className="text-[10px] text-ink-500">
-                      {r.last_applied_at ? `last: ${dateLabel(r.last_applied_at)}` : "never run"}
-                    </div>
-                  </td>
-                  <td className="px-3 py-1.5 text-right">
-                    <button className="btn-ghost text-xs" onClick={() => setEditing(r)}>Edit</button>
-                    <button
-                      className="btn-ghost text-xs text-bad-600"
-                      onClick={() => { if (confirm(`Delete rule ${r.name}?`)) del.mutate(r.id); }}
-                    >
-                      ×
-                    </button>
-                  </td>
-                </tr>
-              );
-            })}
-            {visibleRules.length === 0 && (
-              <tr>
-                <td colSpan={7} className="p-8 text-center text-sm text-ink-500">
-                  No active rules yet.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      <ActiveRulesTable
+        rules={visibleRules}
+        categoryById={categoryById}
+        selectedRuleIds={selectedRuleIds}
+        bulkDeletePending={bulkDelete.isPending}
+        onSelectAll={(ids) => setSelectedRuleIds(new Set(ids))}
+        onToggleSelected={(ruleId) => {
+          setSelectedRuleIds((prev) => {
+            const next = new Set(prev);
+            if (next.has(ruleId)) next.delete(ruleId);
+            else next.add(ruleId);
+            return next;
+          });
+        }}
+        onClearSelection={() => setSelectedRuleIds(new Set())}
+        onBulkDelete={(ids) => bulkDelete.mutate(ids)}
+        onEdit={setEditing}
+        onDelete={(ruleId) => del.mutate(ruleId)}
+      />
 
       {showProposals && (
         <RuleProposals
@@ -279,6 +169,203 @@ export function Rules() {
         />
       )}
     </div>
+  );
+}
+
+function RulesHeader({
+  showProposals,
+  reapplyPending,
+  onShowProposals,
+  onReapply,
+  onCreate,
+}: {
+  showProposals: boolean;
+  reapplyPending: boolean;
+  onShowProposals: (value: boolean) => void;
+  onReapply: () => void;
+  onCreate: () => void;
+}) {
+  return (
+    <div className="flex items-baseline justify-between">
+      <h1 className="text-2xl font-semibold tracking-tight">Rules</h1>
+      <div className="flex items-center gap-2">
+        <label className="flex items-center gap-1.5 text-sm text-ink-600">
+          <input type="checkbox" checked={showProposals} onChange={(e) => onShowProposals(e.target.checked)} />
+          show proposals
+        </label>
+        <button className="btn" onClick={onReapply} disabled={reapplyPending}>Re-apply to unreviewed</button>
+        <button className="btn-primary" onClick={onCreate}>+ New rule</button>
+      </div>
+    </div>
+  );
+}
+
+function ActiveRulesTable({
+  rules,
+  categoryById,
+  selectedRuleIds,
+  bulkDeletePending,
+  onSelectAll,
+  onToggleSelected,
+  onClearSelection,
+  onBulkDelete,
+  onEdit,
+  onDelete,
+}: {
+  rules: Rule[];
+  categoryById: Record<number, Category>;
+  selectedRuleIds: Set<number>;
+  bulkDeletePending: boolean;
+  onSelectAll: (ids: number[]) => void;
+  onToggleSelected: (ruleId: number) => void;
+  onClearSelection: () => void;
+  onBulkDelete: (ids: number[]) => void;
+  onEdit: (rule: Rule) => void;
+  onDelete: (ruleId: number) => void;
+}) {
+  const selectedIds = Array.from(selectedRuleIds);
+  const selectedVisibleCount = rules.filter((rule) => selectedRuleIds.has(rule.id)).length;
+  const allVisibleSelected = rules.length > 0 && selectedVisibleCount === rules.length;
+
+  return (
+    <div className="card overflow-hidden">
+      <div className="px-3 py-2 border-b border-ink-100 flex items-baseline justify-between">
+        <div className="text-sm font-medium">Active rules</div>
+        <ActiveRulesSelectionActions
+          selectedIds={selectedIds}
+          activeCount={rules.length}
+          pending={bulkDeletePending}
+          onDelete={onBulkDelete}
+          onClear={onClearSelection}
+        />
+      </div>
+      <table className="w-full text-sm">
+        <thead className="bg-ink-50 text-left">
+          <tr>
+            <th className="px-3 py-2 w-8">
+              <input type="checkbox" checked={allVisibleSelected} onChange={(e) => onSelectAll(e.target.checked ? rules.map((rule) => rule.id) : [])} />
+            </th>
+            <th className="px-3 py-2 w-16">Prio</th>
+            <th className="px-3 py-2">Name</th>
+            <th className="px-3 py-2">Pattern</th>
+            <th className="px-3 py-2">Sets</th>
+            <th className="px-3 py-2 w-24 text-right">Applied</th>
+            <th className="px-3 py-2 w-20"></th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-ink-100">
+          {rules.map((rule) => (
+            <ActiveRuleRow
+              key={rule.id}
+              rule={rule}
+              category={rule.set_category_id ? categoryById[rule.set_category_id] : null}
+              selected={selectedRuleIds.has(rule.id)}
+              onToggleSelected={onToggleSelected}
+              onEdit={onEdit}
+              onDelete={onDelete}
+            />
+          ))}
+          {rules.length === 0 && (
+            <tr>
+              <td colSpan={7} className="p-8 text-center text-sm text-ink-500">No active rules yet.</td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ActiveRulesSelectionActions({
+  selectedIds,
+  activeCount,
+  pending,
+  onDelete,
+  onClear,
+}: {
+  selectedIds: number[];
+  activeCount: number;
+  pending: boolean;
+  onDelete: (ids: number[]) => void;
+  onClear: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      {selectedIds.length > 0 && (
+        <>
+          <span className="text-xs text-ink-500">{selectedIds.length} selected</span>
+          <button
+            className="btn-danger text-xs"
+            onClick={() => {
+              if (confirm(`Delete ${selectedIds.length} selected rule(s)?`)) onDelete(selectedIds);
+            }}
+            disabled={pending}
+          >
+            Delete selected
+          </button>
+          <button className="btn-ghost text-xs" onClick={onClear}>Clear</button>
+        </>
+      )}
+      <div className="text-xs text-ink-500">{activeCount} active</div>
+    </div>
+  );
+}
+
+function ActiveRuleRow({
+  rule,
+  category,
+  selected,
+  onToggleSelected,
+  onEdit,
+  onDelete,
+}: {
+  rule: Rule;
+  category: Category | null;
+  selected: boolean;
+  onToggleSelected: (ruleId: number) => void;
+  onEdit: (rule: Rule) => void;
+  onDelete: (ruleId: number) => void;
+}) {
+  return (
+    <tr className="table-row-hover">
+      <td className="px-3 py-1.5">
+        <input type="checkbox" checked={selected} onChange={() => onToggleSelected(rule.id)} />
+      </td>
+      <td className="px-3 py-1.5 tabular">{rule.priority}</td>
+      <td className="px-3 py-1.5 font-medium">{rule.name}</td>
+      <td className="px-3 py-1.5 font-mono text-xs text-ink-700 max-w-md truncate">
+        {rule.match_description_pattern ?? "—"}
+      </td>
+      <td className="px-3 py-1.5 text-xs">
+        <div className="flex flex-wrap items-center gap-1">
+          {category && <span className="pill bg-brand-100 text-brand-700">{category.name}</span>}
+          {category && rule.set_kind && <span className="text-ink-400">·</span>}
+          {rule.set_kind && <span className="pill bg-ink-200/60 text-ink-700">{transactionKindLabel(rule.set_kind)}</span>}
+        </div>
+      </td>
+      <td className="px-3 py-1.5 text-right tabular text-xs">
+        <span
+          className={clsx("font-semibold", rule.apply_count === 0 ? "text-ink-400" : "text-good-600")}
+          title={rule.apply_count === 0 ? "This rule has never matched a transaction." : `Matched ${rule.apply_count} transactions.`}
+        >
+          {rule.apply_count.toLocaleString()}×
+        </span>
+        <div className="text-[10px] text-ink-500">
+          {rule.last_applied_at ? `last: ${dateLabel(rule.last_applied_at)}` : "never run"}
+        </div>
+      </td>
+      <td className="px-3 py-1.5 text-right">
+        <button className="btn-ghost text-xs" onClick={() => onEdit(rule)}>Edit</button>
+        <button
+          className="btn-ghost text-xs text-bad-600"
+          onClick={() => {
+            if (confirm(`Delete rule ${rule.name}?`)) onDelete(rule.id);
+          }}
+        >
+          ×
+        </button>
+      </td>
+    </tr>
   );
 }
 

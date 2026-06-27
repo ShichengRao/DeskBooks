@@ -1,17 +1,16 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from .. import models, schemas
-from ..db import get_db
+from .common import DbSession, get_or_404
 
 router = APIRouter(prefix="/api/journal", tags=["journal"])
 
 
 @router.get("", response_model=list[schemas.JournalEntryOut])
-def list_entries(goal_id: int | None = None, db: Session = Depends(get_db)):
+def list_entries(db: DbSession, goal_id: int | None = None):
     stmt = select(models.JournalEntry).order_by(models.JournalEntry.entry_date.desc())
     if goal_id is not None:
         stmt = stmt.where(models.JournalEntry.goal_id == goal_id)
@@ -30,7 +29,7 @@ def _snapshot(obj: models.JournalEntry, change_summary: str | None) -> models.Jo
 
 
 @router.post("", response_model=schemas.JournalEntryOut)
-def create_entry(body: schemas.JournalEntryIn, db: Session = Depends(get_db)):
+def create_entry(body: schemas.JournalEntryIn, db: DbSession):
     obj = models.JournalEntry(**body.model_dump())
     db.add(obj)
     db.flush()
@@ -41,18 +40,13 @@ def create_entry(body: schemas.JournalEntryIn, db: Session = Depends(get_db)):
 
 
 @router.get("/{entry_id}", response_model=schemas.JournalEntryOut)
-def get_entry(entry_id: int, db: Session = Depends(get_db)):
-    obj = db.get(models.JournalEntry, entry_id)
-    if not obj:
-        raise HTTPException(404)
-    return obj
+def get_entry(entry_id: int, db: DbSession):
+    return get_or_404(db, models.JournalEntry, entry_id)
 
 
 @router.patch("/{entry_id}", response_model=schemas.JournalEntryOut)
-def update_entry(entry_id: int, body: schemas.JournalEntryUpdate, db: Session = Depends(get_db)):
-    obj = db.get(models.JournalEntry, entry_id)
-    if not obj:
-        raise HTTPException(404)
+def update_entry(entry_id: int, body: schemas.JournalEntryUpdate, db: DbSession):
+    obj = get_or_404(db, models.JournalEntry, entry_id)
     data = body.model_dump(exclude_unset=True)
     change_summary = data.pop("change_summary", None)
     before = (obj.title, obj.body_markdown, obj.entry_date, obj.goal_id)
@@ -67,17 +61,15 @@ def update_entry(entry_id: int, body: schemas.JournalEntryUpdate, db: Session = 
 
 
 @router.delete("/{entry_id}")
-def delete_entry(entry_id: int, db: Session = Depends(get_db)):
-    obj = db.get(models.JournalEntry, entry_id)
-    if not obj:
-        raise HTTPException(404)
+def delete_entry(entry_id: int, db: DbSession):
+    obj = get_or_404(db, models.JournalEntry, entry_id)
     db.delete(obj)
     db.commit()
     return {"status": "deleted"}
 
 
 @router.get("/{entry_id}/revisions", response_model=list[schemas.JournalEntryRevisionOut])
-def list_revisions(entry_id: int, db: Session = Depends(get_db)):
+def list_revisions(entry_id: int, db: DbSession):
     return list(
         db.scalars(
             select(models.JournalEntryRevision)

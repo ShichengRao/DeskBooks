@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 from collections import Counter
-from datetime import datetime
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .. import importers, models, rules as rules_engine, schemas
-from ..db import get_db
+from .. import importers, models, schemas
+from .. import rules as rules_engine
 from ..models import SignConvention
+from .common import DbSession, get_or_404
 
 router = APIRouter(prefix="/api/imports", tags=["imports"])
 
@@ -50,10 +51,10 @@ def list_importers():
 
 @router.post("/preview", response_model=schemas.ImportPreview)
 async def preview(
-    file: UploadFile = File(...),
-    account_id: int = Form(...),
-    importer_name: str | None = Form(default=None),
-    db: Session = Depends(get_db),
+    db: DbSession,
+    file: Annotated[UploadFile, File()],
+    account_id: Annotated[int, Form()],
+    importer_name: Annotated[str | None, Form()] = None,
 ):
     raw = (await file.read()).decode("utf-8", errors="replace")
     account = db.get(models.Account, account_id)
@@ -116,10 +117,8 @@ async def preview(
 
 
 @router.post("/apply", response_model=schemas.ImportBatchOut)
-def apply(body: schemas.ImportApplyRequest, db: Session = Depends(get_db)):
-    account = db.get(models.Account, body.account_id)
-    if not account:
-        raise HTTPException(404, "account not found")
+def apply(body: schemas.ImportApplyRequest, db: DbSession):
+    get_or_404(db, models.Account, body.account_id, "account not found")
     batch = models.ImportBatch(
         source_filename=body.source_filename,
         importer_name=body.importer_name,
@@ -175,7 +174,7 @@ def apply(body: schemas.ImportApplyRequest, db: Session = Depends(get_db)):
 
 
 @router.get("", response_model=list[schemas.ImportBatchOut])
-def list_batches(db: Session = Depends(get_db)):
+def list_batches(db: DbSession):
     return list(
         db.scalars(
             select(models.ImportBatch).order_by(models.ImportBatch.imported_at.desc())
@@ -184,10 +183,8 @@ def list_batches(db: Session = Depends(get_db)):
 
 
 @router.post("/{batch_id}/rollback")
-def rollback(batch_id: int, db: Session = Depends(get_db)):
-    batch = db.get(models.ImportBatch, batch_id)
-    if not batch:
-        raise HTTPException(404)
+def rollback(batch_id: int, db: DbSession):
+    batch = get_or_404(db, models.ImportBatch, batch_id)
     if batch.status != models.ImportStatus.applied:
         raise HTTPException(400, "batch is not in 'applied' state")
     db.execute(

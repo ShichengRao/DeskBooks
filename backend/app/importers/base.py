@@ -14,7 +14,7 @@ import csv
 import io
 import re
 from abc import ABC, abstractmethod
-from datetime import date, datetime
+from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import ClassVar
 
@@ -107,6 +107,35 @@ def _read_dictrows(csv_text: str) -> tuple[list[str], list[dict]]:
     return header, dict_rows
 
 
+def row_value(row: dict, key: str) -> str:
+    return next((v for row_key, v in row.items() if row_key.upper() == key), "")
+
+
+def draft_row(
+    *,
+    row_index: int,
+    date: date,
+    post_date: date | None = None,
+    description_raw: str,
+    description_normalized: str,
+    merchant: str | None = None,
+    amount: Decimal,
+    suggested_kind: TransactionKind,
+    raw: dict,
+) -> ImportDraftRow:
+    return ImportDraftRow(
+        row_index=row_index,
+        date=date,
+        post_date=post_date,
+        description_raw=description_raw,
+        description_normalized=description_normalized,
+        merchant=merchant or guess_merchant(description_normalized),
+        amount=amount,
+        suggested_kind=suggested_kind,
+        raw=dict(raw),
+    )
+
+
 # --- registry helpers ---
 
 _REGISTRY: list[type[CsvImporter]] = []
@@ -144,5 +173,7 @@ __all__ = [
     "all_importers",
     "sniff",
     "get_by_name",
+    "draft_row",
+    "row_value",
     "_read_dictrows",
 ]

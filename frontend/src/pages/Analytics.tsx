@@ -4,10 +4,18 @@ import Plot from "react-plotly.js";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, Legend } from "recharts";
 import { ChartLegend } from "../components/ChartLegend";
 import { ChartColorControls, useChartColors } from "../components/ChartColorControls";
+import { DateRangeControls } from "../components/DateRangeControls";
 import { api, qs } from "../api/client";
-import type { MonthlyPoint, RecurringVendor, SankeyResponse } from "../api/types";
+import type { MonthlyPoint, RecurringMerchant, SankeyResponse } from "../api/types";
 import { colorAt } from "../lib/chartColors";
 import { currency, monthLabel, num } from "../lib/fmt";
+
+type ChartColors = ReturnType<typeof useChartColors>;
+type MonthlyChartData = {
+  data: Record<string, number | string>[];
+  cats: string[];
+};
+type CoverageMonth = { month: string; count: number };
 
 export function Analytics() {
   const today = new Date();
@@ -40,7 +48,7 @@ export function Analytics() {
   const recurring = useQuery({
     queryKey: ["recurring", recurringStart, recurringEnd, recurringMin],
     queryFn: () =>
-      api.get<RecurringVendor[]>(
+      api.get<RecurringMerchant[]>(
         "/api/analytics/recurring" +
           qs({
             min_occurrences: recurringMin,
@@ -101,259 +109,414 @@ export function Analytics() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-baseline justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight">Analytics</h1>
-        <div className="flex items-center gap-2">
-          <button className="btn" onClick={() => setYear(year - 1)}>←</button>
-          <div className="font-medium text-lg tabular">{year}</div>
-          <button className="btn" onClick={() => setYear(year + 1)}>→</button>
-          <button
-            className="btn"
-            onClick={() => {
-              const start = `${year}-01-01`;
-              const end = `${year}-12-31`;
-              setMonthlyStart(start);
-              setMonthlyEnd(end);
-              setSankeyStart(start);
-              setSankeyEnd(end);
-            }}
-          >
-            use year
-          </button>
-        </div>
-      </div>
+      <AnalyticsHeader
+        year={year}
+        onYear={setYear}
+        onUseYear={() => {
+          const start = `${year}-01-01`;
+          const end = `${year}-12-31`;
+          setMonthlyStart(start);
+          setMonthlyEnd(end);
+          setSankeyStart(start);
+          setSankeyEnd(end);
+        }}
+      />
+      <SankeyPanel
+        sankey={sankey.data}
+        visibleSankey={visibleSankey}
+        loading={sankey.isLoading}
+        start={sankeyStart}
+        end={sankeyEnd}
+        focused={focusedSankey}
+        chartColors={chartColors}
+        onStart={setSankeyStart}
+        onEnd={setSankeyEnd}
+        onFocus={setFocusedSankey}
+      />
+      <MonthlyExpensesPanel
+        loading={monthly.isLoading}
+        start={monthlyStart}
+        end={monthlyEnd}
+        chart={monthlyChart}
+        coverage={coverage}
+        focused={focusedExpense}
+        chartColors={chartColors}
+        onStart={setMonthlyStart}
+        onEnd={setMonthlyEnd}
+        onFocus={setFocusedExpense}
+      />
+      <RecurringMerchantsPanel
+        merchants={recurring.data ?? []}
+        loading={recurring.isLoading}
+        start={recurringStart}
+        end={recurringEnd}
+        minOccurrences={recurringMin}
+        onStart={setRecurringStart}
+        onEnd={setRecurringEnd}
+        onMinOccurrences={setRecurringMin}
+        onReset={() => {
+          setRecurringStart("");
+          setRecurringEnd("");
+          setRecurringMin(3);
+        }}
+      />
+    </div>
+  );
+}
 
-      <div className="card p-4">
-        <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
-          <div className="text-sm font-medium">
-            Sankey: inflows → outflows ({sankey.data?.label ?? `${sankeyStart} to ${sankeyEnd}`})
-          </div>
-          <div className="flex items-center gap-2 text-xs flex-wrap">
-            <DateRangeControls
-              start={sankeyStart}
-              end={sankeyEnd}
-              onStart={setSankeyStart}
-              onEnd={setSankeyEnd}
-            />
-            <ChartColorControls
-              paletteId={chartColors.paletteId}
-              colors={chartColors.colors}
-              onPaletteChange={chartColors.setPaletteId}
-              onColorChange={chartColors.setColor}
-            />
-          </div>
-        </div>
-        {sankey.isLoading ? (
-          <div className="text-sm text-ink-500 italic py-12 text-center">
-            Loading Sankey data…
-          </div>
-        ) : visibleSankey && visibleSankey.nodes.length > 1 ? (
-          <Plot
-            data={[
-              {
-                type: "sankey",
-                orientation: "h",
-                node: {
-                  pad: 14,
-                  thickness: 16,
-                  line: { color: "#ccc", width: 0.5 },
-                  label: visibleSankey.nodes.map((n) => n.name),
-                  color: visibleSankey.nodes.map((_, i) => colorAt(chartColors.colors, i)),
-                },
-                link: {
-                  source: visibleSankey.links.map((l) => l.source),
-                  target: visibleSankey.links.map((l) => l.target),
-                  value: visibleSankey.links.map((l) => l.value),
-                  label: visibleSankey.links.map((l) => l.label ?? ""),
-                  color: visibleSankey.links.map((l) => `${colorAt(chartColors.colors, l.source)}66`),
-                },
-              } as any,
-            ]}
-            layout={{
-              autosize: true,
-              height: 480,
-              margin: { l: 20, r: 20, t: 10, b: 10 },
-              font: { family: "Inter, system-ui", size: 12 },
-            }}
-            useResizeHandler
-            style={{ width: "100%", height: "480px" }}
-            config={{ displayModeBar: false }}
-            onClick={(event: any) => {
-              const point = event?.points?.[0];
-              const label = typeof point?.label === "string" ? point.label : null;
-              const sourceLabel = typeof point?.source?.label === "string" ? point.source.label : null;
-              const targetLabel = typeof point?.target?.label === "string" ? point.target.label : null;
-              setFocusedSankey(label || sourceLabel || targetLabel);
-            }}
+function AnalyticsHeader({
+  year,
+  onYear,
+  onUseYear,
+}: {
+  year: number;
+  onYear: (year: number) => void;
+  onUseYear: () => void;
+}) {
+  return (
+    <div className="flex items-baseline justify-between">
+      <h1 className="text-2xl font-semibold tracking-tight">Analytics</h1>
+      <div className="flex items-center gap-2">
+        <button className="btn" onClick={() => onYear(year - 1)}>←</button>
+        <div className="font-medium text-lg tabular">{year}</div>
+        <button className="btn" onClick={() => onYear(year + 1)}>→</button>
+        <button className="btn" onClick={onUseYear}>use year</button>
+      </div>
+    </div>
+  );
+}
+
+function SankeyPanel({
+  sankey,
+  visibleSankey,
+  loading,
+  start,
+  end,
+  focused,
+  chartColors,
+  onStart,
+  onEnd,
+  onFocus,
+}: {
+  sankey?: SankeyResponse;
+  visibleSankey?: SankeyResponse;
+  loading: boolean;
+  start: string;
+  end: string;
+  focused: string | null;
+  chartColors: ChartColors;
+  onStart: (value: string) => void;
+  onEnd: (value: string) => void;
+  onFocus: (value: string | null) => void;
+}) {
+  return (
+    <div className="card p-4">
+      <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
+        <div className="text-sm font-medium">Sankey: inflows → outflows ({sankey?.label ?? `${start} to ${end}`})</div>
+        <div className="flex items-center gap-2 text-xs flex-wrap">
+          <DateRangeControls start={start} end={end} onStart={onStart} onEnd={onEnd} />
+          <ChartColorControls
+            paletteId={chartColors.paletteId}
+            colors={chartColors.colors}
+            onPaletteChange={chartColors.setPaletteId}
+            onColorChange={chartColors.setColor}
           />
-        ) : (
-          <div className="text-sm text-ink-500 italic py-12 text-center">
-            No transactions in this period yet — import a CSV to populate this chart.
-          </div>
-        )}
-        {focusedSankey && (
-          <button className="btn-ghost text-xs mt-2" onClick={() => setFocusedSankey(null)}>
-            clear Sankey focus: {focusedSankey}
-          </button>
-        )}
-        {sankey.data?.notes?.length ? (
-          <ul className="mt-2 text-xs text-ink-500 list-disc pl-5">
-            {sankey.data.notes.map((n) => <li key={n}>{n}</li>)}
-          </ul>
-        ) : null}
-      </div>
-
-      <div className="card p-4">
-        <div className="flex items-baseline justify-between mb-2">
-          <div>
-            <div className="text-sm font-medium">Monthly expenses by category</div>
-            <div className="mt-2 flex items-center gap-2 text-xs flex-wrap">
-              <DateRangeControls
-                start={monthlyStart}
-                end={monthlyEnd}
-                onStart={setMonthlyStart}
-                onEnd={setMonthlyEnd}
-              />
-              {focusedExpense && (
-                <button className="btn-ghost text-xs" onClick={() => setFocusedExpense(null)}>
-                  clear category: {focusedExpense}
-                </button>
-              )}
-            </div>
-          </div>
-          <div className="text-[11px] text-ink-500 flex items-center gap-1">
-            <span>Data coverage:</span>
-            <div className="flex items-center gap-0.5">
-              {coverage.map((m) => (
-                <span
-                  key={m.month}
-                  title={`${m.month}: ${m.count > 0 ? "data present" : "no data — import may be missing"}`}
-                  className={`inline-block w-2.5 h-3 rounded-sm ${m.count > 0 ? "bg-good-500" : "bg-ink-200"}`}
-                />
-              ))}
-            </div>
-            <span className="ml-1">{monthlyStart}→{monthlyEnd}</span>
-          </div>
-        </div>
-        <div className="h-80">
-          {monthly.isLoading ? (
-            <div className="text-sm text-ink-500 italic py-12 text-center">
-              Loading monthly expenses…
-            </div>
-          ) : monthlyChart.data.length > 0 ? (
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={monthlyChart.data}>
-                <CartesianGrid stroke="#eceef2" vertical={false} />
-                <XAxis dataKey="month" tickFormatter={monthLabel} tick={{ fontSize: 12 }} />
-                <YAxis tickFormatter={(v) => currency(v).replace(/\.\d\d/, "")} tick={{ fontSize: 12 }} width={70} />
-                <Tooltip content={<MonthlyExpenseTooltip />} />
-                <Legend
-                  content={(props) => (
-                    <ChartLegend
-                      payload={props.payload as any}
-                      focusedKey={focusedExpense}
-                      onToggle={(key) => setFocusedExpense(focusedExpense === key ? null : key)}
-                    />
-                  )}
-                />
-                {monthlyChart.cats.slice(0, 10).map((c, i) => (
-                  <Bar
-                    key={c}
-                    dataKey={c}
-                    stackId="exp"
-                    fill={colorAt(chartColors.colors, i)}
-                    name={c}
-                    onClick={() => setFocusedExpense(c)}
-                    cursor="pointer"
-                  />
-                ))}
-              </BarChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="text-sm text-ink-500 italic py-12 text-center">
-              No data — import some transactions.
-            </div>
-          )}
         </div>
       </div>
+      <SankeyChart data={visibleSankey} loading={loading} chartColors={chartColors} onFocus={onFocus} />
+      {focused && (
+        <button className="btn-ghost text-xs mt-2" onClick={() => onFocus(null)}>
+          clear Sankey focus: {focused}
+        </button>
+      )}
+      {sankey?.notes?.length ? (
+        <ul className="mt-2 text-xs text-ink-500 list-disc pl-5">
+          {sankey.notes.map((note) => <li key={note}>{note}</li>)}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
 
-      <div className="card p-4">
-        <div className="flex items-baseline justify-between mb-2 gap-3 flex-wrap">
-          <div className="text-sm font-medium">Recurring merchants</div>
-          <div className="flex items-center gap-2 text-xs">
-            <label className="flex items-center gap-1">
-              <span className="text-ink-500">From</span>
-              <input
-                type="date"
-                className="input"
-                value={recurringStart}
-                onChange={(e) => setRecurringStart(e.target.value)}
-              />
-            </label>
-            <label className="flex items-center gap-1">
-              <span className="text-ink-500">To</span>
-              <input
-                type="date"
-                className="input"
-                value={recurringEnd}
-                onChange={(e) => setRecurringEnd(e.target.value)}
-              />
-            </label>
-            <label className="flex items-center gap-1">
-              <span className="text-ink-500">Min occurrences</span>
-              <input
-                type="number"
-                min={1}
-                className="input max-w-[5rem] tabular text-right"
-                value={recurringMin}
-                onChange={(e) => setRecurringMin(parseInt(e.target.value || "1", 10))}
-              />
-            </label>
-            <button
-              className="btn-ghost text-xs"
-              onClick={() => {
-                setRecurringStart("");
-                setRecurringEnd("");
-                setRecurringMin(3);
-              }}
-            >
-              reset
-            </button>
+function SankeyChart({
+  data,
+  loading,
+  chartColors,
+  onFocus,
+}: {
+  data?: SankeyResponse;
+  loading: boolean;
+  chartColors: ChartColors;
+  onFocus: (value: string | null) => void;
+}) {
+  if (loading) return <ChartEmptyState>Loading Sankey data…</ChartEmptyState>;
+  if (!data || data.nodes.length <= 1) {
+    return <ChartEmptyState>No transactions in this period yet — import a CSV to populate this chart.</ChartEmptyState>;
+  }
+
+  return (
+    <Plot
+      data={[{
+        type: "sankey",
+        orientation: "h",
+        node: {
+          pad: 14,
+          thickness: 16,
+          line: { color: "#ccc", width: 0.5 },
+          label: data.nodes.map((node) => node.name),
+          color: data.nodes.map((_, index) => colorAt(chartColors.colors, index)),
+        },
+        link: {
+          source: data.links.map((link) => link.source),
+          target: data.links.map((link) => link.target),
+          value: data.links.map((link) => link.value),
+          label: data.links.map((link) => link.label ?? ""),
+          color: data.links.map((link) => `${colorAt(chartColors.colors, link.source)}66`),
+        },
+      } as any]}
+      layout={{ autosize: true, height: 480, margin: { l: 20, r: 20, t: 10, b: 10 }, font: { family: "Inter, system-ui", size: 12 } }}
+      useResizeHandler
+      style={{ width: "100%", height: "480px" }}
+      config={{ displayModeBar: false }}
+      onClick={(event: any) => {
+        const point = event?.points?.[0];
+        const label = typeof point?.label === "string" ? point.label : null;
+        const sourceLabel = typeof point?.source?.label === "string" ? point.source.label : null;
+        const targetLabel = typeof point?.target?.label === "string" ? point.target.label : null;
+        onFocus(label || sourceLabel || targetLabel);
+      }}
+    />
+  );
+}
+
+function MonthlyExpensesPanel({
+  loading,
+  start,
+  end,
+  chart,
+  coverage,
+  focused,
+  chartColors,
+  onStart,
+  onEnd,
+  onFocus,
+}: {
+  loading: boolean;
+  start: string;
+  end: string;
+  chart: MonthlyChartData;
+  coverage: CoverageMonth[];
+  focused: string | null;
+  chartColors: ChartColors;
+  onStart: (value: string) => void;
+  onEnd: (value: string) => void;
+  onFocus: (value: string | null) => void;
+}) {
+  return (
+    <div className="card p-4">
+      <div className="flex items-baseline justify-between mb-2">
+        <div>
+          <div className="text-sm font-medium">Monthly expenses by category</div>
+          <div className="mt-2 flex items-center gap-2 text-xs flex-wrap">
+            <DateRangeControls start={start} end={end} onStart={onStart} onEnd={onEnd} />
+            {focused && <button className="btn-ghost text-xs" onClick={() => onFocus(null)}>clear category: {focused}</button>}
           </div>
         </div>
-        {recurring.isLoading ? (
-          <div className="text-sm text-ink-500 italic">Loading recurring merchants…</div>
-        ) : recurring.data?.length ? (
-          <table className="w-full text-sm tabular">
-            <thead className="bg-ink-50">
-              <tr>
-                <th className="px-3 py-2 text-left">Merchant</th>
-                <th className="px-3 py-2 text-right">Count</th>
-                <th className="px-3 py-2 text-right">Avg</th>
-                <th className="px-3 py-2 text-right">Total</th>
-                <th className="px-3 py-2 text-right">Cadence (days)</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-ink-100">
-              {recurring.data.map((r) => (
-                <tr key={r.merchant}>
-                  <td className="px-3 py-1.5">{r.merchant}</td>
-                  <td className="px-3 py-1.5 text-right">{r.occurrences}</td>
-                  <td className="px-3 py-1.5 text-right">{currency(r.avg_amount)}</td>
-                  <td className="px-3 py-1.5 text-right">{currency(r.total_amount)}</td>
-                  <td className="px-3 py-1.5 text-right">
-                    {r.cadence_days_estimate ? r.cadence_days_estimate.toFixed(1) : "—"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <CoverageDots coverage={coverage} start={start} end={end} />
+      </div>
+      <div className="h-80">
+        {loading ? (
+          <ChartEmptyState>Loading monthly expenses…</ChartEmptyState>
+        ) : chart.data.length > 0 ? (
+          <MonthlyExpenseChart chart={chart} focused={focused} chartColors={chartColors} onFocus={onFocus} />
         ) : (
-          <div className="text-sm text-ink-500 italic">No recurring merchants detected yet.</div>
+          <ChartEmptyState>No data — import some transactions.</ChartEmptyState>
         )}
       </div>
     </div>
   );
+}
+
+function MonthlyExpenseChart({
+  chart,
+  focused,
+  chartColors,
+  onFocus,
+}: {
+  chart: MonthlyChartData;
+  focused: string | null;
+  chartColors: ChartColors;
+  onFocus: (value: string | null) => void;
+}) {
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <BarChart data={chart.data}>
+        <CartesianGrid stroke="#eceef2" vertical={false} />
+        <XAxis dataKey="month" tickFormatter={monthLabel} tick={{ fontSize: 12 }} />
+        <YAxis tickFormatter={(value) => currency(value).replace(/\.\d\d/, "")} tick={{ fontSize: 12 }} width={70} />
+        <Tooltip content={<MonthlyExpenseTooltip />} />
+        <Legend
+          content={(props) => (
+            <ChartLegend
+              payload={props.payload as any}
+              focusedKey={focused}
+              onToggle={(key) => onFocus(focused === key ? null : key)}
+            />
+          )}
+        />
+        {chart.cats.slice(0, 10).map((cat, index) => (
+          <Bar
+            key={cat}
+            dataKey={cat}
+            stackId="exp"
+            fill={colorAt(chartColors.colors, index)}
+            name={cat}
+            onClick={() => onFocus(cat)}
+            cursor="pointer"
+          />
+        ))}
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+function CoverageDots({ coverage, start, end }: { coverage: CoverageMonth[]; start: string; end: string }) {
+  return (
+    <div className="text-[11px] text-ink-500 flex items-center gap-1">
+      <span>Data coverage:</span>
+      <div className="flex items-center gap-0.5">
+        {coverage.map((month) => (
+          <span
+            key={month.month}
+            title={`${month.month}: ${month.count > 0 ? "data present" : "no data — import may be missing"}`}
+            className={`inline-block w-2.5 h-3 rounded-sm ${month.count > 0 ? "bg-good-500" : "bg-ink-200"}`}
+          />
+        ))}
+      </div>
+      <span className="ml-1">{start}→{end}</span>
+    </div>
+  );
+}
+
+function RecurringMerchantsPanel({
+  merchants,
+  loading,
+  start,
+  end,
+  minOccurrences,
+  onStart,
+  onEnd,
+  onMinOccurrences,
+  onReset,
+}: {
+  merchants: RecurringMerchant[];
+  loading: boolean;
+  start: string;
+  end: string;
+  minOccurrences: number;
+  onStart: (value: string) => void;
+  onEnd: (value: string) => void;
+  onMinOccurrences: (value: number) => void;
+  onReset: () => void;
+}) {
+  return (
+    <div className="card p-4">
+      <RecurringMerchantsHeader
+        start={start}
+        end={end}
+        minOccurrences={minOccurrences}
+        onStart={onStart}
+        onEnd={onEnd}
+        onMinOccurrences={onMinOccurrences}
+        onReset={onReset}
+      />
+      {loading ? (
+        <div className="text-sm text-ink-500 italic">Loading recurring merchants…</div>
+      ) : merchants.length ? (
+        <RecurringMerchantsTable merchants={merchants} />
+      ) : (
+        <div className="text-sm text-ink-500 italic">No recurring merchants detected yet.</div>
+      )}
+    </div>
+  );
+}
+
+function RecurringMerchantsHeader({
+  start,
+  end,
+  minOccurrences,
+  onStart,
+  onEnd,
+  onMinOccurrences,
+  onReset,
+}: {
+  start: string;
+  end: string;
+  minOccurrences: number;
+  onStart: (value: string) => void;
+  onEnd: (value: string) => void;
+  onMinOccurrences: (value: number) => void;
+  onReset: () => void;
+}) {
+  return (
+    <div className="flex items-baseline justify-between mb-2 gap-3 flex-wrap">
+      <div className="text-sm font-medium">Recurring merchants</div>
+      <div className="flex items-center gap-2 text-xs">
+        <label className="flex items-center gap-1">
+          <span className="text-ink-500">From</span>
+          <input type="date" className="input" value={start} onChange={(e) => onStart(e.target.value)} />
+        </label>
+        <label className="flex items-center gap-1">
+          <span className="text-ink-500">To</span>
+          <input type="date" className="input" value={end} onChange={(e) => onEnd(e.target.value)} />
+        </label>
+        <label className="flex items-center gap-1">
+          <span className="text-ink-500">Min occurrences</span>
+          <input
+            type="number"
+            min={1}
+            className="input max-w-[5rem] tabular text-right"
+            value={minOccurrences}
+            onChange={(e) => onMinOccurrences(parseInt(e.target.value || "1", 10))}
+          />
+        </label>
+        <button className="btn-ghost text-xs" onClick={onReset}>reset</button>
+      </div>
+    </div>
+  );
+}
+
+function RecurringMerchantsTable({ merchants }: { merchants: RecurringMerchant[] }) {
+  return (
+    <table className="w-full text-sm tabular">
+      <thead className="bg-ink-50">
+        <tr>
+          <th className="px-3 py-2 text-left">Merchant</th>
+          <th className="px-3 py-2 text-right">Count</th>
+          <th className="px-3 py-2 text-right">Avg</th>
+          <th className="px-3 py-2 text-right">Total</th>
+          <th className="px-3 py-2 text-right">Cadence (days)</th>
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-ink-100">
+        {merchants.map((merchant) => (
+          <tr key={merchant.merchant}>
+            <td className="px-3 py-1.5">{merchant.merchant}</td>
+            <td className="px-3 py-1.5 text-right">{merchant.occurrences}</td>
+            <td className="px-3 py-1.5 text-right">{currency(merchant.avg_amount)}</td>
+            <td className="px-3 py-1.5 text-right">{currency(merchant.total_amount)}</td>
+            <td className="px-3 py-1.5 text-right">
+              {merchant.cadence_days_estimate ? merchant.cadence_days_estimate.toFixed(1) : "—"}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function ChartEmptyState({ children }: { children: string }) {
+  return <div className="text-sm text-ink-500 italic py-12 text-center">{children}</div>;
 }
 
 function MonthlyExpenseTooltip({ active, payload, label }: any) {
@@ -381,31 +544,6 @@ function MonthlyExpenseTooltip({ active, payload, label }: any) {
         ))}
       </div>
     </div>
-  );
-}
-
-function DateRangeControls({
-  start,
-  end,
-  onStart,
-  onEnd,
-}: {
-  start: string;
-  end: string;
-  onStart: (value: string) => void;
-  onEnd: (value: string) => void;
-}) {
-  return (
-    <>
-      <label className="flex items-center gap-1">
-        <span className="text-ink-500">From</span>
-        <input type="date" className="input" value={start} onChange={(e) => onStart(e.target.value)} />
-      </label>
-      <label className="flex items-center gap-1">
-        <span className="text-ink-500">To</span>
-        <input type="date" className="input" value={end} onChange={(e) => onEnd(e.target.value)} />
-      </label>
-    </>
   );
 }
 
