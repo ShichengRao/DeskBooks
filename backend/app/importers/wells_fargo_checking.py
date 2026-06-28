@@ -46,14 +46,17 @@ class WellsFargoCheckingImporter(CsvImporter):
             # heuristics: payroll → income; CC EPAY → cc_payment; tax / IRS → tax
             upper = desc.upper()
             kind = TransactionKind.uncategorized
+            merchant = None
             if "PAYROLL" in upper:
                 kind = TransactionKind.income
+                merchant = "Salary"
             elif "CHASE CREDIT CRD" in upper or "AMEX EPAYMENT" in upper:
                 kind = TransactionKind.cc_payment
             elif "IRS" in upper and "USATAXPYMT" in upper:
                 kind = TransactionKind.tax
             elif "NYSTTAXRFD" in upper or "TAX REFUND" in upper:
                 kind = TransactionKind.income  # tax refund treated as inflow
+                merchant = "Tax Refund"
             elif "ZELLE" in upper or "VENMO" in upper or "PAYPAL" in upper:
                 kind = TransactionKind.uncategorized
             elif "FID BKG SVC" in upper or "GOLDMAN SACHS BA" in upper or "JPMORGAN CHASE   EXT TRNSFR" in upper or "MSPBNA" in upper:
@@ -65,6 +68,7 @@ class WellsFargoCheckingImporter(CsvImporter):
                     date=d,
                     description_raw=raw_desc,
                     description_normalized=desc,
+                    merchant=merchant,
                     amount=amt,
                     suggested_kind=kind,
                     raw=r,

@@ -32,6 +32,11 @@ class ProfileCreate(BaseModel):
     seed_starter_data: bool = True
 
 
+class ProfileDuplicate(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    source_slug: str | None = None
+
+
 class ProfileActivate(BaseModel):
     slug: str
 
@@ -508,6 +513,21 @@ class JournalEntryRevisionOut(ORMBase):
     goal_id: int | None
     changed_at: datetime
     change_summary: str | None
+
+
+class JournalImportPreviewRequest(BaseModel):
+    path: str
+
+
+class JournalImportDraft(BaseModel):
+    page_number: int
+    title: str
+    body_markdown: str
+
+
+class JournalImportPreview(BaseModel):
+    source_filename: str
+    drafts: list[JournalImportDraft]
 
 
 # ---------- import pipeline ----------

@@ -127,3 +127,31 @@ def test_duplicate_active_profile_copies_sqlite_database(tmp_path, monkeypatch):
     assert profiles.get_active_profile().slug == "copied-profile"
     with sqlite3.connect(duplicate.db_path) as conn:
         assert conn.execute("SELECT value FROM marker").fetchone()[0] == "copied"
+
+
+def test_duplicate_profile_can_copy_selected_source_profile(tmp_path, monkeypatch):
+    monkeypatch.setattr(profiles, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(profiles, "REGISTRY_PATH", tmp_path / "profiles.json")
+    monkeypatch.setattr(profiles, "PROFILES_DIR", tmp_path / "profiles")
+    (tmp_path / "profiles.json").write_text(
+        json.dumps(
+            {
+                "active": "personal",
+                "profiles": [
+                    {"slug": "personal", "name": "Personal", "db_file": "app.db"},
+                    {"slug": "demo", "name": "Demo", "db_file": "profiles/demo.db"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "profiles").mkdir()
+    with sqlite3.connect(tmp_path / "profiles" / "demo.db") as conn:
+        conn.execute("CREATE TABLE marker (value TEXT NOT NULL)")
+        conn.execute("INSERT INTO marker (value) VALUES ('demo-source')")
+
+    duplicate = profiles.duplicate_profile("Copied Demo", "demo")
+
+    assert duplicate.slug == "copied-demo"
+    with sqlite3.connect(duplicate.db_path) as conn:
+        assert conn.execute("SELECT value FROM marker").fetchone()[0] == "demo-source"

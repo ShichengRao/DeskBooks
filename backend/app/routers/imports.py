@@ -48,9 +48,7 @@ def _existing_key_counts(db: Session, account_id: int) -> Counter:
 
 @router.get("/importers")
 def list_importers():
-    rows = [{"name": i.name, "label": i.label} for i in importers.all_importers()]
-    rows.append({"name": "amex_xlsx", "label": "Amex XLSX"})
-    return rows
+    return [{"name": i.name, "label": i.label} for i in importers.all_importers()]
 
 
 def _preview_from_bytes(
@@ -67,16 +65,16 @@ def _preview_from_bytes(
     is_xlsx = filename.lower().endswith(".xlsx")
     raw = "" if is_xlsx else data.decode("utf-8", errors="replace")
     matched = [] if is_xlsx else importers.sniff(raw)
-    if importer_name == "amex_xlsx":
+    if importer_name in {"amex", "amex_xlsx"} and is_xlsx:
         rows = parse_amex_xlsx_bytes(data)
-        chosen_name = "amex_xlsx"
-        sniff_notes = ["matched importers: amex_xlsx"]
+        chosen_name = "amex"
+        sniff_notes = ["matched importers: amex"]
     elif is_xlsx:
         rows = parse_amex_xlsx_bytes(data)
         if not rows:
             raise HTTPException(400, "no importer can handle this file")
-        chosen_name = "amex_xlsx"
-        sniff_notes = ["matched importers: amex_xlsx"]
+        chosen_name = "amex"
+        sniff_notes = ["matched importers: amex"]
     elif importer_name:
         chosen = importers.get_by_name(importer_name)
         if not chosen:

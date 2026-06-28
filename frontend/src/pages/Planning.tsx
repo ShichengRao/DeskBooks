@@ -30,6 +30,15 @@ import { compactCurrency, currency, dateLabel, num } from "../lib/fmt";
 const GOAL_KINDS: GoalKind[] = ["savings", "purchase", "retirement", "other"];
 type GoalForm = Partial<Goal> & { change_summary?: string };
 type GoalProgress = { current: string | null; target: string | null; percent: number | null; as_of?: string };
+type JournalImportPreview = {
+  source_filename: string;
+  drafts: JournalImportDraft[];
+};
+type JournalImportDraft = {
+  page_number: number;
+  title: string;
+  body_markdown: string;
+};
 
 export function Planning() {
   const goals = useQuery({ queryKey: ["goals"], queryFn: () => api.get<Goal[]>("/api/goals") });
@@ -38,6 +47,7 @@ export function Planning() {
 
   const [selectedGoalId, setSelectedGoalId] = useState<number | "new" | null>(null);
   const [selectedEntryId, setSelectedEntryId] = useState<number | "new" | null>(null);
+  const [importingJournal, setImportingJournal] = useState(false);
 
   return (
     <div className="space-y-6">
@@ -79,12 +89,17 @@ export function Planning() {
         <div className="card p-4">
           <div className="flex items-center justify-between mb-3">
             <div className="text-sm font-medium">Journal</div>
-            <button className="btn-primary text-xs" onClick={() => setSelectedEntryId("new")}>
-              + New entry
-            </button>
+            <div className="flex items-center gap-2">
+              <button className="btn text-xs" onClick={() => setImportingJournal(true)}>
+                Import doc
+              </button>
+              <button className="btn-primary text-xs" onClick={() => setSelectedEntryId("new")}>
+                + New entry
+              </button>
+            </div>
           </div>
           <div className="space-y-2">
-            {journal.data?.map((e) => (
+            {journal.data?.length ? journal.data.map((e) => (
               <button
                 key={e.id}
                 className={clsx(
@@ -101,7 +116,11 @@ export function Planning() {
                   {e.body_markdown.slice(0, 160)}
                 </div>
               </button>
-            ))}
+            )) : (
+              <div className="text-sm text-ink-500 italic p-6 text-center">
+                No journal entries found. You can add one by clicking New entry or Import doc.
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -118,6 +137,12 @@ export function Planning() {
           entryId={selectedEntryId === "new" ? null : selectedEntryId}
           goals={goals.data ?? []}
           onClose={() => setSelectedEntryId(null)}
+        />
+      )}
+      {importingJournal && (
+        <JournalImportPanel
+          goals={goals.data ?? []}
+          onClose={() => setImportingJournal(false)}
         />
       )}
     </div>
@@ -149,6 +174,7 @@ function GoalEditor({ goalId, accounts, onClose }: { goalId: number | null; acco
     status: "active",
     linked_account_ids: [],
     notes_markdown: "",
+    sort_order: 0,
   });
   const [edited, setEdited] = useState(false);
 
@@ -167,6 +193,7 @@ function GoalEditor({ goalId, accounts, onClose }: { goalId: number | null; acco
           status: form.status,
           linked_account_ids: form.linked_account_ids,
           notes_markdown: form.notes_markdown,
+          sort_order: form.sort_order ?? 0,
         });
       }
       const { change_summary, ...patch } = form as any;
@@ -258,6 +285,15 @@ function GoalFormFields({
         <input className="input" value={form.title ?? ""} onChange={(e) => onChange({ title: e.target.value })} />
       </Field>
       <GoalTargetFields form={form} onChange={onChange} />
+      <Field label="Display order">
+        <input
+          type="number"
+          step="1"
+          className="input tabular"
+          value={form.sort_order ?? 0}
+          onChange={(e) => onChange({ sort_order: parseInt(e.target.value || "0", 10) })}
+        />
+      </Field>
       <Field label="Linked accounts">
         <select
           className="input"
@@ -537,6 +573,141 @@ function EntryEditor({ entryId, goals, onClose }: { entryId: number | null; goal
             </ul>
           </div>
         )}
+    </SidePanel>
+  );
+}
+
+function JournalImportPanel({ goals, onClose }: { goals: Goal[]; onClose: () => void }) {
+  const qc = useQueryClient();
+  const [path, setPath] = useState("");
+  const [entryDate, setEntryDate] = useState(new Date().toISOString().slice(0, 10));
+  const [goalId, setGoalId] = useState<number | null>(null);
+  const [drafts, setDrafts] = useState<JournalImportDraft[]>([]);
+  const preview = useMutation({
+    mutationFn: () => api.post<JournalImportPreview>("/api/journal/import-preview", { path: path.trim() }),
+    onSuccess: (data) => setDrafts(data.drafts),
+  });
+  const save = useMutation({
+    mutationFn: async () => {
+      for (const draft of drafts) {
+        if (!draft.title.trim() || !draft.body_markdown.trim()) continue;
+        await api.post<JournalEntry>("/api/journal", {
+          entry_date: entryDate,
+          title: draft.title.trim(),
+          body_markdown: draft.body_markdown,
+          goal_id: goalId,
+        });
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["journal"] });
+      onClose();
+    },
+  });
+
+  const updateDraft = (index: number, patch: Partial<JournalImportDraft>) => {
+    setDrafts((current) => current.map((draft, i) => (i === index ? { ...draft, ...patch } : draft)));
+  };
+  const mergeWithPrevious = (index: number) => {
+    if (index <= 0) return;
+    setDrafts((current) => {
+      const next = [...current];
+      next[index - 1] = {
+        ...next[index - 1],
+        body_markdown: `${next[index - 1].body_markdown.trim()}\n\n${next[index].body_markdown.trim()}`,
+      };
+      next.splice(index, 1);
+      return next;
+    });
+  };
+  const splitAtMarker = (index: number) => {
+    const marker = "--- entry break ---";
+    const draft = drafts[index];
+    const markerIndex = draft.body_markdown.toLowerCase().indexOf(marker);
+    if (markerIndex < 0) return;
+    const before = draft.body_markdown.slice(0, markerIndex).trim();
+    const after = draft.body_markdown.slice(markerIndex + marker.length).trim();
+    if (!before || !after) return;
+    setDrafts((current) => {
+      const next = [...current];
+      next.splice(
+        index,
+        1,
+        { ...draft, body_markdown: before },
+        { page_number: draft.page_number, title: `${draft.title} continued`, body_markdown: after },
+      );
+      return next;
+    });
+  };
+
+  return (
+    <SidePanel title="Import journal document" onClose={onClose} onSubmit={() => save.mutate()} maxWidth="max-w-5xl">
+      <div className="space-y-4">
+        <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr_1fr] gap-3">
+          <Field label="Local document path">
+            <input
+              className="input"
+              value={path}
+              onChange={(e) => setPath(e.target.value)}
+              placeholder="/path/to/journal.docx"
+            />
+          </Field>
+          <Field label="Entry date">
+            <input type="date" className="input" value={entryDate} onChange={(e) => setEntryDate(e.target.value)} />
+          </Field>
+          <Field label="Linked goal">
+            <select className="input" value={goalId ?? ""} onChange={(e) => setGoalId(e.target.value ? parseInt(e.target.value, 10) : null)}>
+              <option value="">None</option>
+              {goals.map((goal) => (
+                <option key={goal.id} value={goal.id}>{goal.title}</option>
+              ))}
+            </select>
+          </Field>
+        </div>
+        <div className="flex items-center gap-2">
+          <button type="button" className="btn" disabled={!path.trim() || preview.isPending} onClick={() => preview.mutate()}>
+            Preview pages
+          </button>
+          <span className="text-xs text-ink-500">
+            Supports .docx, .md, and .txt. Add --- entry break --- inside a draft to split it.
+          </span>
+        </div>
+        {preview.isError && <div className="text-sm text-bad-600">{String((preview.error as Error).message)}</div>}
+        <div className="space-y-3">
+          {drafts.map((draft, index) => (
+            <div key={`${draft.page_number}-${index}`} className="card p-3">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <div className="text-xs text-ink-500">Draft {index + 1} · page {draft.page_number}</div>
+                <div className="flex items-center gap-2">
+                  <button type="button" className="btn-ghost text-xs" disabled={index === 0} onClick={() => mergeWithPrevious(index)}>
+                    Merge up
+                  </button>
+                  <button type="button" className="btn-ghost text-xs" onClick={() => splitAtMarker(index)}>
+                    Split marker
+                  </button>
+                </div>
+              </div>
+              <Field label="Title">
+                <input className="input" value={draft.title} onChange={(e) => updateDraft(index, { title: e.target.value })} />
+              </Field>
+              <Field label="Body">
+                <textarea
+                  className="input min-h-[12rem] font-mono text-xs"
+                  value={draft.body_markdown}
+                  onChange={(e) => updateDraft(index, { body_markdown: e.target.value })}
+                />
+              </Field>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="sticky bottom-0 z-10 -mx-6 mt-4 flex items-center gap-2 border-t border-ink-100 bg-white px-6 py-3">
+        <button type="submit" className="btn-primary" disabled={save.isPending || !drafts.length || !entryDate}>
+          Save {drafts.length || ""} entr{drafts.length === 1 ? "y" : "ies"}
+        </button>
+        <button type="button" className="btn" onClick={onClose}>Cancel</button>
+      </div>
+      {save.isError && <div className="mt-2 text-sm text-bad-600">{String((save.error as Error).message)}</div>}
     </SidePanel>
   );
 }

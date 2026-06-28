@@ -35,7 +35,7 @@ from app.models import (
     SignConvention,
     TransactionKind,
 )
-from app.routers import snapshots
+from app.routers import imports, snapshots
 
 
 def test_chase_credit_importer_marks_payments_and_returns():
@@ -268,6 +268,13 @@ def test_us_bank_importer_sniffing_prefers_specific_over_generic_shapes():
 
     assert importer_registry.sniff(citi_csv)[0] is CitiCreditImporter
     assert importer_registry.sniff(activity_csv)[0] is MarcusMorganStanleyBankImporter
+
+
+def test_importer_list_exposes_one_amex_choice():
+    rows = imports.list_importers()
+    amex_rows = [row for row in rows if "amex" in row["name"]]
+
+    assert amex_rows == [{"name": "amex", "label": "Amex"}]
 
 
 def test_contribution_history_importer_skips_metadata_rows():

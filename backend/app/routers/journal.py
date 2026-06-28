@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from fastapi import APIRouter
+from pathlib import Path
+import zipfile
+import xml.etree.ElementTree as ET
+
+from fastapi import APIRouter, HTTPException
 from sqlalchemy import select
 
 from .. import models, schemas
@@ -37,6 +41,79 @@ def create_entry(body: schemas.JournalEntryIn, db: DbSession):
     db.commit()
     db.refresh(obj)
     return obj
+
+
+@router.post("/import-preview", response_model=schemas.JournalImportPreview)
+def import_preview(body: schemas.JournalImportPreviewRequest):
+    path = Path(body.path).expanduser()
+    if not path.exists() or not path.is_file():
+        raise HTTPException(404, "file not found")
+    pages = _document_pages(path)
+    drafts = [
+        schemas.JournalImportDraft(
+            page_number=i + 1,
+            title=f"{path.stem} page {i + 1}",
+            body_markdown=page,
+        )
+        for i, page in enumerate(pages)
+        if page.strip()
+    ]
+    if not drafts:
+        raise HTTPException(400, "no journal text found")
+    return schemas.JournalImportPreview(source_filename=path.name, drafts=drafts)
+
+
+def _document_pages(path: Path) -> list[str]:
+    suffix = path.suffix.lower()
+    if suffix in {".txt", ".md", ".markdown"}:
+        text = path.read_text(encoding="utf-8", errors="replace")
+        return _split_text_pages(text)
+    if suffix == ".docx":
+        return _docx_pages(path)
+    raise HTTPException(400, "supported journal imports: .txt, .md, .markdown, .docx")
+
+
+def _split_text_pages(text: str) -> list[str]:
+    if "\f" in text:
+        parts = text.split("\f")
+    else:
+        parts = []
+        current: list[str] = []
+        for line in text.splitlines():
+            if line.strip().lower() in {"--- page ---", "=== page ==="}:
+                parts.append("\n".join(current))
+                current = []
+            else:
+                current.append(line)
+        parts.append("\n".join(current))
+    return [part.strip() for part in parts if part.strip()]
+
+
+def _docx_pages(path: Path) -> list[str]:
+    try:
+        with zipfile.ZipFile(path) as docx:
+            xml = docx.read("word/document.xml")
+    except (KeyError, zipfile.BadZipFile, OSError):
+        raise HTTPException(400, "could not read docx document text")
+
+    ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+    root = ET.fromstring(xml)
+    pages: list[str] = []
+    current: list[str] = []
+    for paragraph in root.findall(".//w:p", ns):
+        text = "".join(node.text or "" for node in paragraph.findall(".//w:t", ns)).strip()
+        if text:
+            current.append(text)
+        has_page_break = (
+            paragraph.find(".//w:br[@w:type='page']", ns) is not None
+            or paragraph.find(".//w:lastRenderedPageBreak", ns) is not None
+        )
+        if has_page_break and current:
+            pages.append("\n\n".join(current))
+            current = []
+    if current:
+        pages.append("\n\n".join(current))
+    return [page.strip() for page in pages if page.strip()]
 
 
 @router.get("/{entry_id}", response_model=schemas.JournalEntryOut)
