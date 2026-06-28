@@ -35,9 +35,19 @@ export function Backups() {
     onSuccess: () => window.location.reload(),
   });
 
+  const deleteBackup = useMutation({
+    mutationFn: (name: string) => api.del<Backup>(`/api/backups/${encodeURIComponent(name)}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["backups"] }),
+  });
+
   const restore = (backup: Backup) => {
     if (!confirm(`Restore ${backup.name}? The current database will be backed up first.`)) return;
     restoreBackup.mutate(backup.name);
+  };
+
+  const remove = (backup: Backup) => {
+    if (!confirm(`Delete backup ${backup.name}? This cannot be undone.`)) return;
+    deleteBackup.mutate(backup.name);
   };
 
   return (
@@ -93,7 +103,7 @@ export function Backups() {
                 </td>
                 <td className="px-3 py-2 text-right tabular">{formatBytes(backup.size_bytes)}</td>
                 <td className="px-3 py-2">
-                  <div className="flex justify-end">
+                  <div className="flex justify-end gap-2">
                     <button
                       type="button"
                       className="btn text-xs"
@@ -101,6 +111,14 @@ export function Backups() {
                       disabled={restoreBackup.isPending}
                     >
                       Restore
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-danger text-xs"
+                      onClick={() => remove(backup)}
+                      disabled={deleteBackup.isPending || restoreBackup.isPending}
+                    >
+                      Delete
                     </button>
                   </div>
                 </td>

@@ -106,6 +106,13 @@ def restore_backup(profile: ProfileInfo, name: str) -> dict:
     return _metadata(source, profile.slug)
 
 
+def delete_backup(profile: ProfileInfo, name: str) -> dict:
+    path = resolve_backup(profile, name)
+    deleted = _metadata(path, profile.slug)
+    path.unlink()
+    return deleted
+
+
 def _sidecars(path: Path) -> list[Path]:
     return [
         path.with_name(f"{path.name}-wal"),

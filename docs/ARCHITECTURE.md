@@ -200,6 +200,7 @@ POST   /api/profiles/active
 GET    /api/backups
 POST   /api/backups
 POST   /api/backups/{name}/restore
+DELETE /api/backups/{name}
 
 GET    /api/categories
 POST   /api/categories
