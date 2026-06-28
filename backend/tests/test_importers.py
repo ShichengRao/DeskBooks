@@ -1,20 +1,40 @@
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 from io import BytesIO
-from datetime import date
 
 import openpyxl
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
+from app import importers as importer_registry
 from app import schemas
 from app.importers.amex import AmexImporter
 from app.importers.amex_xlsx import parse_amex_xlsx_bytes
 from app.importers.chase_credit import ChaseCreditImporter
 from app.importers.contribution_history import ContributionHistoryImporter
+from app.importers.us_banks import (
+    CapitalOneCreditImporter,
+    ChaseBankImporter,
+    CitiCreditImporter,
+    DebitCreditBankImporter,
+    DiscoverCreditImporter,
+    MarcusMorganStanleyBankImporter,
+    PncBankImporter,
+    RunningBalanceBankImporter,
+    UsBankImporter,
+)
 from app.importers.wells_fargo_checking import WellsFargoCheckingImporter
-from app.models import Account, AccountCategory, AccountType, Base, NetWorthSnapshot, SignConvention, TransactionKind
+from app.models import (
+    Account,
+    AccountCategory,
+    AccountType,
+    Base,
+    NetWorthSnapshot,
+    SignConvention,
+    TransactionKind,
+)
 from app.routers import snapshots
 
 
@@ -86,6 +106,168 @@ def test_wells_fargo_importer_marks_common_local_kinds():
         TransactionKind.cc_payment,
         TransactionKind.uncategorized,
     ]
+
+
+def test_chase_bank_importer_reads_signed_bank_activity():
+    rows = ChaseBankImporter.parse(
+        "\n".join(
+            [
+                "Details,Posting Date,Description,Amount,Type,Balance,Check or Slip #",
+                "DEBIT,06/01/2026,NEIGHBORHOOD COFFEE,-6.75,DEBIT_CARD,993.25,",
+                "CREDIT,06/02/2026,ACME PAYROLL,2500.00,ACH_CREDIT,3493.25,",
+                "DEBIT,06/05/2026,ONLINE TRANSFER TO SAVINGS,-300.00,ACH_DEBIT,3193.25,",
+            ]
+        )
+    )
+
+    assert [r.amount for r in rows] == [
+        Decimal("-6.75"),
+        Decimal("2500.00"),
+        Decimal("-300.00"),
+    ]
+    assert rows[1].suggested_kind == TransactionKind.income
+    assert rows[2].suggested_kind == TransactionKind.transfer
+
+
+def test_running_balance_bank_importer_covers_boa_truist_bmo_shape():
+    rows = RunningBalanceBankImporter.parse(
+        "\n".join(
+            [
+                "Date,Description,Amount,Running Bal.",
+                "06/01/2026,POINT OF SALE PURCHASE,-42.18,1250.00",
+                "06/03/2026,TREAS 310 TAX REF,150.00,1400.00",
+            ]
+        )
+    )
+
+    assert [r.amount for r in rows] == [Decimal("-42.18"), Decimal("150.00")]
+    assert rows[1].suggested_kind == TransactionKind.income
+
+
+def test_pnc_bank_importer_converts_withdrawals_and_deposits():
+    rows = PncBankImporter.parse(
+        "\n".join(
+            [
+                "Date,Description,Withdrawals,Deposits,Balance",
+                "06/01/2026,ATM WITHDRAWAL,80.00,,920.00",
+                "06/02/2026,DIRECT DEP PAYROLL,,2500.00,3420.00",
+            ]
+        )
+    )
+
+    assert [r.amount for r in rows] == [Decimal("-80.00"), Decimal("2500.00")]
+    assert rows[1].suggested_kind == TransactionKind.income
+
+
+def test_debit_credit_bank_importer_covers_td_and_custody_shape():
+    rows = DebitCreditBankImporter.parse(
+        "\n".join(
+            [
+                "Date,Description,Debit,Credit,Balance",
+                "06/01/2026,ACH TRANSFER TO BROKERAGE,500.00,,1500.00",
+                "06/04/2026,INTEREST PAID,,1.23,1501.23",
+            ]
+        )
+    )
+
+    assert [r.amount for r in rows] == [Decimal("-500.00"), Decimal("1.23")]
+    assert rows[0].suggested_kind == TransactionKind.transfer
+    assert rows[1].suggested_kind == TransactionKind.income
+
+
+def test_us_bank_importer_combines_name_transaction_and_memo():
+    rows = UsBankImporter.parse(
+        "\n".join(
+            [
+                "Date,Transaction,Name,Memo,Amount",
+                "06/01/2026,DEBIT_CARD,NEIGHBORHOOD COFFEE,Latte,-6.75",
+                "06/02/2026,ACH_CREDIT,ACME PAYROLL,Salary,2500.00",
+            ]
+        )
+    )
+
+    assert rows[0].description_normalized == "NEIGHBORHOOD COFFEE DEBIT_CARD Latte"
+    assert [r.amount for r in rows] == [Decimal("-6.75"), Decimal("2500.00")]
+    assert rows[1].suggested_kind == TransactionKind.income
+
+
+def test_activity_bank_importer_covers_marcus_and_morgan_stanley_shape():
+    rows = MarcusMorganStanleyBankImporter.parse(
+        "\n".join(
+            [
+                "Date,Activity,Description,Amount,Balance",
+                "06/01/2026,Interest,Monthly interest,3.21,1003.21",
+                "06/02/2026,Transfer,External transfer,-100.00,903.21",
+            ]
+        )
+    )
+
+    assert [r.amount for r in rows] == [Decimal("3.21"), Decimal("-100.00")]
+    assert rows[0].suggested_kind == TransactionKind.income
+    assert rows[1].suggested_kind == TransactionKind.transfer
+
+
+def test_capital_one_credit_importer_converts_debit_credit_columns():
+    rows = CapitalOneCreditImporter.parse(
+        "\n".join(
+            [
+                "Transaction Date,Posted Date,Card No.,Description,Category,Debit,Credit",
+                "06/01/2026,06/02/2026,1234,ONLINE SOFTWARE,Services,19.00,",
+                "06/10/2026,06/10/2026,1234,AUTOPAY PAYMENT,Payment,,50.00",
+            ]
+        )
+    )
+
+    assert [r.amount for r in rows] == [Decimal("-19.00"), Decimal("50.00")]
+    assert rows[1].suggested_kind == TransactionKind.cc_payment
+
+
+def test_citi_credit_importer_converts_debit_credit_columns():
+    rows = CitiCreditImporter.parse(
+        "\n".join(
+            [
+                "Status,Date,Description,Debit,Credit",
+                "Cleared,06/01/2026,BOOKSTORE,31.42,",
+                "Cleared,06/12/2026,PAYMENT THANK YOU,,31.42",
+            ]
+        )
+    )
+
+    assert [r.amount for r in rows] == [Decimal("-31.42"), Decimal("31.42")]
+    assert rows[1].suggested_kind == TransactionKind.cc_payment
+
+
+def test_discover_credit_importer_flips_charges_positive_exports():
+    rows = DiscoverCreditImporter.parse(
+        "\n".join(
+            [
+                "Trans. Date,Post Date,Description,Amount,Category",
+                "06/01/2026,06/02/2026,RESTAURANT,23.45,Restaurants",
+                "06/10/2026,06/10/2026,PAYMENT RECEIVED,-23.45,Payments",
+            ]
+        )
+    )
+
+    assert [r.amount for r in rows] == [Decimal("-23.45"), Decimal("23.45")]
+    assert rows[1].suggested_kind == TransactionKind.cc_payment
+
+
+def test_us_bank_importer_sniffing_prefers_specific_over_generic_shapes():
+    citi_csv = "\n".join(
+        [
+            "Status,Date,Description,Debit,Credit",
+            "Cleared,06/01/2026,BOOKSTORE,31.42,",
+        ]
+    )
+    activity_csv = "\n".join(
+        [
+            "Date,Activity,Description,Amount,Balance",
+            "06/01/2026,Interest,Monthly interest,3.21,1003.21",
+        ]
+    )
+
+    assert importer_registry.sniff(citi_csv)[0] is CitiCreditImporter
+    assert importer_registry.sniff(activity_csv)[0] is MarcusMorganStanleyBankImporter
 
 
 def test_contribution_history_importer_skips_metadata_rows():
