@@ -46,3 +46,17 @@ Thumbs.db
 
 # Claude local settings (per-machine)
 .claude/settings.local.json
+
+# RepoHealthChecker maintenance
+.env
+.env.*
+!.env.example
+
+# Local maintainer metadata
+.settings/
+*.iml
+.classpath
+.project
+.claude/
+credentials/
+tokens/

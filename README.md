@@ -173,3 +173,10 @@ database.
 The app is local-only and has no telemetry. Routine use does not require
 internet access after dependencies are installed, unless you click an account
 URL you saved in the app. See `PRIVACY.md` and `SECURITY.md`.
+
+
+## Maintenance
+
+- `docs/MAINTENANCE_AUDIT.md` records the current audit status, verification commands, and backlog.
+- `docs/ARCHITECTURE.md` maps the maintainer-facing project structure when present.
+- `docs/DEPENDENCIES.md` records dependency update guidance when present.

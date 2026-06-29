@@ -1,0 +1,31 @@
+name: Maintenance Smoke
+
+on:
+  pull_request:
+  push:
+    branches: [codex/repo-health-audit-20260629]
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm test
+        working-directory: frontend
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: |
+          python - <<'PY'
+          from pathlib import Path
+          import py_compile
+          skip = {'.git', '.mypy_cache', '.pytest_cache', '.ruff_cache', '.tox', '.venv', '__pycache__', 'build', 'dist', 'node_modules', 'venv', 'venv312'}
+          sources = [p for p in Path('.').rglob('*.py') if not any(part in skip or part.endswith('.egg-info') for part in p.parts)]
+          for source in sources:
+              py_compile.compile(str(source), doraise=True)
+          print(f'compiled {len(sources)} Python files')
+          PY
+        working-directory: backend
