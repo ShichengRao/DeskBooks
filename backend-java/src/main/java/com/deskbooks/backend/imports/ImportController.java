@@ -26,6 +26,7 @@ import java.util.Map;
 
 import com.deskbooks.backend.db.SqliteConnectionProvider;
 import com.deskbooks.backend.foundation.ApiException;
+import com.deskbooks.backend.rules.RuleEngine;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.Valid;
@@ -61,9 +62,11 @@ class ImportController {
             new DiscoverCreditImporter());
 
     private final SqliteConnectionProvider connections;
+    private final RuleEngine ruleEngine;
 
-    ImportController(SqliteConnectionProvider connections) {
+    ImportController(SqliteConnectionProvider connections, RuleEngine ruleEngine) {
         this.connections = connections;
+        this.ruleEngine = ruleEngine;
     }
 
     @GetMapping("/importers")
@@ -144,6 +147,7 @@ class ImportController {
 
                 Map<DuplicateKey, Integer> existing = existingKeyCounts(connection, body.accountId());
                 Map<DuplicateKey, Integer> fileCounts = new LinkedHashMap<>();
+                List<Long> ruleFires = new ArrayList<>();
                 int applied = 0;
                 int duplicates = 0;
                 for (ImportDraftRow row : body.rows()) {
@@ -157,7 +161,11 @@ class ImportController {
                     }
                     insertTransaction(connection, body.accountId(), batchId, row);
                     applied++;
+                    if (row.suggestedMatchedRuleId() != null) {
+                        ruleFires.add(row.suggestedMatchedRuleId());
+                    }
                 }
+                ruleEngine.stampRuleFires(connection, ruleFires);
 
                 try (PreparedStatement statement = connection.prepareStatement("""
                         UPDATE import_batches
@@ -234,10 +242,16 @@ class ImportController {
             }
 
             List<ImportDraftRow> rows = chosen.parse(csvText);
+            List<RuleEngine.RuleRecord> activeRules = ruleEngine.loadActiveRules(connection);
             Map<DuplicateKey, Integer> existing = existingKeyCounts(connection, accountId);
             Map<DuplicateKey, Integer> fileCounts = new LinkedHashMap<>();
             List<ImportDraftRow> markedRows = new ArrayList<>();
             for (ImportDraftRow row : rows) {
+                row = row.withRuleSuggestion(ruleEngine.evaluate(
+                        activeRules,
+                        accountId,
+                        row.descriptionNormalized() == null ? row.descriptionRaw() : row.descriptionNormalized(),
+                        row.amountValue()));
                 DuplicateKey key = new DuplicateKey(row.date(), money(row.amountValue()), row.descriptionNormalized() == null ? "" : row.descriptionNormalized());
                 int position = fileCounts.getOrDefault(key, 0);
                 fileCounts.put(key, position + 1);
@@ -897,6 +911,25 @@ class ImportController {
                     suggestedTags,
                     suggestedMatchedRuleId,
                     duplicate,
+                    raw);
+        }
+        ImportDraftRow withRuleSuggestion(RuleEngine.RuleEval eval) {
+            if (!eval.matched()) {
+                return this;
+            }
+            return new ImportDraftRow(
+                    rowIndex,
+                    date,
+                    postDate,
+                    descriptionRaw,
+                    descriptionNormalized,
+                    eval.merchant() == null || eval.merchant().isBlank() ? merchant : eval.merchant(),
+                    amount,
+                    eval.categoryId() == null ? suggestedCategoryId : eval.categoryId(),
+                    eval.kind() == null ? suggestedKind : eval.kind(),
+                    eval.tags() == null ? suggestedTags : eval.tags(),
+                    eval.matchedRuleId(),
+                    isDuplicate,
                     raw);
         }
         BigDecimal amountValue() {

@@ -59,6 +59,8 @@ class ImportControllerTest {
     @Test
     void previewApplyDuplicateDetectionAndRollbackWorkForChaseCreditCsv() throws Exception {
         createAccount("Card", "credit", "credit_card");
+        createCategory("Groceries", "expense");
+        createRule("Acme grocery", "ACME GROCERY", 1, "expense");
         Path csv = dataDir.resolve("chase.csv");
         Files.writeString(csv, String.join("\n",
                 "Transaction Date,Post Date,Description,Category,Type,Amount,Memo",
@@ -80,6 +82,9 @@ class ImportControllerTest {
                 .andExpect(jsonPath("$.rows", hasSize(2)))
                 .andExpect(jsonPath("$.rows[0].amount", equalTo("-42.18")))
                 .andExpect(jsonPath("$.rows[0].is_duplicate", equalTo(false)))
+                .andExpect(jsonPath("$.rows[0].suggested_category_id", equalTo(1)))
+                .andExpect(jsonPath("$.rows[0].suggested_kind", equalTo("expense")))
+                .andExpect(jsonPath("$.rows[0].suggested_matched_rule_id", equalTo(1)))
                 .andExpect(jsonPath("$.rows[1].suggested_kind", equalTo("cc_payment")));
 
         mvc.perform(post("/api/imports/apply")
@@ -99,10 +104,10 @@ class ImportControllerTest {
                                       "description_normalized": "ACME GROCERY",
                                       "merchant": "Acme Grocery",
                                       "amount": "-42.18",
-                                      "suggested_category_id": null,
-                                      "suggested_kind": "uncategorized",
+                                      "suggested_category_id": 1,
+                                      "suggested_kind": "expense",
                                       "suggested_tags": [],
-                                      "suggested_matched_rule_id": null,
+                                      "suggested_matched_rule_id": 1,
                                       "is_duplicate": false,
                                       "raw": {"Description": "ACME GROCERY"}
                                     },
@@ -134,6 +139,10 @@ class ImportControllerTest {
         mvc.perform(get("/api/transactions/count"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.count", equalTo(2)));
+
+        mvc.perform(get("/api/rules"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].apply_count", equalTo(1)));
 
         mvc.perform(post("/api/imports/preview-path")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -195,6 +204,32 @@ class ImportControllerTest {
                                   "type": "%s"
                                 }
                                 """.formatted(name, category, type)))
+                .andExpect(status().isOk());
+    }
+
+    private void createCategory(String name, String kind) throws Exception {
+        mvc.perform(post("/api/categories")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "name": "%s",
+                                  "kind": "%s"
+                                }
+                                """.formatted(name, kind)))
+                .andExpect(status().isOk());
+    }
+
+    private void createRule(String name, String pattern, long categoryId, String kind) throws Exception {
+        mvc.perform(post("/api/rules")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "name": "%s",
+                                  "match_description_pattern": "%s",
+                                  "set_category_id": %d,
+                                  "set_kind": "%s"
+                                }
+                                """.formatted(name, pattern, categoryId, kind)))
                 .andExpect(status().isOk());
     }
 

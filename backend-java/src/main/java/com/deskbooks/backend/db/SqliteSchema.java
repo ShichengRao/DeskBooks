@@ -101,9 +101,45 @@ class SqliteSchema {
                       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
                     )
                     """);
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS rules (
+                      id INTEGER NOT NULL PRIMARY KEY,
+                      name VARCHAR(120) NOT NULL,
+                      priority INTEGER NOT NULL DEFAULT 100,
+                      is_active BOOLEAN NOT NULL DEFAULT 1,
+                      match_account_id INTEGER REFERENCES accounts(id),
+                      match_description_pattern TEXT,
+                      match_amount_min NUMERIC(14, 2),
+                      match_amount_max NUMERIC(14, 2),
+                      set_category_id INTEGER REFERENCES categories(id),
+                      set_kind VARCHAR(32),
+                      set_merchant VARCHAR(255),
+                      set_tags TEXT,
+                      notes TEXT,
+                      last_applied_at DATETIME,
+                      apply_count INTEGER NOT NULL DEFAULT 0,
+                      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """);
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS rule_proposal_rejections (
+                      id INTEGER NOT NULL PRIMARY KEY,
+                      signature VARCHAR(512) NOT NULL UNIQUE,
+                      key VARCHAR(255) NOT NULL,
+                      name VARCHAR(255) NOT NULL,
+                      match_account_id INTEGER REFERENCES accounts(id),
+                      match_description_pattern TEXT NOT NULL,
+                      set_category_id INTEGER REFERENCES categories(id),
+                      set_kind VARCHAR(32) NOT NULL,
+                      set_merchant VARCHAR(255),
+                      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """);
             statement.execute("CREATE INDEX IF NOT EXISTS ix_transactions_date_kind ON transactions(date, kind)");
             statement.execute("CREATE INDEX IF NOT EXISTS ix_transactions_account_date ON transactions(account_id, date)");
             statement.execute("CREATE INDEX IF NOT EXISTS ix_transaction_splits_group_name ON transaction_splits(group_name)");
+            statement.execute("CREATE INDEX IF NOT EXISTS ix_rules_priority ON rules(priority)");
+            statement.execute("CREATE INDEX IF NOT EXISTS ix_rule_proposal_rejections_signature ON rule_proposal_rejections(signature)");
             ensureColumn(connection, "transactions", "post_date", "DATE");
             ensureColumn(connection, "transactions", "description_normalized", "TEXT");
             ensureColumn(connection, "transactions", "merchant", "VARCHAR(255)");
