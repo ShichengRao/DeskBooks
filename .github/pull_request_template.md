@@ -28,17 +28,13 @@ For importer PRs, include:
 ## Privacy Checklist
 
 - [ ] I used only synthetic test/sample data.
-- [ ] I did not commit real financial exports.
 - [ ] I did not include real account numbers, balances, merchants, names, addresses, or other personal details.
 
 ## Testing
 
-Commands run:
+Describe any new tests added, existing tests changed, or testing approach updated.
 
-- [ ] `cd backend && uv run pytest`
-- [ ] `cd frontend && npm run typecheck`
-- [ ] `cd frontend && npm test`
-- [ ] Other: `<describe>`
+If no tests changed, briefly explain why.
 
 ## Screenshots
 
