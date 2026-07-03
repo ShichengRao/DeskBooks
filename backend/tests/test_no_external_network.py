@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import ast
-from pathlib import Path
 import re
-
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -53,3 +52,25 @@ def test_frontend_fetches_only_relative_api_paths():
             offenders.append(f"{path.relative_to(ROOT)} uses fetch({expr})")
 
     assert offenders == []
+
+
+def test_cors_origins_are_exact_frontend_origins(monkeypatch):
+    from app.main import _cors_origins
+
+    monkeypatch.delenv("PFA_CORS_ORIGINS", raising=False)
+    monkeypatch.setenv("FRONTEND_PORT", "5172")
+
+    assert _cors_origins() == [
+        "http://localhost:5172",
+        "http://127.0.0.1:5172",
+    ]
+
+    monkeypatch.setenv(
+        "PFA_CORS_ORIGINS",
+        "http://localhost:3000, http://127.0.0.1:3000,",
+    )
+
+    assert _cors_origins() == [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]

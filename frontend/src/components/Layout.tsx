@@ -5,7 +5,7 @@ import clsx from "clsx";
 import { api } from "../api/client";
 import { Field } from "./Field";
 import { SidePanel } from "./SidePanel";
-import type { ProfileList } from "../api/types";
+import type { Profile, ProfileList } from "../api/types";
 
 const tabs: { to: string; label: string; end?: boolean; group?: "view" | "edit" }[] = [
   // "View" tabs — read-mostly dashboards.
@@ -23,10 +23,7 @@ const tabs: { to: string; label: string; end?: boolean; group?: "view" | "edit" 
 ];
 
 export function Layout() {
-  const [profileEditor, setProfileEditor] = useState<{
-    mode: "create" | "duplicate";
-    initialName: string;
-  } | null>(null);
+  const [profileEditorOpen, setProfileEditorOpen] = useState(false);
   const profiles = useQuery({
     queryKey: ["profiles"],
     queryFn: () => api.get<ProfileList>("/api/profiles"),
@@ -42,7 +39,12 @@ export function Layout() {
     onSuccess: () => window.location.reload(),
   });
   const duplicateProfile = useMutation({
-    mutationFn: (name: string) => api.post<ProfileList>("/api/profiles/duplicate", { name }),
+    mutationFn: (body: { name: string; source_slug: string }) =>
+      api.post<ProfileList>("/api/profiles/duplicate", body),
+    onSuccess: () => window.location.reload(),
+  });
+  const deleteProfile = useMutation({
+    mutationFn: (slug: string) => api.del<Profile>(`/api/profiles/${encodeURIComponent(slug)}`),
     onSuccess: () => window.location.reload(),
   });
 
@@ -56,15 +58,17 @@ export function Layout() {
   };
 
   const addProfile = () => {
-    setProfileEditor({ mode: "create", initialName: "" });
+    setProfileEditorOpen(true);
   };
-
-  const copyProfile = () => {
-    const active = profiles.data?.profiles.find((p) => p.slug === profiles.data?.active_slug);
-    setProfileEditor({
-      mode: "duplicate",
-      initialName: active ? `${active.name} copy` : "Profile copy",
-    });
+  const activeProfile = profiles.data?.profiles.find((p) => p.slug === profiles.data?.active_slug);
+  const canDeleteProfile = Boolean(profiles.data && profiles.data.profiles.length > 1 && activeProfile);
+  const removeActiveProfile = () => {
+    if (!activeProfile) return;
+    const ok = confirm(
+      `Delete profile "${activeProfile.name}" and its local SQLite file? This cannot be undone.`,
+    );
+    if (!ok) return;
+    deleteProfile.mutate(activeProfile.slug);
   };
 
   return (
@@ -77,7 +81,7 @@ export function Layout() {
             <select
               className="input min-w-32 py-1 text-xs"
               value={profiles.data?.active_slug ?? ""}
-              disabled={profiles.isLoading || switchProfile.isPending || createProfile.isPending || duplicateProfile.isPending}
+              disabled={profiles.isLoading || switchProfile.isPending || createProfile.isPending || duplicateProfile.isPending || deleteProfile.isPending}
               onChange={(e) => {
                 if (!e.target.value || e.target.value === profiles.data?.active_slug) return;
                 switchProfile.mutate(e.target.value);
@@ -95,19 +99,19 @@ export function Layout() {
               type="button"
               className="btn-ghost px-2 py-1 text-xs"
               onClick={addProfile}
-              disabled={createProfile.isPending || duplicateProfile.isPending}
+              disabled={switchProfile.isPending || createProfile.isPending || duplicateProfile.isPending || deleteProfile.isPending}
               title="Create local profile"
             >
               +
             </button>
             <button
               type="button"
-              className="btn-ghost px-2 py-1 text-xs"
-              onClick={copyProfile}
-              disabled={!profiles.data || createProfile.isPending || duplicateProfile.isPending}
-              title="Duplicate active profile"
+              className="btn-ghost px-2 py-1 text-xs text-bad-600 hover:bg-bad-500/10"
+              onClick={removeActiveProfile}
+              disabled={!canDeleteProfile || switchProfile.isPending || createProfile.isPending || duplicateProfile.isPending || deleteProfile.isPending}
+              title="Delete active profile"
             >
-              Duplicate
+              Delete
             </button>
           </div>
           <nav className="flex items-center gap-1 text-sm">
@@ -151,19 +155,18 @@ export function Layout() {
       <main className="flex-1 p-6 max-w-[1600px] w-full mx-auto">
         <Outlet />
       </main>
-      {profileEditor && (
+      {profileEditorOpen && (
         <ProfileEditor
-          mode={profileEditor.mode}
-          initialName={profileEditor.initialName}
-          isSaving={createProfile.isPending || duplicateProfile.isPending}
-          error={createProfile.error || duplicateProfile.error}
-          onClose={() => setProfileEditor(null)}
-          onSubmit={(name, seedStarterData) => {
-            if (profileEditor.mode === "create") {
-              createProfile.mutate({ name, seed_starter_data: seedStarterData });
-            } else {
-              duplicateProfile.mutate(name);
+          profiles={profiles.data}
+          isSaving={createProfile.isPending || duplicateProfile.isPending || deleteProfile.isPending}
+          error={createProfile.error || duplicateProfile.error || deleteProfile.error}
+          onClose={() => setProfileEditorOpen(false)}
+          onSubmit={(name, mode, seedStarterData, sourceSlug) => {
+            if (mode === "copy") {
+              duplicateProfile.mutate({ name, source_slug: sourceSlug });
+              return;
             }
+            createProfile.mutate({ name, seed_starter_data: seedStarterData });
           }}
         />
       )}
@@ -172,44 +175,47 @@ export function Layout() {
 }
 
 function ProfileEditor({
-  mode,
-  initialName,
+  profiles,
   isSaving,
   error,
   onClose,
   onSubmit,
 }: {
-  mode: "create" | "duplicate";
-  initialName: string;
+  profiles: ProfileList | undefined;
   isSaving: boolean;
   error: Error | null;
   onClose: () => void;
-  onSubmit: (name: string, seedStarterData: boolean) => void;
+  onSubmit: (name: string, mode: "fresh" | "copy", seedStarterData: boolean, sourceSlug: string) => void;
 }) {
-  const [name, setName] = useState(initialName);
+  const active = profiles?.profiles.find((p) => p.slug === profiles.active_slug);
+  const [mode, setMode] = useState<"fresh" | "copy">("fresh");
+  const [name, setName] = useState("");
   const [seedStarterData, setSeedStarterData] = useState(true);
+  const [sourceSlug, setSourceSlug] = useState(profiles?.active_slug ?? "");
   const trimmed = name.trim();
-  const title = mode === "create" ? "New local profile" : "Duplicate active profile";
+  const effectiveSourceSlug = sourceSlug || profiles?.active_slug || "";
+  const canSubmit = Boolean(trimmed && (mode === "fresh" || effectiveSourceSlug));
 
   return (
-    <SidePanel title={title} onClose={onClose} onSubmit={() => onSubmit(trimmed, seedStarterData)} maxWidth="max-w-md">
+    <SidePanel title="New local profile" onClose={onClose} onSubmit={() => onSubmit(trimmed, mode, seedStarterData, effectiveSourceSlug)} maxWidth="max-w-md">
       <div className="space-y-3">
         <Field label="Profile name">
           <input
             className="input"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder={mode === "create" ? "Personal" : "Profile copy"}
+            placeholder={mode === "copy" && active ? `${active.name} copy` : "Personal"}
             autoFocus
             required
           />
         </Field>
-        {mode === "duplicate" && (
-          <p className="text-sm text-ink-500">
-            This creates a separate local SQLite file from the currently active profile and switches to it.
-          </p>
-        )}
-        {mode === "create" && (
+        <Field label="Start from">
+          <select className="input" value={mode} onChange={(e) => setMode(e.target.value as "fresh" | "copy")}>
+            <option value="fresh">Fresh profile</option>
+            <option value="copy">Copy existing profile</option>
+          </select>
+        </Field>
+        {mode === "fresh" ? (
           <label className="flex items-start gap-2 text-sm text-ink-700">
             <input
               type="checkbox"
@@ -221,11 +227,19 @@ function ProfileEditor({
               Seed starter accounts, categories, and demo notes.
             </span>
           </label>
+        ) : (
+          <Field label="Source profile">
+            <select className="input" value={effectiveSourceSlug} onChange={(e) => setSourceSlug(e.target.value)} required>
+              {(profiles?.profiles ?? []).map((profile) => (
+                <option key={profile.slug} value={profile.slug}>{profile.name}</option>
+              ))}
+            </select>
+          </Field>
         )}
       </div>
       <div className="sticky bottom-0 z-10 -mx-6 mt-4 flex items-center gap-2 border-t border-ink-100 bg-white px-6 py-3">
-        <button type="submit" className="btn-primary" disabled={isSaving || !trimmed}>
-          {mode === "create" ? "Create profile" : "Duplicate profile"}
+        <button type="submit" className="btn-primary" disabled={isSaving || !canSubmit}>
+          Create profile
         </button>
         <button type="button" className="btn" onClick={onClose}>Cancel</button>
       </div>

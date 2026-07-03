@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 import sys
+from pathlib import Path
 
 APP_NAME = "DeskBooks"
 APP_DIR_NAME = "deskbooks"

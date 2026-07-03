@@ -48,8 +48,11 @@ def create_profile(body: schemas.ProfileCreate):
 
 
 @router.post("/duplicate", response_model=schemas.ProfileList)
-def duplicate_profile(body: schemas.ProfileCreate):
-    profiles.duplicate_active_profile(body.name)
+def duplicate_profile(body: schemas.ProfileDuplicate):
+    try:
+        profiles.duplicate_profile(body.name, body.source_slug)
+    except KeyError:
+        raise HTTPException(404, "source profile not found")
     reset_engine()
     init_db()
     return _profile_list()
@@ -64,3 +67,16 @@ def activate_profile(body: schemas.ProfileActivate):
     reset_engine()
     init_db()
     return _profile_list()
+
+
+@router.delete("/{slug}", response_model=schemas.ProfileOut)
+def delete_profile(slug: str):
+    reset_engine()
+    try:
+        deleted = profiles.delete_profile(slug)
+    except KeyError:
+        raise HTTPException(404, "profile not found")
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    init_db()
+    return _profile_out(deleted)

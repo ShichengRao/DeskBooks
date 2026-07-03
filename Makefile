@@ -17,13 +17,13 @@ test:
 	cd backend && uv run pytest
 
 backend:
-	cd backend && uv run uvicorn app.main:app --host 127.0.0.1 --port "$(API_PORT)" --log-level warning --reload --reload-dir app
+	cd backend && PFA_CORS_ORIGINS="http://localhost:$(PORT),http://127.0.0.1:$(PORT)" uv run uvicorn app.main:app --host 127.0.0.1 --port "$(API_PORT)" --log-level warning --reload --reload-dir app
 
 frontend:
 	cd frontend && PFA_API_TARGET="http://127.0.0.1:$(API_PORT)" npm run dev -- --host 127.0.0.1 --port "$(PORT)" --strictPort
 
 open:
-	open "http://127.0.0.1:$(PORT)"
+	open "http://localhost:$(PORT)"
 
 typecheck:
 	cd frontend && npm run typecheck

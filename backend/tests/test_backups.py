@@ -40,3 +40,25 @@ def test_backup_restore_replaces_active_profile_database_and_keeps_safety_copy(t
     names = [row["name"] for row in backups.list_backups(profile)]
     assert created["name"] in names
     assert any(name.endswith("-pre-restore.db") for name in names)
+
+
+def test_delete_backup_removes_profile_backup(tmp_path, monkeypatch):
+    monkeypatch.setattr(backups, "DATA_DIR", tmp_path)
+    db_path = tmp_path / "app.db"
+    profile = ProfileInfo(
+        slug="personal",
+        name="Personal",
+        db_file="app.db",
+        db_path=db_path,
+        is_active=True,
+    )
+
+    _write_marker(db_path, "clean")
+    created = backups.create_backup(profile)
+    backup_path = tmp_path / "backups" / profile.slug / created["name"]
+
+    deleted = backups.delete_backup(profile, created["name"])
+
+    assert deleted["name"] == created["name"]
+    assert not backup_path.exists()
+    assert backups.list_backups(profile) == []

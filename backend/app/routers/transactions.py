@@ -227,6 +227,15 @@ def set_transaction_split(
     return tx
 
 
+def _category_or_404(db: Session, category_id: int | None) -> models.Category | None:
+    if category_id is None:
+        return None
+    category = db.get(models.Category, category_id)
+    if category is None:
+        raise HTTPException(404, "category not found")
+    return category
+
+
 @router.patch("/{tx_id}", response_model=schemas.TransactionOut)
 def update_transaction(
     tx_id: int, body: schemas.TransactionUpdate, db: Session = DB_DEP
@@ -240,7 +249,7 @@ def update_transaction(
     if "category_id" in data:
         tx.is_user_categorized = True
         tx.matched_rule_id = None  # user override breaks the rule attribution
-        cat = db.get(models.Category, data["category_id"]) if data["category_id"] else None
+        cat = _category_or_404(db, data["category_id"])
         if cat and "kind" not in data:
             tx.kind = models.TransactionKind(cat.kind.value)
     if "kind" in data:
@@ -322,7 +331,7 @@ def bulk_update(body: schemas.TransactionBulkUpdate, db: Session = DB_DEP):
     if not body.ids:
         return {"updated": 0}
     txs = list(db.scalars(select(models.Transaction).where(models.Transaction.id.in_(body.ids))))
-    new_cat = db.get(models.Category, body.category_id) if body.category_id else None
+    new_cat = _category_or_404(db, body.category_id)
     tags_by_id = _tags_by_id(db, body.add_tag_ids)
     for tx in txs:
         _apply_bulk_category(tx, body, new_cat)

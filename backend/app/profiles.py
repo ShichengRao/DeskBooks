@@ -128,9 +128,16 @@ def create_profile(name: str) -> ProfileInfo:
     return _profile_from_row(row, str(registry.get("active") or ""))
 
 
-def duplicate_active_profile(name: str) -> ProfileInfo:
+def duplicate_profile(name: str, source_slug: str | None = None) -> ProfileInfo:
     registry = _read_registry()
-    source = get_active_profile()
+    active_slug = str(registry.get("active") or "")
+    source = None
+    for source_row in registry["profiles"]:
+        if source_row.get("slug") == (source_slug or active_slug):
+            source = _profile_from_row(source_row, active_slug)
+            break
+    if source is None:
+        raise KeyError(source_slug or active_slug)
     slug = _unique_slug(registry, name)
     row = {
         "slug": slug,
@@ -148,6 +155,46 @@ def duplicate_active_profile(name: str) -> ProfileInfo:
     registry["active"] = slug
     _write_registry(registry)
     return _profile_from_row(row, slug)
+
+
+def duplicate_active_profile(name: str) -> ProfileInfo:
+    return duplicate_profile(name)
+
+
+def _db_sidecars(path: Path) -> list[Path]:
+    return [
+        path.with_name(f"{path.name}-wal"),
+        path.with_name(f"{path.name}-shm"),
+        path.with_name(f"{path.name}-journal"),
+    ]
+
+
+def delete_profile(slug: str) -> ProfileInfo:
+    registry = _read_registry()
+    rows = list(registry["profiles"])
+    if len(rows) <= 1:
+        raise ValueError("cannot delete the only profile")
+
+    active_slug = str(registry.get("active") or "")
+    deleted_row = next((row for row in rows if row.get("slug") == slug), None)
+    if deleted_row is None:
+        raise KeyError(slug)
+
+    remaining = [row for row in rows if row.get("slug") != slug]
+    deleted = _profile_from_row(deleted_row, active_slug)
+    if active_slug == slug:
+        registry["active"] = remaining[0]["slug"]
+    registry["profiles"] = remaining
+    _write_registry(registry)
+
+    remaining_paths = {_resolve_db_path(str(row["db_file"])) for row in remaining}
+    if deleted.db_path not in remaining_paths:
+        for path in [deleted.db_path, *_db_sidecars(deleted.db_path)]:
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
+    return deleted
 
 
 def set_active_profile(slug: str) -> ProfileInfo:

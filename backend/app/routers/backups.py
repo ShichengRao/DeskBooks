@@ -41,3 +41,16 @@ def restore_profile_backup(name: str):
         reset_engine()
     init_db()
     return restored
+
+
+@router.delete("/{name}", response_model=schemas.BackupOut)
+def delete_profile_backup(name: str):
+    profile = get_active_profile()
+    try:
+        return backups.delete_backup(profile, name)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(404, "backup not found") from exc
+    except OSError as exc:
+        raise HTTPException(500, str(exc)) from exc

@@ -127,3 +127,115 @@ def test_duplicate_active_profile_copies_sqlite_database(tmp_path, monkeypatch):
     assert profiles.get_active_profile().slug == "copied-profile"
     with sqlite3.connect(duplicate.db_path) as conn:
         assert conn.execute("SELECT value FROM marker").fetchone()[0] == "copied"
+
+
+def test_duplicate_profile_can_copy_selected_source_profile(tmp_path, monkeypatch):
+    monkeypatch.setattr(profiles, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(profiles, "REGISTRY_PATH", tmp_path / "profiles.json")
+    monkeypatch.setattr(profiles, "PROFILES_DIR", tmp_path / "profiles")
+    (tmp_path / "profiles.json").write_text(
+        json.dumps(
+            {
+                "active": "personal",
+                "profiles": [
+                    {"slug": "personal", "name": "Personal", "db_file": "app.db"},
+                    {"slug": "demo", "name": "Demo", "db_file": "profiles/demo.db"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "profiles").mkdir()
+    with sqlite3.connect(tmp_path / "profiles" / "demo.db") as conn:
+        conn.execute("CREATE TABLE marker (value TEXT NOT NULL)")
+        conn.execute("INSERT INTO marker (value) VALUES ('demo-source')")
+
+    duplicate = profiles.duplicate_profile("Copied Demo", "demo")
+
+    assert duplicate.slug == "copied-demo"
+    with sqlite3.connect(duplicate.db_path) as conn:
+        assert conn.execute("SELECT value FROM marker").fetchone()[0] == "demo-source"
+
+
+def test_delete_profile_removes_registry_row_and_sqlite_files(tmp_path, monkeypatch):
+    monkeypatch.setattr(profiles, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(profiles, "REGISTRY_PATH", tmp_path / "profiles.json")
+    monkeypatch.setattr(profiles, "PROFILES_DIR", tmp_path / "profiles")
+    (tmp_path / "profiles").mkdir()
+    profile_db = tmp_path / "profiles" / "demo.db"
+    sidecar = tmp_path / "profiles" / "demo.db-wal"
+    profile_db.write_text("sqlite placeholder", encoding="utf-8")
+    sidecar.write_text("wal placeholder", encoding="utf-8")
+    (tmp_path / "profiles.json").write_text(
+        json.dumps(
+            {
+                "active": "personal",
+                "profiles": [
+                    {"slug": "personal", "name": "Personal", "db_file": "app.db"},
+                    {"slug": "demo", "name": "Demo", "db_file": "profiles/demo.db"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    deleted = profiles.delete_profile("demo")
+
+    assert deleted.slug == "demo"
+    assert not profile_db.exists()
+    assert not sidecar.exists()
+    registry = json.loads((tmp_path / "profiles.json").read_text(encoding="utf-8"))
+    assert registry == {
+        "active": "personal",
+        "profiles": [
+            {"slug": "personal", "name": "Personal", "db_file": "app.db"},
+        ],
+    }
+
+
+def test_delete_active_profile_switches_to_remaining_profile(tmp_path, monkeypatch):
+    monkeypatch.setattr(profiles, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(profiles, "REGISTRY_PATH", tmp_path / "profiles.json")
+    monkeypatch.setattr(profiles, "PROFILES_DIR", tmp_path / "profiles")
+    (tmp_path / "profiles").mkdir()
+    (tmp_path / "profiles" / "demo.db").touch()
+    (tmp_path / "profiles.json").write_text(
+        json.dumps(
+            {
+                "active": "demo",
+                "profiles": [
+                    {"slug": "personal", "name": "Personal", "db_file": "app.db"},
+                    {"slug": "demo", "name": "Demo", "db_file": "profiles/demo.db"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    profiles.delete_profile("demo")
+
+    assert profiles.get_active_profile().slug == "personal"
+
+
+def test_delete_profile_rejects_last_profile(tmp_path, monkeypatch):
+    monkeypatch.setattr(profiles, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(profiles, "REGISTRY_PATH", tmp_path / "profiles.json")
+    monkeypatch.setattr(profiles, "PROFILES_DIR", tmp_path / "profiles")
+    (tmp_path / "profiles.json").write_text(
+        json.dumps(
+            {
+                "active": "personal",
+                "profiles": [
+                    {"slug": "personal", "name": "Personal", "db_file": "app.db"}
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    try:
+        profiles.delete_profile("personal")
+    except ValueError as exc:
+        assert "only profile" in str(exc)
+    else:
+        raise AssertionError("expected ValueError")

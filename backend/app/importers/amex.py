@@ -22,7 +22,7 @@ from .base import (
 @register
 class AmexImporter(CsvImporter):
     name = "amex"
-    label = "Amex (charges-positive)"
+    label = "Amex"
 
     REQUIRED = {"DATE", "DESCRIPTION", "AMOUNT"}
 

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
 import os
 import signal
 import threading
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -34,11 +34,24 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="DeskBooks", version="0.1.0", lifespan=lifespan)
 
+
+def _cors_origins() -> list[str]:
+    configured = os.environ.get("PFA_CORS_ORIGINS")
+    if configured:
+        return [origin.strip() for origin in configured.split(",") if origin.strip()]
+    frontend_port = os.environ.get("FRONTEND_PORT", "5173")
+    return [
+        f"http://localhost:{frontend_port}",
+        f"http://127.0.0.1:{frontend_port}",
+    ]
+
+
 app.add_middleware(
     CORSMiddleware,
-    # Allow any localhost dev-server port. Production builds don't go through
-    # CORS because the frontend and API are same-origin behind the launcher.
-    allow_origin_regex=r"^http://(localhost|127\.0\.0\.1):([1-9][0-9]{0,4})$",
+    # Keep CORS scoped to the launched frontend port. Production builds don't
+    # go through CORS because the frontend and API are same-origin behind the
+    # launcher/proxy.
+    allow_origins=_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -23,7 +23,7 @@ brew install uv node
 
 This starts:
 
-- the app UI at <http://127.0.0.1:5173>
+- the app UI at <http://localhost:5173>
 - the backend API at <http://127.0.0.1:8765>
 
 The first run installs dependencies, creates the active local profile

@@ -1,32 +1,35 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .. import analytics as a, models, schemas
+from .. import analytics as a
+from .. import models, schemas
 from ..db import get_db
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
+DbSession = Annotated[Session, Depends(get_db)]
 
 
 @router.get("/monthly")
 def monthly(
-    start: date = Query(...),
-    end: date = Query(...),
-    db: Session = Depends(get_db),
+    start: date,
+    end: date,
+    db: DbSession,
 ):
     return a.monthly_breakdown(db, start, end)
 
 
 @router.get("/sankey")
 def sankey(
+    db: DbSession,
     year: int | None = None,
     start: date | None = None,
     end: date | None = None,
-    db: Session = Depends(get_db),
 ):
     if start is not None and end is not None:
         if end < start:
@@ -39,16 +42,16 @@ def sankey(
 
 @router.get("/recurring")
 def recurring(
+    db: DbSession,
     min_occurrences: int = 3,
     start: date | None = None,
     end: date | None = None,
-    db: Session = Depends(get_db),
 ):
     return a.recurring_merchants(db, min_occurrences=min_occurrences, start=start, end=end)
 
 
 @router.get("/fire/settings", response_model=schemas.FireSettingsOut)
-def get_fire_settings(db: Session = Depends(get_db)):
+def get_fire_settings(db: DbSession):
     obj = db.scalar(select(models.FireSettings))
     if obj is None:
         obj = models.FireSettings()
@@ -59,7 +62,7 @@ def get_fire_settings(db: Session = Depends(get_db)):
 
 
 @router.put("/fire/settings", response_model=schemas.FireSettingsOut)
-def put_fire_settings(body: schemas.FireSettingsIn, db: Session = Depends(get_db)):
+def put_fire_settings(body: schemas.FireSettingsIn, db: DbSession):
     obj = db.scalar(select(models.FireSettings))
     if obj is None:
         obj = models.FireSettings(**body.model_dump())
@@ -73,18 +76,18 @@ def put_fire_settings(body: schemas.FireSettingsIn, db: Session = Depends(get_db
 
 
 @router.get("/fire/projection", response_model=schemas.FireProjection)
-def fire_projection(max_years: int = 60, db: Session = Depends(get_db)):
+def fire_projection(db: DbSession, max_years: int = 60):
     return a.fire_projection(db, max_years=max_years)
 
 
 @router.get("/reconcile", response_model=schemas.ReconcileResponse)
 def reconcile(
+    db: DbSession,
     account_id: int,
     year: int | None = None,
     month: int | None = None,
     start: date | None = None,
     end: date | None = None,
-    db: Session = Depends(get_db),
 ):
     if start is not None or end is not None:
         if start is None or end is None:
@@ -98,12 +101,12 @@ def reconcile(
 
 
 @router.get("/splits", response_model=list[schemas.SplitGroupSummary])
-def split_groups(start: date, end: date, db: Session = Depends(get_db)):
+def split_groups(start: date, end: date, db: DbSession):
     return a.split_group_summary(db, start, end)
 
 
 @router.put("/reconcile", response_model=schemas.ReconcileResponse)
-def upsert_reconcile(body: schemas.ReconcileIn, db: Session = Depends(get_db)):
+def upsert_reconcile(body: schemas.ReconcileIn, db: DbSession):
     existing = db.scalar(
         select(models.MonthlyReconciliation).where(
             models.MonthlyReconciliation.account_id == body.account_id,

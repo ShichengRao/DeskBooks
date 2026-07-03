@@ -143,9 +143,8 @@ function ImportUploadPanel({
             <option value="">auto-detect</option>
             <option value="chase_credit">Chase Credit Card</option>
             <option value="wells_fargo_checking">Wells Fargo Checking</option>
-            <option value="amex">Amex (charges positive)</option>
-            <option value="amex_xlsx">Amex XLSX</option>
-            <option value="contribution_history">Contribution History</option>
+            <option value="amex">Amex</option>
+            <option value="contribution_history">Fidelity Charitable Contribution History</option>
           </select>
         </label>
         <label className="block">
@@ -261,7 +260,7 @@ function PastImportsPanel({
       <div className="flex items-baseline justify-between mb-3">
         <div className="text-sm font-medium">Past imports</div>
         <div className="text-xs text-ink-500">
-          {batches.length} batches · re-running the loader against an existing batch is a no-op (idempotent by filename + account).
+          {batches.length} batches · duplicate rows are detected by account, date, amount, and normalized description.
         </div>
       </div>
       {batches.length ? (

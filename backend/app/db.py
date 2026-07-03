@@ -7,8 +7,6 @@ from threading import RLock
 from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 
-from .app_paths import DATA_DIR
-
 _lock = RLock()
 _engine: Engine | None = None
 _engine_path: Path | None = None

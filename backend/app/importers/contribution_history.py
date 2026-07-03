@@ -13,7 +13,7 @@ from .base import CsvImporter, draft_row, normalize_description, register
 @register
 class ContributionHistoryImporter(CsvImporter):
     name = "contribution_history"
-    label = "Contribution History"
+    label = "Fidelity Charitable Contribution History"
 
     @classmethod
     def can_handle(cls, header: list[str]) -> bool:
