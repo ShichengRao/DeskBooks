@@ -36,6 +36,12 @@ make backend-java
 make test-java
 ```
 
+The current Java backend slice covers health/admin, profiles, backups,
+accounts, categories, transactions, CSV imports, rules, planning, snapshots,
+budgets, FIRE settings/projection, reconciliation, split summaries, monthly
+analytics, and recurring merchant analytics. Sankey analytics is still pending,
+so the Python backend remains the default.
+
 The default launcher still uses the Python backend until the Java backend has
 feature parity. If Gradle's machine-local cache is unhealthy, use
 `JAVA_GRADLE_USER_HOME=/private/tmp/deskbooks-gradle-home make test-java` or

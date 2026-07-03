@@ -8,6 +8,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -33,6 +34,128 @@ class AnalyticsController {
 
     AnalyticsController(SqliteConnectionProvider connections) {
         this.connections = connections;
+    }
+
+    @GetMapping("/monthly")
+    List<MonthlyPointResponse> monthly(
+            @RequestParam(name = "start") LocalDate start,
+            @RequestParam(name = "end") LocalDate end) {
+        try (Connection connection = connections.open();
+                PreparedStatement statement = connection.prepareStatement("""
+                        SELECT t.id, t.date, t.kind, t.amount, s.personal_share, c.name AS category_name
+                        FROM transactions t
+                        LEFT JOIN categories c ON c.id = t.category_id
+                        LEFT JOIN transaction_splits s ON s.transaction_id = t.id
+                        WHERE t.date >= ?
+                          AND t.date <= ?
+                          AND t.is_excluded_from_totals = 0
+                        ORDER BY t.date, t.id
+                        """)) {
+            statement.setString(1, start.toString());
+            statement.setString(2, end.toString());
+            Map<String, MonthlyAccumulator> byMonth = new TreeMap<>();
+            try (ResultSet rs = statement.executeQuery()) {
+                while (rs.next()) {
+                    LocalDate transactionDate = LocalDate.parse(rs.getString("date"));
+                    String month = YearMonth.from(transactionDate).toString();
+                    MonthlyAccumulator bucket = byMonth.computeIfAbsent(month, ignored -> new MonthlyAccumulator());
+                    String kind = rs.getString("kind");
+                    BigDecimal amount = effectiveAmount(rs.getBigDecimal("amount"), rs.getBigDecimal("personal_share"));
+                    bucket.byKind.merge(kind, amount, BigDecimal::add);
+
+                    String categoryName = rs.getString("category_name");
+                    String categoryLabel = categoryName == null || categoryName.isBlank() ? "Uncategorized" : categoryName;
+                    if ("expense".equals(kind)) {
+                        BigDecimal outflow = amount.negate();
+                        bucket.byExpenseCategory.merge(categoryLabel, outflow, BigDecimal::add);
+                        bucket.expensesTotal = bucket.expensesTotal.add(outflow);
+                    } else if ("uncategorized".equals(kind) && amount.compareTo(BigDecimal.ZERO) < 0) {
+                        BigDecimal outflow = amount.negate();
+                        bucket.byExpenseCategory.merge("Uncategorized", outflow, BigDecimal::add);
+                        bucket.expensesTotal = bucket.expensesTotal.add(outflow);
+                    } else if ("income".equals(kind)) {
+                        bucket.byIncomeCategory.merge(categoryLabel, amount, BigDecimal::add);
+                        bucket.incomeTotal = bucket.incomeTotal.add(amount);
+                    } else if ("donation".equals(kind)) {
+                        bucket.donationsTotal = bucket.donationsTotal.add(amount.negate());
+                    } else if ("tax".equals(kind)) {
+                        bucket.taxesTotal = bucket.taxesTotal.add(amount.negate());
+                    }
+                }
+            }
+
+            List<MonthlyPointResponse> out = new ArrayList<>();
+            for (Map.Entry<String, MonthlyAccumulator> entry : byMonth.entrySet()) {
+                MonthlyAccumulator bucket = entry.getValue();
+                BigDecimal net = bucket.incomeTotal
+                        .subtract(bucket.expensesTotal)
+                        .subtract(bucket.donationsTotal)
+                        .subtract(bucket.taxesTotal);
+                out.add(new MonthlyPointResponse(
+                        entry.getKey(),
+                        stringifyMoney(bucket.byKind),
+                        stringifyMoney(bucket.byExpenseCategory),
+                        stringifyMoney(bucket.byIncomeCategory),
+                        moneyString(bucket.expensesTotal),
+                        moneyString(bucket.incomeTotal),
+                        moneyString(bucket.donationsTotal),
+                        moneyString(bucket.taxesTotal),
+                        moneyString(net)));
+            }
+            return out;
+        } catch (SQLException exception) {
+            throw databaseError(exception);
+        }
+    }
+
+    @GetMapping("/recurring")
+    List<RecurringMerchantResponse> recurring(
+            @RequestParam(name = "min_occurrences", defaultValue = "3") int minOccurrences,
+            @RequestParam(name = "start", required = false) LocalDate start,
+            @RequestParam(name = "end", required = false) LocalDate end) {
+        try (Connection connection = connections.open();
+                PreparedStatement statement = connection.prepareStatement("""
+                        SELECT COALESCE(merchant, description_normalized) AS merchant,
+                               COUNT(id) AS occurrences,
+                               AVG(amount) AS avg_amount,
+                               SUM(amount) AS total_amount,
+                               MAX(date) AS last_seen,
+                               MIN(date) AS first_seen
+                        FROM transactions
+                        WHERE COALESCE(merchant, description_normalized) IS NOT NULL
+                          AND is_excluded_from_totals = 0
+                          AND (? IS NULL OR date >= ?)
+                          AND (? IS NULL OR date <= ?)
+                        GROUP BY COALESCE(merchant, description_normalized)
+                        HAVING COUNT(id) >= ?
+                        ORDER BY COUNT(id) DESC
+                        """)) {
+            String startValue = start == null ? null : start.toString();
+            String endValue = end == null ? null : end.toString();
+            statement.setString(1, startValue);
+            statement.setString(2, startValue);
+            statement.setString(3, endValue);
+            statement.setString(4, endValue);
+            statement.setInt(5, minOccurrences);
+
+            List<RecurringMerchantResponse> out = new ArrayList<>();
+            try (ResultSet rs = statement.executeQuery()) {
+                while (rs.next()) {
+                    LocalDate firstSeen = nullableDate(rs.getString("first_seen"));
+                    LocalDate lastSeen = nullableDate(rs.getString("last_seen"));
+                    out.add(new RecurringMerchantResponse(
+                            rs.getString("merchant"),
+                            rs.getInt("occurrences"),
+                            moneyString(rs.getBigDecimal("avg_amount")),
+                            moneyString(rs.getBigDecimal("total_amount")),
+                            lastSeen,
+                            cadenceDays(firstSeen, lastSeen, rs.getInt("occurrences"))));
+                }
+            }
+            return out;
+        } catch (SQLException exception) {
+            throw databaseError(exception);
+        }
     }
 
     @GetMapping("/reconcile")
@@ -237,6 +360,28 @@ class AnalyticsController {
         return out;
     }
 
+    private BigDecimal effectiveAmount(BigDecimal amount, BigDecimal personalShare) {
+        if (personalShare == null) {
+            return amount;
+        }
+        return amount.multiply(personalShare);
+    }
+
+    private LocalDate nullableDate(String value) {
+        return value == null ? null : LocalDate.parse(value);
+    }
+
+    private Double cadenceDays(LocalDate firstSeen, LocalDate lastSeen, int occurrences) {
+        if (firstSeen == null || lastSeen == null || occurrences <= 1) {
+            return null;
+        }
+        long spanDays = ChronoUnit.DAYS.between(firstSeen, lastSeen);
+        if (spanDays <= 0) {
+            return null;
+        }
+        return spanDays / (double) (occurrences - 1);
+    }
+
     private BigDecimal money(BigDecimal value) {
         return value.setScale(2, RoundingMode.HALF_UP);
     }
@@ -259,6 +404,27 @@ class AnalyticsController {
             int month,
             BigDecimal statementTotal,
             String notes) {
+    }
+
+    record MonthlyPointResponse(
+            String month,
+            Map<String, String> byKind,
+            Map<String, String> byExpenseCategory,
+            Map<String, String> byIncomeCategory,
+            String expensesTotal,
+            String incomeTotal,
+            String donationsTotal,
+            String taxesTotal,
+            String net) {
+    }
+
+    record RecurringMerchantResponse(
+            String merchant,
+            int occurrences,
+            String avgAmount,
+            String totalAmount,
+            LocalDate lastSeen,
+            Double cadenceDaysEstimate) {
     }
 
     record ReconcileResponse(
@@ -288,6 +454,16 @@ class AnalyticsController {
     }
 
     private record ReconciliationRow(BigDecimal statementTotal, String notes) {
+    }
+
+    private static final class MonthlyAccumulator {
+        Map<String, BigDecimal> byKind = new LinkedHashMap<>();
+        Map<String, BigDecimal> byExpenseCategory = new LinkedHashMap<>();
+        Map<String, BigDecimal> byIncomeCategory = new LinkedHashMap<>();
+        BigDecimal expensesTotal = BigDecimal.ZERO;
+        BigDecimal incomeTotal = BigDecimal.ZERO;
+        BigDecimal donationsTotal = BigDecimal.ZERO;
+        BigDecimal taxesTotal = BigDecimal.ZERO;
     }
 
     private static final class SplitAccumulator {

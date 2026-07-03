@@ -105,6 +105,64 @@ class AnalyticsControllerTest {
     }
 
     @Test
+    void monthlyBreakdownAppliesSplitsAndKindBuckets() throws Exception {
+        createAccount("Checking", "bank", "checking");
+        createCategory("Food", "expense");
+        createCategory("Salary", "income");
+
+        createTransaction("2026-07-02", "Shared groceries", "-100.00", "expense", false, 1L, null, null);
+        setSplit(1, "Household", "0.2500");
+        createTransaction("2026-07-03", "Payroll", "1000.00", "income", false, 2L, "Employer", "payroll");
+        createTransaction("2026-07-04", "Charity", "-10.00", "donation", false, null, null, null);
+        createTransaction("2026-07-05", "Quarterly tax", "-100.00", "tax", false, null, null, null);
+        createTransaction("2026-07-06", "Mystery", "-5.00", "uncategorized", false, null, null, null);
+        createTransaction("2026-07-07", "Ignored", "-999.00", "expense", true, 1L, null, null);
+        createTransaction("2026-08-01", "Coffee", "-7.00", "expense", false, 1L, null, null);
+
+        mvc.perform(get("/api/analytics/monthly?start=2026-07-01&end=2026-08-31"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(2)))
+                .andExpect(jsonPath("$[0].month", equalTo("2026-07")))
+                .andExpect(jsonPath("$[0].by_kind.expense", equalTo("-25.00")))
+                .andExpect(jsonPath("$[0].by_kind.income", equalTo("1000.00")))
+                .andExpect(jsonPath("$[0].by_kind.donation", equalTo("-10.00")))
+                .andExpect(jsonPath("$[0].by_kind.tax", equalTo("-100.00")))
+                .andExpect(jsonPath("$[0].by_kind.uncategorized", equalTo("-5.00")))
+                .andExpect(jsonPath("$[0].by_expense_category.Food", equalTo("25.00")))
+                .andExpect(jsonPath("$[0].by_expense_category.Uncategorized", equalTo("5.00")))
+                .andExpect(jsonPath("$[0].by_income_category.Salary", equalTo("1000.00")))
+                .andExpect(jsonPath("$[0].expenses_total", equalTo("30.00")))
+                .andExpect(jsonPath("$[0].income_total", equalTo("1000.00")))
+                .andExpect(jsonPath("$[0].donations_total", equalTo("10.00")))
+                .andExpect(jsonPath("$[0].taxes_total", equalTo("100.00")))
+                .andExpect(jsonPath("$[0].net", equalTo("860.00")))
+                .andExpect(jsonPath("$[1].month", equalTo("2026-08")))
+                .andExpect(jsonPath("$[1].expenses_total", equalTo("7.00")));
+    }
+
+    @Test
+    void recurringMerchantsGroupByMerchantAndEstimateCadence() throws Exception {
+        createAccount("Checking", "bank", "checking");
+        createCategory("Subscriptions", "expense");
+
+        createTransaction("2026-01-01", "Gym January", "-50.00", "expense", false, 1L, "Gym Co", "gym");
+        createTransaction("2026-02-01", "Gym February", "-50.00", "expense", false, 1L, "Gym Co", "gym");
+        createTransaction("2026-03-02", "Gym March", "-50.00", "expense", false, 1L, "Gym Co", "gym");
+        createTransaction("2026-03-15", "Coffee", "-5.00", "expense", false, 1L, "Coffee Shop", "coffee");
+        createTransaction("2026-04-01", "Ignored gym", "-50.00", "expense", true, 1L, "Gym Co", "gym");
+
+        mvc.perform(get("/api/analytics/recurring?min_occurrences=3&start=2026-01-01&end=2026-03-31"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].merchant", equalTo("Gym Co")))
+                .andExpect(jsonPath("$[0].occurrences", equalTo(3)))
+                .andExpect(jsonPath("$[0].avg_amount", equalTo("-50.00")))
+                .andExpect(jsonPath("$[0].total_amount", equalTo("-150.00")))
+                .andExpect(jsonPath("$[0].last_seen", equalTo("2026-03-02")))
+                .andExpect(jsonPath("$[0].cadence_days_estimate", equalTo(30.0)));
+    }
+
+    @Test
     void reconcileValidationMatchesPythonRouter() throws Exception {
         mvc.perform(get("/api/analytics/reconcile?account_id=1"))
                 .andExpect(status().isBadRequest())
@@ -160,6 +218,26 @@ class AnalyticsControllerTest {
             String amount,
             String kind,
             boolean excluded) throws Exception {
+        createTransaction(date, description, amount, kind, excluded, 1L, null, null);
+    }
+
+    private void createTransaction(
+            String date,
+            String description,
+            String amount,
+            String kind,
+            boolean excluded,
+            Long categoryId,
+            String merchant,
+            String descriptionNormalized) throws Exception {
+        String merchantField = merchant == null ? "" : """
+                                ,
+                                  "merchant": "%s"
+                                """.formatted(merchant);
+        String normalizedField = descriptionNormalized == null ? "" : """
+                                ,
+                                  "description_normalized": "%s"
+                                """.formatted(descriptionNormalized);
         mvc.perform(post("/api/transactions")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -168,11 +246,19 @@ class AnalyticsControllerTest {
                                   "date": "%s",
                                   "description_raw": "%s",
                                   "amount": "%s",
-                                  "category_id": 1,
+                                  "category_id": %s,
                                   "kind": "%s",
-                                  "is_excluded_from_totals": %s
+                                  "is_excluded_from_totals": %s%s%s
                                 }
-                                """.formatted(date, description, amount, kind, excluded)))
+                                """.formatted(
+                                        date,
+                                        description,
+                                        amount,
+                                        categoryId == null ? "null" : categoryId.toString(),
+                                        kind,
+                                        excluded,
+                                        merchantField,
+                                        normalizedField)))
                 .andExpect(status().isOk());
     }
 
