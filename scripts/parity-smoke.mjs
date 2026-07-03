@@ -103,6 +103,37 @@ async function waitForHealth(server) {
   throw new Error(`${server.name} did not become healthy: ${lastError?.message ?? "timeout"}\n${tail(server.output)}`);
 }
 
+async function waitForStarterData(server) {
+  const deadline = Date.now() + waitTimeoutMs;
+  let lastError;
+  while (Date.now() < deadline) {
+    if (server.child.parityExit) {
+      throw new Error(`${server.name} exited before starter data was available\n${tail(server.output)}`);
+    }
+    try {
+      const accounts = await requestJson(server, "GET", "/api/accounts");
+      const categories = await requestJson(server, "GET", "/api/categories");
+      const accountNames = new Set(accounts.map((account) => account.name));
+      const categoryNames = new Set(categories.map((category) => category.name));
+      if (
+        accountNames.has("Checking")
+        && accountNames.has("Savings")
+        && accountNames.has("Credit Card")
+        && categoryNames.has("Housing")
+        && categoryNames.has("Food")
+        && categoryNames.has("Income")
+      ) {
+        return;
+      }
+      lastError = new Error(`accounts=${accounts.length} categories=${categories.length}`);
+    } catch (error) {
+      lastError = error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  throw new Error(`${server.name} starter data did not become available: ${lastError?.message ?? "timeout"}\n${tail(server.output)}`);
+}
+
 async function startPython(port, dataDir) {
   const env = {
     ...process.env,
@@ -153,6 +184,7 @@ async function startJava(port, dataDir) {
   const server = { name: "java", baseUrl: `http://127.0.0.1:${port}`, ...launched };
   running.push(server);
   await waitForHealth(server);
+  await waitForStarterData(server);
   return server;
 }
 
