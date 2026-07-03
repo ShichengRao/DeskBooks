@@ -16,6 +16,8 @@ dependencies {
     testImplementation(platform(org.springframework.boot.gradle.plugin.SpringBootPlugin.BOM_COORDINATES))
 
     implementation("org.springframework.boot:spring-boot-starter-web")
+    implementation("org.springframework.boot:spring-boot-starter-validation")
+    implementation("com.fasterxml.jackson.core:jackson-databind")
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
 }
