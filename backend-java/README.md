@@ -26,6 +26,7 @@ The Java backend currently exposes these migrated endpoint groups:
 - `PATCH /api/transactions/bulk/update`
 - `POST /api/transactions/pair`
 - `POST /api/transactions/{id}/unpair`
+- `/api/imports` for CSV importer discovery, preview, apply, listing, and rollback
 - `/api/goals`
 - `/api/journal`
 - `GET`, `POST`, `PATCH`, and `DELETE /api/snapshots`
