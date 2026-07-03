@@ -680,8 +680,6 @@ def networth_series(db: Session, start: date | None = None, end: date | None = N
     for snap in snaps:
         by_category: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
         by_account: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
-        liquid = Decimal("0")
-        illiquid = Decimal("0")
         taxable = Decimal("0")
         tax_advantaged = Decimal("0")
         total = Decimal("0")
@@ -700,10 +698,6 @@ def networth_series(db: Session, start: date | None = None, end: date | None = N
             by_category[acc.account_category.value] += v
             by_account[acc.name] += v
             total += v
-            if acc.is_liquid:
-                liquid += v
-            else:
-                illiquid += v
             if acc.account_category == models.AccountCategory.tax_advantaged:
                 tax_advantaged += v
             else:
@@ -714,8 +708,6 @@ def networth_series(db: Session, start: date | None = None, end: date | None = N
                 "total": total,
                 "by_category": {k: v for k, v in by_category.items()},
                 "by_account": {k: v for k, v in by_account.items()},
-                "liquid": liquid,
-                "illiquid": illiquid,
                 "taxable": taxable,
                 "tax_advantaged": tax_advantaged,
             }

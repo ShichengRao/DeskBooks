@@ -125,8 +125,6 @@ class Account(Base):
         SAEnum(AccountCategory, name="account_category")
     )
     type: Mapped[AccountType] = mapped_column(SAEnum(AccountType, name="account_type"))
-    is_liquid: Mapped[bool] = mapped_column(Boolean, default=True)
-    is_taxable: Mapped[bool] = mapped_column(Boolean, default=True)
     currency: Mapped[str] = mapped_column(String(3), default="USD")
     sign_convention: Mapped[SignConvention] = mapped_column(
         SAEnum(SignConvention, name="sign_convention"),

@@ -72,8 +72,6 @@ class AccountIn(BaseModel):
     institution: str | None = None
     account_category: AccountCategory
     type: AccountType
-    is_liquid: bool = True
-    is_taxable: bool = True
     currency: str = "USD"
     sign_convention: SignConvention = SignConvention.outflow_negative
     url: str | None = None
@@ -89,8 +87,6 @@ class AccountUpdate(BaseModel):
     institution: str | None = None
     account_category: AccountCategory | None = None
     type: AccountType | None = None
-    is_liquid: bool | None = None
-    is_taxable: bool | None = None
     currency: str | None = None
     sign_convention: SignConvention | None = None
     url: str | None = None
@@ -107,8 +103,6 @@ class AccountOut(ORMBase):
     institution: str | None
     account_category: AccountCategory
     type: AccountType
-    is_liquid: bool
-    is_taxable: bool
     currency: str
     sign_convention: SignConvention
     url: str | None
@@ -418,8 +412,6 @@ class NetWorthSeriesPoint(BaseModel):
     total: Decimal
     by_category: dict[str, Decimal]
     by_account: dict[str, Decimal]
-    liquid: Decimal
-    illiquid: Decimal
     taxable: Decimal
     tax_advantaged: Decimal
 

@@ -51,8 +51,6 @@ def _account(
         institution=None,
         account_category=category,
         type=account_type,
-        is_liquid=category == AccountCategory.bank,
-        is_taxable=True,
         sign_convention=SignConvention.outflow_negative,
     )
     db.add(account)

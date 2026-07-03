@@ -37,8 +37,6 @@ type AccountFormBody = {
   institution: string | null;
   account_category: AccountCategory;
   type: AccountType;
-  is_liquid: boolean;
-  is_taxable: boolean;
   currency: string;
   sign_convention: SignConvention;
   url: string | null;
@@ -52,9 +50,78 @@ type WorkbookImportResult = {
   missing_accounts: string[];
 };
 
+function accountUrlKey(rawUrl: string) {
+  const trimmed = rawUrl.trim();
+  try {
+    const url = new URL(trimmed);
+    url.hash = "";
+    url.protocol = url.protocol.toLowerCase();
+    url.hostname = url.hostname.toLowerCase();
+    url.pathname = url.pathname.replace(/\/+$/, "") || "/";
+    return url.toString();
+  } catch {
+    return trimmed.replace(/\/+$/, "").toLowerCase();
+  }
+}
+
+function uniqueAccountLinks(accounts: Account[]) {
+  const seen = new Set<string>();
+  const links: string[] = [];
+  for (const account of accounts) {
+    const url = account.url?.trim();
+    if (!url) continue;
+
+    const key = accountUrlKey(url);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    links.push(url);
+  }
+  return links;
+}
+
+function openAccountLinks(links: string[]) {
+  for (const link of links) {
+    window.open(link, "_blank", "noopener");
+  }
+}
+
 const ACCOUNT_CATEGORIES: AccountCategory[] = ["bank", "investment", "tax_advantaged", "credit", "liability", "nonsense", "cash"];
 const ACCOUNT_TYPES: AccountType[] = ["checking", "savings", "cd", "brokerage", "crypto", "wallet", "retirement", "college", "hsa", "credit_card", "cash", "other"];
 const SIGN_CONVENTIONS: SignConvention[] = ["outflow_negative", "outflow_positive"];
+const DORMANT_ACCOUNT_SNAPSHOT_COUNT = 5;
+
+function isZeroBalance(value: string | null | undefined) {
+  if (value === null || value === undefined || value === "") return true;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed === 0;
+}
+
+function recentSnapshotsForDate(snapshots: NetWorthSnapshot[], snapshotDate: string) {
+  return [...snapshots]
+    .filter((snapshot) => snapshot.snapshot_date <= snapshotDate)
+    .sort((a, b) => b.snapshot_date.localeCompare(a.snapshot_date))
+    .slice(0, DORMANT_ACCOUNT_SNAPSHOT_COUNT);
+}
+
+function isDormantAccount(
+  account: Account,
+  recentSnapshots: NetWorthSnapshot[],
+  forceVisibleAccountIds: Set<number>,
+) {
+  if (forceVisibleAccountIds.has(account.id)) return false;
+  if (recentSnapshots.length < DORMANT_ACCOUNT_SNAPSHOT_COUNT) return false;
+
+  const oldestRecentSnapshot = recentSnapshots[recentSnapshots.length - 1];
+  if (account.opened_at && oldestRecentSnapshot && account.opened_at > oldestRecentSnapshot.snapshot_date) {
+    return false;
+  }
+
+  return recentSnapshots.every((snapshot) => {
+    const balance = snapshot.balances.find((item) => item.account_id === account.id);
+    if (!balance) return true;
+    return isZeroBalance(balance.balance);
+  });
+}
 
 export function NetWorth() {
   const qc = useQueryClient();
@@ -79,6 +146,7 @@ export function NetWorth() {
   const [showLog, setShowLog] = useState(false);
   const [editingSnapId, setEditingSnapId] = useState<number | "new" | null>(null);
   const [creatingAccount, setCreatingAccount] = useState(false);
+  const [forceVisibleAccountIds, setForceVisibleAccountIds] = useState<Set<number>>(() => new Set());
   const [importingWorkbook, setImportingWorkbook] = useState(false);
 
   const chartData =
@@ -148,8 +216,11 @@ export function NetWorth() {
         editingSnapId={editingSnapId}
         snapshot={editingSnapshot}
         latest={latest}
+        snapshots={snapshots.data ?? []}
         accounts={accounts.data ?? []}
         accountById={accountById}
+        forceVisibleAccountIds={forceVisibleAccountIds}
+        onNewAccount={() => setCreatingAccount(true)}
         onClose={() => setEditingSnapId(null)}
         onSaved={() => {
           qc.invalidateQueries({ queryKey: ["snapshots"] });
@@ -161,7 +232,12 @@ export function NetWorth() {
       <AccountEditorDialog
         open={creatingAccount}
         onClose={() => setCreatingAccount(false)}
-        onSaved={() => {
+        onSaved={(account) => {
+          setForceVisibleAccountIds((current) => {
+            const next = new Set(current);
+            next.add(account.id);
+            return next;
+          });
           qc.invalidateQueries({ queryKey: ["accounts"] });
           qc.invalidateQueries({ queryKey: ["snapshots"] });
           qc.invalidateQueries({ queryKey: ["nw-series"] });
@@ -567,16 +643,22 @@ function SnapshotEditorDialog({
   editingSnapId,
   snapshot,
   latest,
+  snapshots,
   accounts,
   accountById,
+  forceVisibleAccountIds,
+  onNewAccount,
   onClose,
   onSaved,
 }: {
   editingSnapId: number | "new" | null;
   snapshot: NetWorthSnapshot | null;
   latest?: NetWorthSnapshot;
+  snapshots: NetWorthSnapshot[];
   accounts: Account[];
   accountById: Record<number, Account>;
+  forceVisibleAccountIds: Set<number>;
+  onNewAccount: () => void;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -586,8 +668,11 @@ function SnapshotEditorDialog({
       key={String(editingSnapId)}
       snapshot={snapshot}
       prefillFrom={editingSnapId === "new" ? latest : undefined}
+      snapshots={snapshots}
       accounts={accounts}
       accountById={accountById}
+      forceVisibleAccountIds={forceVisibleAccountIds}
+      onNewAccount={onNewAccount}
       onClose={onClose}
       onSaved={onSaved}
     />
@@ -597,20 +682,27 @@ function SnapshotEditorDialog({
 function SnapshotEditor({
   snapshot,
   prefillFrom,
+  snapshots,
   accounts,
   accountById,
+  forceVisibleAccountIds,
+  onNewAccount,
   onClose,
   onSaved,
 }: {
   snapshot: NetWorthSnapshot | null;
   prefillFrom?: NetWorthSnapshot;
+  snapshots: NetWorthSnapshot[];
   accounts: Account[];
   accountById: Record<number, Account>;
+  forceVisibleAccountIds: Set<number>;
+  onNewAccount: () => void;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const [date, setDate] = useState(snapshot?.snapshot_date ?? new Date().toISOString().slice(0, 10));
   const [notes, setNotes] = useState(snapshot?.notes ?? "");
+  const [showDormantAccounts, setShowDormantAccounts] = useState(false);
   const initialBalances = useMemo(() => {
     const source = snapshot?.balances ?? prefillFrom?.balances ?? [];
     const m: Record<number, string> = {};
@@ -644,17 +736,29 @@ function SnapshotEditor({
     onSuccess: onSaved,
   });
 
+  const visibleAccounts = useMemo(() => {
+    const recentSnapshots = recentSnapshotsForDate(snapshots, date);
+    return showDormantAccounts
+      ? accounts
+      : accounts.filter((account) => !isDormantAccount(account, recentSnapshots, forceVisibleAccountIds));
+  }, [accounts, date, forceVisibleAccountIds, showDormantAccounts, snapshots]);
+
   const grouped = useMemo(() => {
     const m: Record<string, Account[]> = {};
-    for (const a of accounts) {
+    for (const a of visibleAccounts) {
       const k = a.account_category;
       (m[k] ??= []).push(a);
     }
     return m;
-  }, [accounts]);
+  }, [visibleAccounts]);
+
+  const dormantAccountCount = useMemo(() => {
+    const recentSnapshots = recentSnapshotsForDate(snapshots, date);
+    return accounts.filter((account) => isDormantAccount(account, recentSnapshots, forceVisibleAccountIds)).length;
+  }, [accounts, date, forceVisibleAccountIds, snapshots]);
 
   const total = Object.values(balances).reduce((a, v) => a + (parseFloat(v) || 0), 0);
-  const hasLoginLinks = accounts.some((a) => a.url && !a.is_closed);
+  const accountLinks = useMemo(() => uniqueAccountLinks(visibleAccounts), [visibleAccounts]);
 
   return (
     <SidePanel
@@ -685,26 +789,43 @@ function SnapshotEditor({
         </div>
         <div className="flex items-center justify-between mb-2 text-xs text-ink-500">
           <span>
-            {hasLoginLinks
-              ? "Click the ↗ icon next to any account to open its login in a new tab."
+            {accountLinks.length > 0
+              ? `${accountLinks.length} unique visible account links`
               : "No account login links yet. Add account URLs with the Account button on the Net Worth page."}
           </span>
-          {hasLoginLinks && (
+          {accountLinks.length > 0 && (
             <button
               type="button"
               className="btn-ghost text-xs"
-              onClick={() => {
-                for (const a of accounts) {
-                  if (a.url && !a.is_closed && (balances[a.id] ?? "") === "") {
-                    window.open(a.url, "_blank", "noopener");
-                  }
-                }
-              }}
-              title="Open all unfilled accounts' login pages"
+              onClick={() => openAccountLinks(accountLinks)}
+              title="Open every unique visible account login"
             >
-              ↗ open all unfilled
+              ↗ open all links
             </button>
           )}
+        </div>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-ink-500">
+          {dormantAccountCount > 0 ? (
+            <span>
+              {dormantAccountCount} zero-balance account{dormantAccountCount === 1 ? "" : "s"} hidden after {DORMANT_ACCOUNT_SNAPSHOT_COUNT} snapshots
+            </span>
+          ) : (
+            <span />
+          )}
+          <div className="flex items-center gap-2">
+            {dormantAccountCount > 0 && (
+              <button
+                type="button"
+                className="btn-ghost text-xs"
+                onClick={() => setShowDormantAccounts((value) => !value)}
+              >
+                {showDormantAccounts ? "Hide dormant" : "Show hidden"}
+              </button>
+            )}
+            <button type="button" className="btn text-xs" onClick={onNewAccount}>
+              + Account
+            </button>
+          </div>
         </div>
         <div className="space-y-3">
           {Object.entries(grouped).map(([cat, accs]) => (
@@ -785,20 +906,18 @@ function AccountEditorDialog({
 }: {
   open: boolean;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (account: Account) => void;
 }) {
   if (!open) return null;
   return <AccountEditor onClose={onClose} onSaved={onSaved} />;
 }
 
-function AccountEditor({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+function AccountEditor({ onClose, onSaved }: { onClose: () => void; onSaved: (account: Account) => void }) {
   const [form, setForm] = useState<AccountFormBody>({
     name: "",
     institution: null,
     account_category: "bank",
     type: "checking",
-    is_liquid: true,
-    is_taxable: true,
     currency: "USD",
     sign_convention: "outflow_negative",
     url: null,
@@ -862,16 +981,6 @@ function AccountEditor({ onClose, onSaved }: { onClose: () => void; onSaved: () 
         <Field label="Sort order">
           <input type="number" className="input" value={form.sort_order} onChange={(e) => update("sort_order", Number(e.target.value) || 0)} />
         </Field>
-      </div>
-      <div className="mt-3 grid grid-cols-2 gap-3 text-sm text-ink-700">
-        <label className="flex items-center gap-2">
-          <input type="checkbox" checked={form.is_liquid} onChange={(e) => update("is_liquid", e.target.checked)} />
-          Liquid
-        </label>
-        <label className="flex items-center gap-2">
-          <input type="checkbox" checked={form.is_taxable} onChange={(e) => update("is_taxable", e.target.checked)} />
-          Taxable
-        </label>
       </div>
       <Field label="Notes">
         <textarea className="input min-h-24" value={form.notes ?? ""} onChange={(e) => update("notes", e.target.value)} />

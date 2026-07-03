@@ -29,8 +29,6 @@ def test_duplicate_detection_counts_repeated_same_day_transactions():
             institution=None,
             account_category=AccountCategory.credit,
             type=AccountType.credit_card,
-            is_liquid=True,
-            is_taxable=True,
             sign_convention=SignConvention.outflow_negative,
         )
         db.add(account)

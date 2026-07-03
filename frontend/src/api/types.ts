@@ -56,8 +56,6 @@ export interface Account {
   institution: string | null;
   account_category: AccountCategory;
   type: AccountType;
-  is_liquid: boolean;
-  is_taxable: boolean;
   currency: string;
   sign_convention: SignConvention;
   url: string | null;
@@ -233,8 +231,6 @@ export interface NetWorthSeriesPoint {
   total: string;
   by_category: Record<string, string>;
   by_account: Record<string, string>;
-  liquid: string;
-  illiquid: string;
   taxable: string;
   tax_advantaged: string;
 }
