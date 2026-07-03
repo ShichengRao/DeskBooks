@@ -3,7 +3,7 @@ API_PORT ?= $(or $(BACKEND_PORT),$(if $(filter 5173,$(PORT)),8765,8766))
 JAVA_GRADLE ?= gradle
 JAVA_GRADLE_ENV = $(if $(JAVA_GRADLE_USER_HOME),GRADLE_USER_HOME="$(JAVA_GRADLE_USER_HOME)")
 
-.PHONY: dev dev-java backend backend-java frontend open bootstrap install test test-java typecheck build clean reset-db
+.PHONY: dev dev-java backend backend-java frontend open bootstrap install test test-java parity-java typecheck build clean reset-db
 
 dev:
 	./run.sh --port "$(PORT)" --api-port "$(API_PORT)" $(if $(DATA_DIR),--data-dir "$(DATA_DIR)")
@@ -32,6 +32,9 @@ frontend:
 
 test-java:
 	cd backend-java && $(JAVA_GRADLE_ENV) $(JAVA_GRADLE) test
+
+parity-java:
+	$(JAVA_GRADLE_ENV) node scripts/parity-smoke.mjs
 
 open:
 	open "http://localhost:$(PORT)"

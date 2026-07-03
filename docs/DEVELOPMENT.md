@@ -36,6 +36,17 @@ make backend-java
 make test-java
 ```
 
+Run the side-by-side parity smoke before switching launcher defaults:
+
+```bash
+make parity-java
+```
+
+It starts fresh Python and Java backends on temporary ports/data directories,
+then compares starter profile data, importer metadata, sample CSV previews,
+manual transaction creation, budget reporting, monthly analytics, and Sankey
+analytics.
+
 The current Java backend slice covers health/admin, profiles, backups,
 accounts, categories, transactions, CSV/Amex workbook imports, net-worth
 workbook import, rules, planning, snapshots, budgets, FIRE settings/projection,

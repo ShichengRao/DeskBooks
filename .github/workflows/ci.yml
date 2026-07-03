@@ -69,3 +69,36 @@ jobs:
       - name: Run Java backend tests
         run: gradle test
         working-directory: backend-java
+
+  java-parity-smoke:
+    name: Java parity smoke
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Install backend dependencies
+        run: uv sync
+        working-directory: backend
+
+      - name: Run side-by-side parity smoke
+        run: make parity-java
