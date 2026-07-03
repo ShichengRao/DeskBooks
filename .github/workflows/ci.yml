@@ -24,7 +24,7 @@ jobs:
           enable-cache: true
 
       - name: Install backend dependencies
-        run: uv sync --frozen --extra dev
+        run: uv sync --extra dev
         working-directory: backend
 
       - name: Run backend tests
