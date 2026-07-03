@@ -16,7 +16,7 @@ fi
 
 FRONTEND_PORT="${PORT:-${FRONTEND_PORT:-5173}}"
 BACKEND_PORT="${API_PORT:-${BACKEND_PORT:-}}"
-BACKEND_IMPL="${DESKBOOKS_BACKEND:-python}"
+BACKEND_IMPL="${DESKBOOKS_BACKEND:-java}"
 OPEN_BROWSER="${OPEN_BROWSER:-1}"
 JAVA_GRADLE="${JAVA_GRADLE:-gradle}"
 
@@ -26,7 +26,7 @@ Usage: ./run.sh [--backend python|java] [--port PORT] [--api-port PORT] [--data-
 
 Examples:
   ./run.sh
-  ./run.sh --backend java
+  ./run.sh --backend python
   ./run.sh --port 5172
   ./run.sh --port 5172 --api-port 8766 --data-dir "$HOME/Library/Application Support/DeskBooks"
 EOF
@@ -149,7 +149,7 @@ if [[ "$BACKEND_IMPL" == "python" ]]; then
 else
   cd "$ROOT/backend-java"
   [[ -n "${JAVA_GRADLE_USER_HOME:-}" ]] && export GRADLE_USER_HOME="$JAVA_GRADLE_USER_HOME"
-  echo "[backend] spring boot http://127.0.0.1:${BACKEND_PORT} (java, opt-in)"
+  echo "[backend] spring boot http://127.0.0.1:${BACKEND_PORT} (java)"
   PFA_ALLOW_SHUTDOWN=1 PFA_SEED_STARTER_DATA="${PFA_SEED_STARTER_DATA:-1}" PFA_CORS_ORIGINS="$CORS_ORIGINS" BACKEND_PORT="$BACKEND_PORT" "$JAVA_GRADLE" bootRun &
   BACKEND_PID=$!
 fi

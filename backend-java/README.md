@@ -1,7 +1,8 @@
 # DeskBooks Java Backend
 
 This module is the gradual Java rewrite of the existing Python FastAPI backend.
-It is opt-in while endpoints are migrated.
+It is now the default local backend; the Python backend remains in the repo as
+a fallback and parity reference.
 
 ## Run
 
@@ -12,7 +13,7 @@ PFA_CORS_ORIGINS="http://localhost:5173,http://127.0.0.1:5173" \
 gradle bootRun
 ```
 
-The Java backend currently exposes these migrated endpoint groups:
+The Java backend exposes these endpoint groups:
 
 - `GET /api/health`
 - `POST /api/admin/shutdown`
@@ -39,10 +40,10 @@ The Java backend currently exposes these migrated endpoint groups:
 - `/api/analytics/fire/settings`
 - `/api/analytics/fire/projection`
 
-The default app still uses the Python backend. Use `../run.sh --backend java`
-or `make dev-java` from the repo root to test the migrated Java slice with the
-frontend. Those launch paths seed starter accounts, categories, and the welcome
-journal entry into an empty active profile.
+Use `../run.sh` or `make dev` from the repo root to run the Java backend with
+the frontend. Those launch paths seed starter accounts, categories, and the
+welcome journal entry into an empty active profile. Use
+`../run.sh --backend python` only when checking the legacy backend.
 
 ## Test
 

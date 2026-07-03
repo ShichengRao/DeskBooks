@@ -7,17 +7,18 @@ Data lives on your machine in your operating system's user data directory,
 not in the repo by default.
 
 > Developer/setup internals live in `docs/DEVELOPMENT.md`.
-> A Java backend rewrite is in progress behind opt-in developer commands; the
-> default app still uses the Python backend.
+> The app now uses the Java backend by default. The previous Python backend is
+> still available for verification with `./run.sh --backend python`.
 
 ## Start The App
 
-Requirements: macOS, Python >= 3.11, Node >= 18, and
-[`uv`](https://github.com/astral-sh/uv).
+Requirements: macOS, Java 21, Gradle, and Node >= 18. Python >= 3.11 and
+[`uv`](https://github.com/astral-sh/uv) are only needed for the legacy Python
+backend and parity checks.
 
 ```bash
-# install uv + node if you don't have them
-brew install uv node
+# install runtime tools if you don't have them
+brew install openjdk@21 gradle node uv
 
 # from the repo root
 ./run.sh
@@ -31,6 +32,12 @@ This starts:
 The first run installs dependencies, creates the active local profile
 database, seeds starter data when the profile is empty, and opens the app.
 Later runs are faster.
+
+To run the legacy Python backend during verification:
+
+```bash
+./run.sh --backend python
+```
 
 If the servers are already running and you just need to reopen the app:
 
