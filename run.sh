@@ -16,14 +16,17 @@ fi
 
 FRONTEND_PORT="${PORT:-${FRONTEND_PORT:-5173}}"
 BACKEND_PORT="${API_PORT:-${BACKEND_PORT:-}}"
+BACKEND_IMPL="${DESKBOOKS_BACKEND:-python}"
 OPEN_BROWSER="${OPEN_BROWSER:-1}"
+JAVA_GRADLE="${JAVA_GRADLE:-gradle}"
 
 usage() {
   cat <<'EOF'
-Usage: ./run.sh [--port PORT] [--api-port PORT] [--data-dir PATH] [--no-open]
+Usage: ./run.sh [--backend python|java] [--port PORT] [--api-port PORT] [--data-dir PATH] [--no-open]
 
 Examples:
   ./run.sh
+  ./run.sh --backend java
   ./run.sh --port 5172
   ./run.sh --port 5172 --api-port 8766 --data-dir "$HOME/Library/Application Support/DeskBooks"
 EOF
@@ -40,6 +43,14 @@ validate_port() {
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --backend)
+      BACKEND_IMPL="${2:?missing backend}"
+      shift 2
+      ;;
+    --backend=*)
+      BACKEND_IMPL="${1#*=}"
+      shift
+      ;;
     -p|--port)
       FRONTEND_PORT="${2:?missing port}"
       shift 2
@@ -89,6 +100,13 @@ if [[ -z "$BACKEND_PORT" ]]; then
 fi
 validate_port "frontend port" "$FRONTEND_PORT"
 validate_port "backend port" "$BACKEND_PORT"
+case "$BACKEND_IMPL" in
+  python|java) ;;
+  *)
+    echo "backend must be python or java; got: $BACKEND_IMPL" >&2
+    exit 2
+    ;;
+esac
 
 BACKEND_PID=""
 FRONTEND_PID=""
@@ -103,26 +121,38 @@ cleanup() {
 trap cleanup INT TERM EXIT
 
 # --- prereqs ---
-command -v uv >/dev/null 2>&1 || { echo "uv not found. Install: https://docs.astral.sh/uv/" >&2; exit 1; }
+if [[ "$BACKEND_IMPL" == "python" ]]; then
+  command -v uv >/dev/null 2>&1 || { echo "uv not found. Install: https://docs.astral.sh/uv/" >&2; exit 1; }
+else
+  command -v "$JAVA_GRADLE" >/dev/null 2>&1 || { echo "$JAVA_GRADLE not found. Install Gradle or set JAVA_GRADLE." >&2; exit 1; }
+fi
 command -v npm >/dev/null 2>&1 || { echo "npm not found. Install Node.js first." >&2; exit 1; }
 
 # --- backend ---
-cd "$ROOT/backend"
-
-if [[ ! -d .venv ]]; then
-  echo "[setup] creating Python venv with uv…"
-  uv venv --python 3.11 .venv
-  uv pip install -e .
-fi
-
-# Bootstrap is idempotent and seeds generic starter data for empty profiles.
-echo "[setup] bootstrapping active profile (idempotent)…"
-uv run python -m app.bootstrap
-
-echo "[backend] uvicorn http://127.0.0.1:${BACKEND_PORT} (auto-reload)"
 CORS_ORIGINS="${PFA_CORS_ORIGINS:-http://localhost:${FRONTEND_PORT},http://127.0.0.1:${FRONTEND_PORT}}"
-PFA_ALLOW_SHUTDOWN=1 PFA_CORS_ORIGINS="$CORS_ORIGINS" uv run uvicorn app.main:app --host 127.0.0.1 --port "$BACKEND_PORT" --log-level warning --reload --reload-dir app &
-BACKEND_PID=$!
+if [[ "$BACKEND_IMPL" == "python" ]]; then
+  cd "$ROOT/backend"
+
+  if [[ ! -d .venv ]]; then
+    echo "[setup] creating Python venv with uv…"
+    uv venv --python 3.11 .venv
+    uv pip install -e .
+  fi
+
+  # Bootstrap is idempotent and seeds generic starter data for empty profiles.
+  echo "[setup] bootstrapping active profile (idempotent)…"
+  uv run python -m app.bootstrap
+
+  echo "[backend] uvicorn http://127.0.0.1:${BACKEND_PORT} (auto-reload)"
+  PFA_ALLOW_SHUTDOWN=1 PFA_CORS_ORIGINS="$CORS_ORIGINS" uv run uvicorn app.main:app --host 127.0.0.1 --port "$BACKEND_PORT" --log-level warning --reload --reload-dir app &
+  BACKEND_PID=$!
+else
+  cd "$ROOT/backend-java"
+  [[ -n "${JAVA_GRADLE_USER_HOME:-}" ]] && export GRADLE_USER_HOME="$JAVA_GRADLE_USER_HOME"
+  echo "[backend] spring boot http://127.0.0.1:${BACKEND_PORT} (java, opt-in)"
+  PFA_ALLOW_SHUTDOWN=1 PFA_CORS_ORIGINS="$CORS_ORIGINS" BACKEND_PORT="$BACKEND_PORT" "$JAVA_GRADLE" bootRun &
+  BACKEND_PID=$!
+fi
 
 # --- frontend ---
 cd "$ROOT/frontend"

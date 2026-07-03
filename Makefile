@@ -3,10 +3,13 @@ API_PORT ?= $(or $(BACKEND_PORT),$(if $(filter 5173,$(PORT)),8765,8766))
 JAVA_GRADLE ?= gradle
 JAVA_GRADLE_ENV = $(if $(JAVA_GRADLE_USER_HOME),GRADLE_USER_HOME="$(JAVA_GRADLE_USER_HOME)")
 
-.PHONY: dev backend backend-java frontend open bootstrap install test test-java typecheck build clean reset-db
+.PHONY: dev dev-java backend backend-java frontend open bootstrap install test test-java typecheck build clean reset-db
 
 dev:
 	./run.sh --port "$(PORT)" --api-port "$(API_PORT)" $(if $(DATA_DIR),--data-dir "$(DATA_DIR)")
+
+dev-java:
+	./run.sh --backend java --port "$(PORT)" --api-port "$(API_PORT)" $(if $(DATA_DIR),--data-dir "$(DATA_DIR)")
 
 install:
 	cd backend && uv venv --python 3.11 .venv && uv pip install -e .

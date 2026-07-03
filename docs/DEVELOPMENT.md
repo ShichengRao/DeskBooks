@@ -7,8 +7,10 @@ Technical notes for working on the app. The user-facing guide is in
 
 ```bash
 make dev              # full app: backend API + frontend UI, then open 127.0.0.1:5173
+make dev-java         # opt-in Java backend slice + frontend UI
 make dev PORT=5172 API_PORT=8766
 make backend          # API only, at http://127.0.0.1:8765/docs
+make backend-java     # opt-in Java API only, at http://127.0.0.1:8765
 make frontend         # UI only, at http://127.0.0.1:5173
 make open             # open the frontend URL if servers are already running
 make reset-db         # wipe repo-local dev app state and rebuild starter data
@@ -23,6 +25,21 @@ backend is FastAPI/uvicorn on port 8765 with auto-reload enabled. Use
 `make dev PORT=5172 API_PORT=8766` to run a second local copy. Both ports can
 be any valid TCP port from `1` to `65535`; `FRONTEND_PORT` and `BACKEND_PORT`
 are accepted as aliases for `PORT` and `API_PORT`.
+
+The Java rewrite is available as an opt-in backend while endpoints are being
+migrated:
+
+```bash
+./run.sh --backend java
+make dev-java
+make backend-java
+make test-java
+```
+
+The default launcher still uses the Python backend until the Java backend has
+feature parity. If Gradle's machine-local cache is unhealthy, use
+`JAVA_GRADLE_USER_HOME=/private/tmp/deskbooks-gradle-home make test-java` or
+the same variable with `make dev-java`.
 
 The backend OpenAPI docs are available at:
 

@@ -7,6 +7,8 @@ Data lives on your machine in your operating system's user data directory,
 not in the repo by default.
 
 > Developer/setup internals live in `docs/DEVELOPMENT.md`.
+> A Java backend rewrite is in progress behind opt-in developer commands; the
+> default app still uses the Python backend.
 
 ## Start The App
 
