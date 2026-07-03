@@ -253,6 +253,18 @@ class SqliteSchema {
                     )
                     """);
             statement.execute("CREATE INDEX IF NOT EXISTS ix_budget_overrides_month ON budget_overrides(month)");
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS monthly_reconciliations (
+                      id INTEGER NOT NULL PRIMARY KEY,
+                      account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+                      year INTEGER NOT NULL,
+                      month INTEGER NOT NULL,
+                      statement_total NUMERIC(14, 2),
+                      notes TEXT,
+                      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                      UNIQUE(account_id, year, month)
+                    )
+                    """);
         }
     }
 
