@@ -39,8 +39,8 @@ make test-java
 The current Java backend slice covers health/admin, profiles, backups,
 accounts, categories, transactions, CSV imports, rules, planning, snapshots,
 budgets, FIRE settings/projection, reconciliation, split summaries, monthly
-analytics, and recurring merchant analytics. Sankey analytics is still pending,
-so the Python backend remains the default.
+analytics, Sankey analytics, and recurring merchant analytics. The Python
+backend remains the default until final parity checks are complete.
 
 The default launcher still uses the Python backend until the Java backend has
 feature parity. If Gradle's machine-local cache is unhealthy, use

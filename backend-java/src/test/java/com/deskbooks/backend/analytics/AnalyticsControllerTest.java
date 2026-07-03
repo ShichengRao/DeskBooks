@@ -1,6 +1,8 @@
 package com.deskbooks.backend.analytics;
 
 import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.hasItems;
 import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -163,6 +165,74 @@ class AnalyticsControllerTest {
     }
 
     @Test
+    void sankeyBalancesCashflowGrowthAndAccountDeltas() throws Exception {
+        createAccount("Checking", "bank", "checking");
+        createAccount("Brokerage", "investment", "brokerage");
+        createCategory("Salary", "income");
+        createCategory("Food", "expense");
+        createCategory("Groceries", "expense", 2L);
+
+        createTransaction("2026-01-15", "Employer", "5000.00", "income", false, 1L, "Salary", "salary");
+        createTransaction("2026-01-16", "Market", "-100.00", "expense", false, 3L, "Market", "market");
+        createTransaction("2026-01-17", "Local Charity", "-50.00", "donation", false, null, "Local Charity", "local charity");
+        createTransaction("2026-01-18", "IRS", "-500.00", "tax", false, null, "IRS", "irs");
+
+        createSnapshot("2026-01-01", """
+                [
+                  {"account_id": 1, "balance": "1000.00"},
+                  {"account_id": 2, "balance": "2000.00"}
+                ]
+                """);
+        createSnapshot("2026-02-01", """
+                [
+                  {"account_id": 1, "balance": "1500.00"},
+                  {"account_id": 2, "balance": "6500.00"}
+                ]
+                """);
+
+        mvc.perform(get("/api/analytics/sankey?start=2026-01-01&end=2026-01-31"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.year", equalTo(2026)))
+                .andExpect(jsonPath("$.label", equalTo("2026-01-01 to 2026-01-31")))
+                .andExpect(jsonPath("$.nodes[*].name", hasItems(
+                        "Inflows",
+                        "Income",
+                        "Salary",
+                        "Growth",
+                        "Stock Growth",
+                        "Bank Interest",
+                        "Expenses",
+                        "Groceries",
+                        "Donations",
+                        "Taxes",
+                        "Account deltas (pos)",
+                        "Stock Account",
+                        "CDs + Bank Accounts")))
+                .andExpect(jsonPath("$.links[?(@.label == 'Income')].value", hasItem(5000.0)))
+                .andExpect(jsonPath("$.links[?(@.label == 'Expenses')].value", hasItem(100.0)))
+                .andExpect(jsonPath("$.links[?(@.label == 'Donations')].value", hasItem(50.0)))
+                .andExpect(jsonPath("$.links[?(@.label == 'Taxes')].value", hasItem(500.0)))
+                .andExpect(jsonPath("$.links[?(@.label == 'Growth')].value", hasItem(650.0)))
+                .andExpect(jsonPath("$.links[?(@.label == 'Stock Growth')].value", hasItem(585.0)))
+                .andExpect(jsonPath("$.links[?(@.label == 'Bank Interest')].value", hasItem(65.0)))
+                .andExpect(jsonPath("$.links[?(@.label == 'Account deltas')].value", hasItem(5000.0)))
+                .andExpect(jsonPath("$.links[?(@.label == 'Stock Account')].value", hasItem(4500.0)))
+                .andExpect(jsonPath("$.links[?(@.label == 'CDs + Bank Accounts')].value", hasItem(500.0)))
+                .andExpect(jsonPath("$.notes", hasItem("Snapshot window used: 2026-01-01 → 2026-02-01.")));
+    }
+
+    @Test
+    void sankeyValidationMatchesPythonRouter() throws Exception {
+        mvc.perform(get("/api/analytics/sankey"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail", equalTo("provide either year or start/end")));
+
+        mvc.perform(get("/api/analytics/sankey?start=2026-07-02&end=2026-07-01"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail", equalTo("end must be on or after start")));
+    }
+
+    @Test
     void reconcileValidationMatchesPythonRouter() throws Exception {
         mvc.perform(get("/api/analytics/reconcile?account_id=1"))
                 .andExpect(status().isBadRequest())
@@ -201,14 +271,22 @@ class AnalyticsControllerTest {
     }
 
     private void createCategory(String name, String kind) throws Exception {
+        createCategory(name, kind, null);
+    }
+
+    private void createCategory(String name, String kind, Long parentId) throws Exception {
+        String parentField = parentId == null ? "" : """
+                                ,
+                                  "parent_id": %d
+                                """.formatted(parentId);
         mvc.perform(post("/api/categories")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
                                   "name": "%s",
-                                  "kind": "%s"
+                                  "kind": "%s"%s
                                 }
-                                """.formatted(name, kind)))
+                                """.formatted(name, kind, parentField)))
                 .andExpect(status().isOk());
     }
 
@@ -259,6 +337,18 @@ class AnalyticsControllerTest {
                                         excluded,
                                         merchantField,
                                         normalizedField)))
+                .andExpect(status().isOk());
+    }
+
+    private void createSnapshot(String snapshotDate, String balancesJson) throws Exception {
+        mvc.perform(post("/api/snapshots")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "snapshot_date": "%s",
+                                  "balances": %s
+                                }
+                                """.formatted(snapshotDate, balancesJson)))
                 .andExpect(status().isOk());
     }
 
