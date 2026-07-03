@@ -28,6 +28,7 @@ The Java backend currently exposes these migrated endpoint groups:
 - `POST /api/transactions/{id}/unpair`
 - `/api/imports` for CSV importer discovery, preview, apply, listing, and rollback
 - `/api/rules` for rule CRUD, coverage, reapply, and proposals
+- `/api/budgets` for budget reports, defaults, and monthly overrides
 - `/api/goals`
 - `/api/journal`
 - `GET`, `POST`, `PATCH`, and `DELETE /api/snapshots`

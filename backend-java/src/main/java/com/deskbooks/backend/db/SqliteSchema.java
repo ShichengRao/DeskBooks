@@ -230,6 +230,29 @@ class SqliteSchema {
                       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
                     )
                     """);
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS budget_defaults (
+                      id INTEGER NOT NULL PRIMARY KEY,
+                      category_id INTEGER NOT NULL UNIQUE REFERENCES categories(id) ON DELETE CASCADE,
+                      amount NUMERIC(14, 2) NOT NULL,
+                      notes TEXT,
+                      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """);
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS budget_overrides (
+                      id INTEGER NOT NULL PRIMARY KEY,
+                      month DATE NOT NULL,
+                      category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+                      amount NUMERIC(14, 2) NOT NULL,
+                      notes TEXT,
+                      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                      UNIQUE(month, category_id)
+                    )
+                    """);
+            statement.execute("CREATE INDEX IF NOT EXISTS ix_budget_overrides_month ON budget_overrides(month)");
         }
     }
 
