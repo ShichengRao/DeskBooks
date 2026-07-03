@@ -224,10 +224,11 @@ class CategoryController {
 
     private CategoryResponse categoryFrom(ResultSet rs) throws SQLException {
         long parentId = rs.getLong("parent_id");
+        boolean parentWasNull = rs.wasNull();
         return new CategoryResponse(
                 rs.getLong("id"),
                 rs.getString("name"),
-                rs.wasNull() ? null : parentId,
+                parentWasNull ? null : parentId,
                 rs.getString("kind"),
                 rs.getString("color"),
                 rs.getInt("sort_order"),

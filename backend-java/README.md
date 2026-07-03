@@ -20,6 +20,12 @@ The Java backend currently exposes these migrated endpoint groups:
 - `/api/backups`
 - `/api/accounts`
 - `/api/categories`
+- `GET`, `POST`, `PATCH`, and `DELETE /api/transactions`
+- `GET /api/transactions/count`
+- `PUT /api/transactions/{id}/split`
+- `PATCH /api/transactions/bulk/update`
+- `POST /api/transactions/pair`
+- `POST /api/transactions/{id}/unpair`
 - `/api/goals`
 - `/api/journal`
 - `GET`, `POST`, `PATCH`, and `DELETE /api/snapshots`

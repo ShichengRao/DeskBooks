@@ -1,6 +1,8 @@
 package com.deskbooks.backend.db;
 
 import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 
@@ -40,17 +42,79 @@ class SqliteSchema {
                     )
                     """);
             statement.execute("""
+                    CREATE TABLE IF NOT EXISTS import_batches (
+                      id INTEGER NOT NULL PRIMARY KEY,
+                      source_filename VARCHAR(255) NOT NULL,
+                      importer_name VARCHAR(64) NOT NULL,
+                      account_id INTEGER NOT NULL REFERENCES accounts(id),
+                      imported_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                      row_count_total INTEGER NOT NULL DEFAULT 0,
+                      row_count_applied INTEGER NOT NULL DEFAULT 0,
+                      row_count_duplicate INTEGER NOT NULL DEFAULT 0,
+                      status VARCHAR(32) NOT NULL DEFAULT 'preview',
+                      notes TEXT
+                    )
+                    """);
+            statement.execute("""
                     CREATE TABLE IF NOT EXISTS transactions (
                       id INTEGER NOT NULL PRIMARY KEY,
                       account_id INTEGER NOT NULL REFERENCES accounts(id),
                       date DATE NOT NULL DEFAULT '1970-01-01',
+                      post_date DATE,
                       description_raw TEXT NOT NULL DEFAULT '',
+                      description_normalized TEXT,
+                      merchant VARCHAR(255),
                       amount NUMERIC(14, 2) NOT NULL DEFAULT 0,
                       category_id INTEGER REFERENCES categories(id),
                       kind VARCHAR(32) NOT NULL DEFAULT 'uncategorized',
-                      is_user_categorized BOOLEAN NOT NULL DEFAULT 0
+                      is_user_categorized BOOLEAN NOT NULL DEFAULT 0,
+                      is_excluded_from_totals BOOLEAN NOT NULL DEFAULT 0,
+                      notes TEXT,
+                      transfer_pair_id INTEGER REFERENCES transactions(id),
+                      import_batch_id INTEGER REFERENCES import_batches(id),
+                      matched_rule_id INTEGER,
+                      raw TEXT,
+                      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
                     )
                     """);
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS tags (
+                      id INTEGER NOT NULL PRIMARY KEY,
+                      name VARCHAR(64) NOT NULL UNIQUE,
+                      color VARCHAR(16)
+                    )
+                    """);
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS transaction_tags (
+                      transaction_id INTEGER NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+                      tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+                      PRIMARY KEY (transaction_id, tag_id)
+                    )
+                    """);
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS transaction_splits (
+                      transaction_id INTEGER NOT NULL REFERENCES transactions(id) ON DELETE CASCADE PRIMARY KEY,
+                      group_name VARCHAR(120) NOT NULL,
+                      personal_share NUMERIC(5, 4) NOT NULL DEFAULT 0.5000,
+                      notes TEXT,
+                      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """);
+            statement.execute("CREATE INDEX IF NOT EXISTS ix_transactions_date_kind ON transactions(date, kind)");
+            statement.execute("CREATE INDEX IF NOT EXISTS ix_transactions_account_date ON transactions(account_id, date)");
+            statement.execute("CREATE INDEX IF NOT EXISTS ix_transaction_splits_group_name ON transaction_splits(group_name)");
+            ensureColumn(connection, "transactions", "post_date", "DATE");
+            ensureColumn(connection, "transactions", "description_normalized", "TEXT");
+            ensureColumn(connection, "transactions", "merchant", "VARCHAR(255)");
+            ensureColumn(connection, "transactions", "is_excluded_from_totals", "BOOLEAN NOT NULL DEFAULT 0");
+            ensureColumn(connection, "transactions", "notes", "TEXT");
+            ensureColumn(connection, "transactions", "transfer_pair_id", "INTEGER REFERENCES transactions(id)");
+            ensureColumn(connection, "transactions", "import_batch_id", "INTEGER REFERENCES import_batches(id)");
+            ensureColumn(connection, "transactions", "matched_rule_id", "INTEGER");
+            ensureColumn(connection, "transactions", "raw", "TEXT");
+            ensureColumn(connection, "transactions", "created_at", "DATETIME");
+            ensureColumn(connection, "transactions", "updated_at", "DATETIME");
             statement.execute("""
                     CREATE TABLE IF NOT EXISTS net_worth_snapshots (
                       id INTEGER NOT NULL PRIMARY KEY,
@@ -130,6 +194,27 @@ class SqliteSchema {
                       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
                     )
                     """);
+        }
+    }
+
+    private void ensureColumn(Connection connection, String table, String column, String definition) throws SQLException {
+        if (hasColumn(connection, table, column)) {
+            return;
+        }
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("ALTER TABLE " + table + " ADD COLUMN " + column + " " + definition);
+        }
+    }
+
+    private boolean hasColumn(Connection connection, String table, String column) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("PRAGMA table_info(" + table + ")");
+                ResultSet rs = statement.executeQuery()) {
+            while (rs.next()) {
+                if (column.equals(rs.getString("name"))) {
+                    return true;
+                }
+            }
+            return false;
         }
     }
 }

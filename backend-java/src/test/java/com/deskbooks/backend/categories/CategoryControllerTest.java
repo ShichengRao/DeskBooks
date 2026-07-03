@@ -56,7 +56,8 @@ class CategoryControllerTest {
                         .content("{\"name\":\"Food\",\"kind\":\"expense\",\"color\":\"#22c55e\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id", equalTo(1)))
-                .andExpect(jsonPath("$.name", equalTo("Food")));
+                .andExpect(jsonPath("$.name", equalTo("Food")))
+                .andExpect(jsonPath("$.parent_id").doesNotExist());
 
         mvc.perform(patch("/api/categories/1")
                         .contentType(MediaType.APPLICATION_JSON)
