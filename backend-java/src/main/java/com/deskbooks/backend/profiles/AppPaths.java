@@ -17,7 +17,7 @@ public class AppPaths {
         this.environment = environment;
     }
 
-    Path dataDir() {
+    public Path dataDir() {
         String override = firstNonBlank(
                 environment.getProperty("deskbooks.data-dir"),
                 environment.getProperty("PFA_DATA_DIR"),
