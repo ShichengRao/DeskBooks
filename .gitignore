@@ -20,6 +20,12 @@ dist/
 *.tsbuildinfo
 .mdlr/
 
+# Java / Gradle
+.gradle/
+build/
+backend-java/.gradle/
+backend-java/build/
+
 # Data (local user data — never commit)
 .env.local
 backend/data/profiles.json

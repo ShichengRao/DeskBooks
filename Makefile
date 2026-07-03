@@ -1,7 +1,9 @@
 PORT ?= $(or $(FRONTEND_PORT),5173)
 API_PORT ?= $(or $(BACKEND_PORT),$(if $(filter 5173,$(PORT)),8765,8766))
+JAVA_GRADLE ?= gradle
+JAVA_GRADLE_ENV = $(if $(JAVA_GRADLE_USER_HOME),GRADLE_USER_HOME="$(JAVA_GRADLE_USER_HOME)")
 
-.PHONY: dev backend frontend open bootstrap install test typecheck build clean reset-db
+.PHONY: dev backend backend-java frontend open bootstrap install test test-java typecheck build clean reset-db
 
 dev:
 	./run.sh --port "$(PORT)" --api-port "$(API_PORT)" $(if $(DATA_DIR),--data-dir "$(DATA_DIR)")
@@ -19,8 +21,14 @@ test:
 backend:
 	cd backend && PFA_CORS_ORIGINS="http://localhost:$(PORT),http://127.0.0.1:$(PORT)" uv run uvicorn app.main:app --host 127.0.0.1 --port "$(API_PORT)" --log-level warning --reload --reload-dir app
 
+backend-java:
+	cd backend-java && $(JAVA_GRADLE_ENV) BACKEND_PORT="$(API_PORT)" PFA_CORS_ORIGINS="http://localhost:$(PORT),http://127.0.0.1:$(PORT)" $(JAVA_GRADLE) bootRun
+
 frontend:
 	cd frontend && PFA_API_TARGET="http://127.0.0.1:$(API_PORT)" npm run dev -- --host 127.0.0.1 --port "$(PORT)" --strictPort
+
+test-java:
+	cd backend-java && $(JAVA_GRADLE_ENV) $(JAVA_GRADLE) test
 
 open:
 	open "http://localhost:$(PORT)"
