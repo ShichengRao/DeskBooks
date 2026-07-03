@@ -1,9 +1,11 @@
 package com.deskbooks.backend.profiles;
 
+import java.sql.SQLException;
 import java.util.List;
 import java.util.NoSuchElementException;
 
 import com.deskbooks.backend.foundation.ApiException;
+import com.deskbooks.backend.onboarding.OnboardingService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
@@ -20,9 +22,11 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/profiles")
 class ProfileController {
     private final ProfileRegistry registry;
+    private final OnboardingService onboardingService;
 
-    ProfileController(ProfileRegistry registry) {
+    ProfileController(ProfileRegistry registry, OnboardingService onboardingService) {
         this.registry = registry;
+        this.onboardingService = onboardingService;
     }
 
     @GetMapping("")
@@ -34,6 +38,13 @@ class ProfileController {
     ProfileListResponse createProfile(@Valid @RequestBody ProfileCreateRequest body) {
         ProfileInfo created = registry.createProfile(body.name());
         registry.setActiveProfile(created.slug());
+        if (body.seedStarterData() == null || body.seedStarterData()) {
+            try {
+                onboardingService.seedActiveProfile();
+            } catch (SQLException exception) {
+                throw databaseError(exception);
+            }
+        }
         return profileList();
     }
 
@@ -79,6 +90,10 @@ class ProfileController {
         return new ProfileListResponse(
                 profiles.stream().map(ProfileResponse::from).toList(),
                 activeSlug);
+    }
+
+    private ApiException databaseError(SQLException exception) {
+        return new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, exception.getMessage());
     }
 
     record ProfileCreateRequest(

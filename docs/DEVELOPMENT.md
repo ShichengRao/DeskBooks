@@ -40,8 +40,9 @@ The current Java backend slice covers health/admin, profiles, backups,
 accounts, categories, transactions, CSV/Amex workbook imports, net-worth
 workbook import, rules, planning, snapshots, budgets, FIRE settings/projection,
 reconciliation, split summaries, monthly analytics, Sankey analytics, and
-recurring merchant analytics. The Python backend remains the default until
-final parity checks are complete.
+recurring merchant analytics. The opt-in Java launch path also seeds starter
+accounts, categories, and the welcome journal entry for empty profiles. The
+Python backend remains the default until final parity checks are complete.
 
 The default launcher still uses the Python backend until the Java backend has
 feature parity. If Gradle's machine-local cache is unhealthy, use

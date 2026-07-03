@@ -1,6 +1,7 @@
 package com.deskbooks.backend.profiles;
 
 import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.hasItems;
 import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -71,6 +72,43 @@ class ProfileControllerTest {
                 .andExpect(jsonPath("$.profiles[1].slug", equalTo("household")))
                 .andExpect(jsonPath("$.profiles[1].db_file", equalTo("profiles/household.db")))
                 .andExpect(jsonPath("$.profiles[1].is_active", equalTo(true)));
+
+        mvc.perform(get("/api/accounts"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(0)));
+    }
+
+    @Test
+    void createProfileSeedsStarterDataByDefault() throws Exception {
+        mvc.perform(post("/api/profiles")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Starter\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.active_slug", equalTo("starter")));
+
+        mvc.perform(get("/api/accounts"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(3)))
+                .andExpect(jsonPath("$[*].name", hasItems("Checking", "Savings", "Credit Card")));
+
+        mvc.perform(get("/api/categories"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[*].name", hasItems(
+                        "Housing",
+                        "Rent",
+                        "Utilities",
+                        "Food",
+                        "Groceries",
+                        "Restaurants",
+                        "Income",
+                        "Paycheck",
+                        "Other Income",
+                        "Credit Card Payment")));
+
+        mvc.perform(get("/api/journal"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].title", equalTo("Welcome")));
     }
 
     @Test

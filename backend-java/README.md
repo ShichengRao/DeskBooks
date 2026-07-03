@@ -17,6 +17,7 @@ The Java backend currently exposes these migrated endpoint groups:
 - `GET /api/health`
 - `POST /api/admin/shutdown`
 - `/api/profiles`
+- starter data seeding for first-run launch and profile creation
 - `/api/backups`
 - `/api/accounts`
 - `/api/categories`
@@ -26,20 +27,22 @@ The Java backend currently exposes these migrated endpoint groups:
 - `PATCH /api/transactions/bulk/update`
 - `POST /api/transactions/pair`
 - `POST /api/transactions/{id}/unpair`
-- `/api/imports` for CSV importer discovery, preview, apply, listing, and rollback
+- `/api/imports` for CSV/Amex workbook importer discovery, preview, apply, listing, and rollback
 - `/api/rules` for rule CRUD, coverage, reapply, and proposals
 - `/api/budgets` for budget reports, defaults, and monthly overrides
 - `/api/analytics/reconcile` and `/api/analytics/splits`
 - `/api/goals`
 - `/api/journal`
 - `GET`, `POST`, `PATCH`, and `DELETE /api/snapshots`
+- `POST /api/snapshots/import-workbook`
 - `GET /api/snapshots/series`
 - `/api/analytics/fire/settings`
 - `/api/analytics/fire/projection`
 
 The default app still uses the Python backend. Use `../run.sh --backend java`
 or `make dev-java` from the repo root to test the migrated Java slice with the
-frontend.
+frontend. Those launch paths seed starter accounts, categories, and the welcome
+journal entry into an empty active profile.
 
 ## Test
 

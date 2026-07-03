@@ -25,7 +25,7 @@ backend:
 	cd backend && PFA_CORS_ORIGINS="http://localhost:$(PORT),http://127.0.0.1:$(PORT)" uv run uvicorn app.main:app --host 127.0.0.1 --port "$(API_PORT)" --log-level warning --reload --reload-dir app
 
 backend-java:
-	cd backend-java && $(JAVA_GRADLE_ENV) BACKEND_PORT="$(API_PORT)" PFA_CORS_ORIGINS="http://localhost:$(PORT),http://127.0.0.1:$(PORT)" $(JAVA_GRADLE) bootRun
+	cd backend-java && $(JAVA_GRADLE_ENV) BACKEND_PORT="$(API_PORT)" PFA_SEED_STARTER_DATA="1" PFA_CORS_ORIGINS="http://localhost:$(PORT),http://127.0.0.1:$(PORT)" $(JAVA_GRADLE) bootRun
 
 frontend:
 	cd frontend && PFA_API_TARGET="http://127.0.0.1:$(API_PORT)" npm run dev -- --host 127.0.0.1 --port "$(PORT)" --strictPort
