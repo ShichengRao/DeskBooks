@@ -24,6 +24,7 @@ const tabs: { to: string; label: string; end?: boolean; group?: "view" | "edit" 
 
 export function Layout() {
   const [profileEditorOpen, setProfileEditorOpen] = useState(false);
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const profiles = useQuery({
     queryKey: ["profiles"],
     queryFn: () => api.get<ProfileList>("/api/profiles"),
@@ -58,16 +59,24 @@ export function Layout() {
   };
 
   const addProfile = () => {
+    setProfileMenuOpen(false);
     setProfileEditorOpen(true);
   };
   const activeProfile = profiles.data?.profiles.find((p) => p.slug === profiles.data?.active_slug);
   const canDeleteProfile = Boolean(profiles.data && profiles.data.profiles.length > 1 && activeProfile);
+  const profileBusy = switchProfile.isPending || createProfile.isPending || duplicateProfile.isPending || deleteProfile.isPending;
+  const chooseProfile = (slug: string) => {
+    setProfileMenuOpen(false);
+    if (!slug || slug === profiles.data?.active_slug) return;
+    switchProfile.mutate(slug);
+  };
   const removeActiveProfile = () => {
     if (!activeProfile) return;
     const ok = confirm(
       `Delete profile "${activeProfile.name}" and its local SQLite file? This cannot be undone.`,
     );
     if (!ok) return;
+    setProfileMenuOpen(false);
     deleteProfile.mutate(activeProfile.slug);
   };
 
@@ -76,43 +85,57 @@ export function Layout() {
       <header className="border-b border-ink-200 bg-white">
         <div className="px-6 py-3 flex items-center gap-6">
           <div className="font-semibold text-ink-900 tracking-tight">DeskBooks</div>
-          <div className="flex items-center gap-1 text-xs text-ink-600">
+          <div className="relative text-xs text-ink-600">
             <span className="sr-only">Profile</span>
-            <select
-              className="input min-w-32 py-1 text-xs"
-              value={profiles.data?.active_slug ?? ""}
-              disabled={profiles.isLoading || switchProfile.isPending || createProfile.isPending || duplicateProfile.isPending || deleteProfile.isPending}
-              onChange={(e) => {
-                if (!e.target.value || e.target.value === profiles.data?.active_slug) return;
-                switchProfile.mutate(e.target.value);
-              }}
+            <button
+              type="button"
+              className="input flex min-w-40 items-center justify-between gap-3 py-1 text-left text-xs"
+              disabled={profiles.isLoading || profileBusy}
+              onClick={() => setProfileMenuOpen((open) => !open)}
               title="Local profile"
             >
-              {!profiles.data && <option value="">Loading</option>}
-              {profiles.data?.profiles.map((p) => (
-                <option key={p.slug} value={p.slug}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              className="btn-ghost px-2 py-1 text-xs"
-              onClick={addProfile}
-              disabled={switchProfile.isPending || createProfile.isPending || duplicateProfile.isPending || deleteProfile.isPending}
-              title="Create local profile"
-            >
-              +
+              <span className="truncate">{activeProfile?.name ?? "Loading"}</span>
+              <span aria-hidden>v</span>
             </button>
-            <button
-              type="button"
-              className="btn-ghost px-2 py-1 text-xs text-bad-600 hover:bg-bad-500/10"
-              onClick={removeActiveProfile}
-              disabled={!canDeleteProfile || switchProfile.isPending || createProfile.isPending || duplicateProfile.isPending || deleteProfile.isPending}
-              title="Delete active profile"
-            >
-              Delete
-            </button>
+            {profileMenuOpen && (
+              <div className="absolute left-0 top-full z-30 mt-1 w-60 overflow-hidden rounded-md border border-ink-200 bg-white py-1 shadow-lg">
+                <div className="max-h-64 overflow-auto py-1">
+                  {profiles.data?.profiles.map((profile) => (
+                    <button
+                      type="button"
+                      key={profile.slug}
+                      className={clsx(
+                        "flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-xs hover:bg-ink-50",
+                        profile.is_active ? "font-medium text-brand-700" : "text-ink-700",
+                      )}
+                      onClick={() => chooseProfile(profile.slug)}
+                      disabled={profileBusy}
+                    >
+                      <span className="truncate">{profile.name}</span>
+                      {profile.is_active && <span className="text-brand-600">Active</span>}
+                    </button>
+                  ))}
+                </div>
+                <div className="border-t border-ink-100 py-1">
+                  <button
+                    type="button"
+                    className="block w-full px-3 py-2 text-left text-xs text-ink-700 hover:bg-ink-50"
+                    onClick={addProfile}
+                    disabled={profileBusy}
+                  >
+                    New profile
+                  </button>
+                  <button
+                    type="button"
+                    className="block w-full px-3 py-2 text-left text-xs text-bad-600 hover:bg-bad-500/10 disabled:text-ink-300 disabled:hover:bg-transparent"
+                    onClick={removeActiveProfile}
+                    disabled={!canDeleteProfile || profileBusy}
+                  >
+                    Delete active profile
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
           <nav className="flex items-center gap-1 text-sm">
             {tabs.map((t, i) => {
