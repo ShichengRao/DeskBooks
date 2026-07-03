@@ -22,6 +22,8 @@ The Java backend currently exposes these migrated endpoint groups:
 - `/api/categories`
 - `/api/goals`
 - `/api/journal`
+- `GET`, `POST`, `PATCH`, and `DELETE /api/snapshots`
+- `GET /api/snapshots/series`
 - `/api/analytics/fire/settings`
 - `/api/analytics/fire/projection`
 

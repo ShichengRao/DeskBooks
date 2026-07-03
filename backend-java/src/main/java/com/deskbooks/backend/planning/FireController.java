@@ -158,12 +158,20 @@ class FireController {
     private Map<String, BigDecimal> latestBalancesByCategory(Connection connection) throws SQLException {
         Map<String, BigDecimal> totals = new LinkedHashMap<>();
         try (PreparedStatement statement = connection.prepareStatement("""
-                SELECT a.account_category, COALESCE(SUM(ab.balance), 0) AS total
+                SELECT
+                  a.account_category,
+                  COALESCE(SUM(
+                    CASE
+                      WHEN a.account_category IN ('credit', 'liability') THEN -ABS(ab.balance)
+                      ELSE ab.balance
+                    END
+                  ), 0) AS total
                 FROM account_balances ab
                 JOIN accounts a ON a.id = ab.account_id
                 WHERE ab.snapshot_id = (
                   SELECT id FROM net_worth_snapshots ORDER BY snapshot_date DESC LIMIT 1
                 )
+                  AND ab.balance IS NOT NULL
                 GROUP BY a.account_category
                 """);
                 ResultSet rs = statement.executeQuery()) {
@@ -171,7 +179,7 @@ class FireController {
                 totals.put(rs.getString("account_category"), money(decimal(rs, "total")));
             }
         }
-        for (String key : List.of("bank", "investment", "tax_advantaged", "nonsense", "cash", "credit")) {
+        for (String key : List.of("bank", "investment", "tax_advantaged", "nonsense", "cash", "credit", "liability")) {
             totals.putIfAbsent(key, BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP));
         }
         return totals;
@@ -186,7 +194,7 @@ class FireController {
                 case "tax_advantaged" -> new BigDecimal(settings.growthTaxAdvantaged());
                 case "nonsense" -> new BigDecimal(settings.growthNonsense());
                 case "cash" -> new BigDecimal(settings.growthCash());
-                case "credit" -> new BigDecimal(settings.growthCredit());
+                case "credit", "liability" -> new BigDecimal(settings.growthCredit());
                 default -> BigDecimal.ZERO;
             };
             next.put(entry.getKey(), money(entry.getValue().multiply(ONE.add(rate))));
