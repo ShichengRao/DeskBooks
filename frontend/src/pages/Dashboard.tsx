@@ -49,8 +49,6 @@ export function Dashboard() {
     series.data?.map((p) => ({
       date: p.snapshot_date,
       total: num(p.total),
-      liquid: num(p.liquid),
-      tax_advantaged: num(p.tax_advantaged),
     })) ?? [];
 
   return (

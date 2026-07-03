@@ -6,10 +6,10 @@ Technical notes for working on the app. The user-facing guide is in
 ## Quick Commands
 
 ```bash
-make dev              # full app: backend API + frontend UI, then open localhost:5173
+make dev              # full app: backend API + frontend UI, then open 127.0.0.1:5173
 make dev PORT=5172 API_PORT=8766
 make backend          # API only, at http://127.0.0.1:8765/docs
-make frontend         # UI only, at http://localhost:5173
+make frontend         # UI only, at http://127.0.0.1:5173
 make open             # open the frontend URL if servers are already running
 make reset-db         # wipe repo-local dev app state and rebuild starter data
 make typecheck        # TypeScript on the frontend

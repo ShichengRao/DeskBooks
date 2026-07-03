@@ -23,7 +23,7 @@ frontend:
 	cd frontend && PFA_API_TARGET="http://127.0.0.1:$(API_PORT)" npm run dev -- --host 127.0.0.1 --port "$(PORT)" --strictPort
 
 open:
-	open "http://localhost:$(PORT)"
+	open "http://127.0.0.1:$(PORT)"
 
 typecheck:
 	cd frontend && npm run typecheck

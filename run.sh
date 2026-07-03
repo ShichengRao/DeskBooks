@@ -130,7 +130,7 @@ if [[ ! -d node_modules ]]; then
   npm install --silent
 fi
 
-echo "[frontend] vite http://localhost:${FRONTEND_PORT}"
+echo "[frontend] vite http://127.0.0.1:${FRONTEND_PORT}"
 PFA_API_TARGET="http://127.0.0.1:${BACKEND_PORT}" npm run dev -- --host 127.0.0.1 --port "$FRONTEND_PORT" --strictPort &
 FRONTEND_PID=$!
 
@@ -151,7 +151,7 @@ for _ in $(seq 1 60); do
 done
 
 if [[ "$OPEN_BROWSER" != "0" ]] && command -v open >/dev/null 2>&1; then
-  open "http://localhost:${FRONTEND_PORT}" || true
+  open "http://127.0.0.1:${FRONTEND_PORT}" || true
 fi
 
 while true; do
