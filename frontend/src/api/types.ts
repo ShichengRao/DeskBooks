@@ -320,14 +320,14 @@ export interface ImportBatch {
 
 export interface MonthlyPoint {
   month: string;
-  by_kind: Record<string, string>;
-  by_expense_category: Record<string, string>;
-  by_income_category: Record<string, string>;
-  expenses_total: string;
-  income_total: string;
-  donations_total: string;
-  taxes_total: string;
-  net: string;
+  by_kind: Record<string, number>;
+  by_expense_category: Record<string, number>;
+  by_income_category: Record<string, number>;
+  expenses_total: number;
+  income_total: number;
+  donations_total: number;
+  taxes_total: number;
+  net: number;
 }
 
 export interface FireSettings {

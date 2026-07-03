@@ -119,14 +119,14 @@ class AnalyticsController {
                         .subtract(bucket.taxesTotal);
                 out.add(new MonthlyPointResponse(
                         entry.getKey(),
-                        stringifyMoney(bucket.byKind),
-                        stringifyMoney(bucket.byExpenseCategory),
-                        stringifyMoney(bucket.byIncomeCategory),
-                        moneyString(bucket.expensesTotal),
-                        moneyString(bucket.incomeTotal),
-                        moneyString(bucket.donationsTotal),
-                        moneyString(bucket.taxesTotal),
-                        moneyString(net)));
+                        numericMoney(bucket.byKind),
+                        numericMoney(bucket.byExpenseCategory),
+                        numericMoney(bucket.byIncomeCategory),
+                        money(bucket.expensesTotal),
+                        money(bucket.incomeTotal),
+                        money(bucket.donationsTotal),
+                        money(bucket.taxesTotal),
+                        money(net)));
             }
             return out;
         } catch (SQLException exception) {
@@ -826,6 +826,14 @@ class AnalyticsController {
         return out;
     }
 
+    private Map<String, BigDecimal> numericMoney(Map<String, BigDecimal> values) {
+        Map<String, BigDecimal> out = new LinkedHashMap<>();
+        for (Map.Entry<String, BigDecimal> entry : values.entrySet()) {
+            out.put(entry.getKey(), money(entry.getValue()));
+        }
+        return out;
+    }
+
     private BigDecimal effectiveAmount(BigDecimal amount, BigDecimal personalShare) {
         if (personalShare == null) {
             return amount;
@@ -906,14 +914,14 @@ class AnalyticsController {
 
     record MonthlyPointResponse(
             String month,
-            Map<String, String> byKind,
-            Map<String, String> byExpenseCategory,
-            Map<String, String> byIncomeCategory,
-            String expensesTotal,
-            String incomeTotal,
-            String donationsTotal,
-            String taxesTotal,
-            String net) {
+            Map<String, BigDecimal> byKind,
+            Map<String, BigDecimal> byExpenseCategory,
+            Map<String, BigDecimal> byIncomeCategory,
+            BigDecimal expensesTotal,
+            BigDecimal incomeTotal,
+            BigDecimal donationsTotal,
+            BigDecimal taxesTotal,
+            BigDecimal net) {
     }
 
     record RecurringMerchantResponse(
