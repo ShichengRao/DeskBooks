@@ -19,6 +19,9 @@ import com.deskbooks.backend.DeskBooksApplication;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
@@ -131,6 +134,43 @@ class NetWorthControllerTest {
     }
 
     @Test
+    void importWorkbookUsesAccountMapAndSkipsExistingDates() throws Exception {
+        createAccount("Checking", "bank", "checking");
+        Path workbook = dataDir.resolve("net-worth.xlsx");
+        createNetWorthWorkbook(workbook);
+
+        String body = """
+                {
+                  "path": "%s",
+                  "account_map": {"Assets!2": "Checking"}
+                }
+                """.formatted(jsonString(workbook));
+
+        mvc.perform(post("/api/snapshots/import-workbook")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.imported", equalTo(1)))
+                .andExpect(jsonPath("$.skipped_existing", equalTo(0)))
+                .andExpect(jsonPath("$.missing_accounts", hasSize(0)));
+
+        mvc.perform(get("/api/snapshots"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].snapshot_date", equalTo("2026-06-01")))
+                .andExpect(jsonPath("$[0].notes", equalTo("Imported from net-worth.xlsx")))
+                .andExpect(jsonPath("$[0].balances[0].balance", equalTo("1234.56")));
+
+        mvc.perform(post("/api/snapshots/import-workbook")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.imported", equalTo(0)))
+                .andExpect(jsonPath("$.skipped_existing", equalTo(1)))
+                .andExpect(jsonPath("$.missing_accounts", hasSize(0)));
+    }
+
+    @Test
     void seriesRejectsInvertedDateRange() throws Exception {
         mvc.perform(get("/api/snapshots/series?start=2026-07-01&end=2026-06-01"))
                 .andExpect(status().isBadRequest())
@@ -148,6 +188,23 @@ class NetWorthControllerTest {
                                 }
                                 """.formatted(name, category, type)))
                 .andExpect(status().isOk());
+    }
+
+    private void createNetWorthWorkbook(Path path) throws IOException {
+        try (Workbook workbook = new XSSFWorkbook()) {
+            Sheet dates = workbook.createSheet("Dates");
+            dates.createRow(0).createCell(1).setCellValue("2026-06-01");
+            Sheet assets = workbook.createSheet("Assets");
+            assets.createRow(1).createCell(0).setCellValue("Bank row from arbitrary workbook");
+            assets.getRow(1).createCell(1).setCellValue(1234.56);
+            try (var output = Files.newOutputStream(path)) {
+                workbook.write(output);
+            }
+        }
+    }
+
+    private String jsonString(Path path) {
+        return path.toString().replace("\\", "\\\\");
     }
 
     private void cleanDataDir() throws IOException {

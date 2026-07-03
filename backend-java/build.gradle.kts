@@ -18,6 +18,7 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-validation")
     implementation("com.fasterxml.jackson.core:jackson-databind")
+    implementation("org.apache.poi:poi-ooxml:5.4.1")
 
     runtimeOnly("org.xerial:sqlite-jdbc")
 

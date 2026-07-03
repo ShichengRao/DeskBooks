@@ -1,5 +1,6 @@
 package com.deskbooks.backend.imports;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -31,6 +32,14 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
+import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.CellType;
+import org.apache.poi.ss.usermodel.DataFormatter;
+import org.apache.poi.ss.usermodel.DateUtil;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -46,6 +55,7 @@ import org.springframework.web.multipart.MultipartFile;
 class ImportController {
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final DateTimeFormatter SQLITE_TIMESTAMP = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final DataFormatter EXCEL_FORMATTER = new DataFormatter(Locale.US);
     private static final List<CsvImporter> IMPORTERS = List.of(
             new ChaseCreditImporter(),
             new WellsFargoCheckingImporter(),
@@ -221,11 +231,22 @@ class ImportController {
     }
 
     private ImportPreviewResponse previewBytes(byte[] data, String filename, long accountId, String importerName) {
-        if (filename.toLowerCase(Locale.ROOT).endsWith(".xlsx")) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "xlsx imports are not migrated to Java yet");
-        }
         try (Connection connection = connections.open()) {
             requireAccount(connection, accountId);
+            if (filename.toLowerCase(Locale.ROOT).endsWith(".xlsx")) {
+                List<ImportDraftRow> rows = parseAmexXlsx(data);
+                if (rows.isEmpty()) {
+                    throw new ApiException(HttpStatus.BAD_REQUEST, "no importer can handle this file");
+                }
+                return previewRows(
+                        connection,
+                        rows,
+                        "amex",
+                        accountId,
+                        filename,
+                        List.of("matched importers: amex"));
+            }
+
             String csvText = new String(data, StandardCharsets.UTF_8);
             List<CsvImporter> matched = IMPORTERS.stream().filter(importer -> importer.canHandle(csvText)).toList();
             CsvImporter chosen;
@@ -242,6 +263,28 @@ class ImportController {
             }
 
             List<ImportDraftRow> rows = chosen.parse(csvText);
+            String names = matched.isEmpty()
+                    ? ""
+                    : String.join(", ", matched.stream().map(CsvImporter::name).toList());
+            return previewRows(
+                    connection,
+                    rows,
+                    chosen.name(),
+                    accountId,
+                    filename,
+                    List.of("matched importers: " + names));
+        } catch (SQLException exception) {
+            throw databaseError(exception);
+        }
+    }
+
+    private ImportPreviewResponse previewRows(
+            Connection connection,
+            List<ImportDraftRow> rows,
+            String importerName,
+            long accountId,
+            String filename,
+            List<String> sniffNotes) throws SQLException {
             List<RuleEngine.RuleRecord> activeRules = ruleEngine.loadActiveRules(connection);
             Map<DuplicateKey, Integer> existing = existingKeyCounts(connection, accountId);
             Map<DuplicateKey, Integer> fileCounts = new LinkedHashMap<>();
@@ -258,17 +301,75 @@ class ImportController {
                 boolean duplicate = position < existing.getOrDefault(key, 0);
                 markedRows.add(row.withDuplicate(duplicate));
             }
-            String names = matched.isEmpty()
-                    ? ""
-                    : String.join(", ", matched.stream().map(CsvImporter::name).toList());
             return new ImportPreviewResponse(
-                    chosen.name(),
+                    importerName,
                     accountId,
                     filename,
                     markedRows,
-                    List.of("matched importers: " + names));
-        } catch (SQLException exception) {
-            throw databaseError(exception);
+                    sniffNotes);
+    }
+
+    private List<ImportDraftRow> parseAmexXlsx(byte[] data) {
+        try (Workbook workbook = WorkbookFactory.create(new ByteArrayInputStream(data))) {
+            Sheet sheet = workbook.getSheet("Transaction Details");
+            if (sheet == null) {
+                if (workbook.getNumberOfSheets() == 0) {
+                    return List.of();
+                }
+                sheet = workbook.getSheetAt(0);
+            }
+
+            int headerRowIndex = -1;
+            int maxHeaderRow = Math.min(sheet.getLastRowNum(), 29);
+            for (int rowIndex = 0; rowIndex <= maxHeaderRow; rowIndex++) {
+                Row row = sheet.getRow(rowIndex);
+                if ("date".equalsIgnoreCase(cellString(row == null ? null : row.getCell(0)).trim())) {
+                    headerRowIndex = rowIndex;
+                    break;
+                }
+            }
+            if (headerRowIndex < 0) {
+                return List.of();
+            }
+
+            List<ImportDraftRow> out = new ArrayList<>();
+            for (int rowIndex = headerRowIndex + 1; rowIndex <= sheet.getLastRowNum(); rowIndex++) {
+                Row row = sheet.getRow(rowIndex);
+                if (row == null) {
+                    continue;
+                }
+                LocalDate date = cellDate(row.getCell(0));
+                String rawDescription = cellString(row.getCell(1));
+                BigDecimal amount = cellAmount(row.getCell(2));
+                if (date == null || rawDescription.isBlank() || amount == null) {
+                    continue;
+                }
+                amount = amount.negate();
+                String normalized = normalize(rawDescription);
+                String upper = normalized.toUpperCase(Locale.ROOT);
+                String kind = upper.contains("AUTOPAY PAYMENT")
+                        || upper.contains("PAYMENT - THANK YOU")
+                        || upper.contains("PAYMENT RECEIVED")
+                        ? "cc_payment"
+                        : "uncategorized";
+                out.add(new ImportDraftRow(
+                        rowIndex - headerRowIndex - 1,
+                        date,
+                        null,
+                        rawDescription,
+                        normalized,
+                        guessMerchant(normalized),
+                        moneyString(amount),
+                        null,
+                        kind,
+                        List.of(),
+                        null,
+                        false,
+                        Map.of("row", String.valueOf(rowIndex + 1))));
+            }
+            return out;
+        } catch (IOException | RuntimeException exception) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "could not read xlsx file");
         }
     }
 
@@ -781,6 +882,20 @@ class ImportController {
         }
     }
 
+    private static BigDecimal cellAmount(Cell cell) {
+        if (cell == null || cell.getCellType() == CellType.BLANK) {
+            return null;
+        }
+        if (cell.getCellType() == CellType.NUMERIC || cell.getCellType() == CellType.FORMULA) {
+            try {
+                return BigDecimal.valueOf(cell.getNumericCellValue()).setScale(2, RoundingMode.HALF_UP);
+            } catch (IllegalStateException ignored) {
+                // Fall through to formatted text parsing.
+            }
+        }
+        return parseAmount(cellString(cell));
+    }
+
     private static LocalDate parseDate(String value) {
         if (value == null || value.isBlank()) return null;
         String trimmed = value.trim().replace("\"", "");
@@ -805,6 +920,29 @@ class ImportController {
             }
         }
         return null;
+    }
+
+    private static LocalDate cellDate(Cell cell) {
+        if (cell == null || cell.getCellType() == CellType.BLANK) {
+            return null;
+        }
+        if (cell.getCellType() == CellType.NUMERIC || cell.getCellType() == CellType.FORMULA) {
+            try {
+                if (DateUtil.isValidExcelDate(cell.getNumericCellValue())) {
+                    return cell.getLocalDateTimeCellValue().toLocalDate();
+                }
+            } catch (RuntimeException ignored) {
+                // Fall through to formatted text parsing.
+            }
+        }
+        return parseDate(cellString(cell));
+    }
+
+    private static String cellString(Cell cell) {
+        if (cell == null) {
+            return "";
+        }
+        return EXCEL_FORMATTER.formatCellValue(cell).trim();
     }
 
     private static boolean hasAll(List<String> header, String... names) {

@@ -18,6 +18,9 @@ import com.deskbooks.backend.DeskBooksApplication;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
@@ -54,6 +57,31 @@ class ImportControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[*].name", hasItem("amex")))
                 .andExpect(jsonPath("$[?(@.name == 'amex')]", hasSize(1)));
+    }
+
+    @Test
+    void amexXlsxPreviewReadsTransactionDetailsSheet() throws Exception {
+        createAccount("Amex", "credit", "credit_card");
+        Path workbook = dataDir.resolve("amex.xlsx");
+        createAmexWorkbook(workbook);
+
+        mvc.perform(post("/api/imports/preview-path")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "path": "%s",
+                                  "account_id": 1
+                                }
+                                """.formatted(jsonString(workbook))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.importer_name", equalTo("amex")))
+                .andExpect(jsonPath("$.sniff_notes[0]", equalTo("matched importers: amex")))
+                .andExpect(jsonPath("$.rows", hasSize(2)))
+                .andExpect(jsonPath("$.rows[0].date", equalTo("2026-06-01")))
+                .andExpect(jsonPath("$.rows[0].amount", equalTo("-19.00")))
+                .andExpect(jsonPath("$.rows[0].merchant", equalTo("Online Software Subscription")))
+                .andExpect(jsonPath("$.rows[1].amount", equalTo("33.25")))
+                .andExpect(jsonPath("$.rows[1].suggested_kind", equalTo("cc_payment")));
     }
 
     @Test
@@ -231,6 +259,26 @@ class ImportControllerTest {
                                 }
                                 """.formatted(name, pattern, categoryId, kind)))
                 .andExpect(status().isOk());
+    }
+
+    private void createAmexWorkbook(Path path) throws IOException {
+        try (Workbook workbook = new XSSFWorkbook()) {
+            Sheet sheet = workbook.createSheet("Transaction Details");
+            sheet.createRow(0).createCell(0).setCellValue("Downloaded");
+            sheet.getRow(0).createCell(1).setCellValue("Example");
+            sheet.createRow(1).createCell(0).setCellValue("Date");
+            sheet.getRow(1).createCell(1).setCellValue("Description");
+            sheet.getRow(1).createCell(2).setCellValue("Amount");
+            sheet.createRow(2).createCell(0).setCellValue("06/01/2026");
+            sheet.getRow(2).createCell(1).setCellValue("ONLINE SOFTWARE SUBSCRIPTION");
+            sheet.getRow(2).createCell(2).setCellValue(19.00);
+            sheet.createRow(3).createCell(0).setCellValue("06/09/2026");
+            sheet.getRow(3).createCell(1).setCellValue("PAYMENT RECEIVED");
+            sheet.getRow(3).createCell(2).setCellValue(-33.25);
+            try (var output = Files.newOutputStream(path)) {
+                workbook.write(output);
+            }
+        }
     }
 
     private String jsonString(Path path) {
