@@ -18,7 +18,7 @@ final class ReconcileAnalytics {
     private ReconcileAnalytics() {
     }
 
-    static AnalyticsController.ReconcileResponse load(
+    static ReconcileResponse load(
             Connection connection,
             long accountId,
             Integer year,
@@ -35,9 +35,9 @@ final class ReconcileAnalytics {
         return accountMonth(connection, accountId, year, month);
     }
 
-    static AnalyticsController.ReconcileResponse upsert(
+    static ReconcileResponse upsert(
             Connection connection,
-            AnalyticsController.ReconcileRequest body) throws SQLException {
+            ReconcileRequest body) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("""
                 INSERT INTO monthly_reconciliations (account_id, year, month, statement_total, notes)
                 VALUES (?, ?, ?, ?, ?)
@@ -65,7 +65,7 @@ final class ReconcileAnalytics {
         }
     }
 
-    private static AnalyticsController.ReconcileResponse accountMonth(
+    private static ReconcileResponse accountMonth(
             Connection connection,
             long accountId,
             int year,
@@ -80,7 +80,7 @@ final class ReconcileAnalytics {
                 month);
     }
 
-    private static AnalyticsController.ReconcileResponse accountPeriod(
+    private static ReconcileResponse accountPeriod(
             Connection connection,
             long accountId,
             LocalDate start,
@@ -93,7 +93,7 @@ final class ReconcileAnalytics {
                 : reconciliation(connection, accountId, year, month);
         BigDecimal statementTotal = reconciliation == null ? null : reconciliation.statementTotal();
         BigDecimal delta = statementTotal == null ? null : totals.total().subtract(statementTotal);
-        return new AnalyticsController.ReconcileResponse(
+        return new ReconcileResponse(
                 accountId,
                 year,
                 month,

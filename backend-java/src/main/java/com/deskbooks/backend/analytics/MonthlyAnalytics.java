@@ -20,7 +20,7 @@ final class MonthlyAnalytics {
     private MonthlyAnalytics() {
     }
 
-    static List<AnalyticsController.MonthlyPointResponse> load(
+    static List<MonthlyPointResponse> load(
             Connection connection,
             LocalDate start,
             LocalDate end) throws SQLException {
@@ -55,8 +55,8 @@ final class MonthlyAnalytics {
                 rs.getString("category_name"));
     }
 
-    private static List<AnalyticsController.MonthlyPointResponse> responses(Map<String, MonthlyAccumulator> byMonth) {
-        List<AnalyticsController.MonthlyPointResponse> out = new ArrayList<>();
+    private static List<MonthlyPointResponse> responses(Map<String, MonthlyAccumulator> byMonth) {
+        List<MonthlyPointResponse> out = new ArrayList<>();
         for (Map.Entry<String, MonthlyAccumulator> entry : byMonth.entrySet()) {
             out.add(entry.getValue().response(entry.getKey()));
         }
@@ -113,8 +113,8 @@ final class MonthlyAnalytics {
             expensesTotal = expensesTotal.add(outflow);
         }
 
-        private AnalyticsController.MonthlyPointResponse response(String month) {
-            return new AnalyticsController.MonthlyPointResponse(
+        private MonthlyPointResponse response(String month) {
+            return new MonthlyPointResponse(
                     month,
                     numericMoney(byKind),
                     numericMoney(byExpenseCategory),

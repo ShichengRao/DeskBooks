@@ -8,7 +8,7 @@ final class SankeyAnalytics {
     private SankeyAnalytics() {
     }
 
-    static AnalyticsController.SankeyResponse load(
+    static SankeyResponse load(
             Connection connection,
             LocalDate start,
             LocalDate end,

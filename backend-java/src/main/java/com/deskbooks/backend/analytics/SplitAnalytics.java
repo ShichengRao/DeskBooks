@@ -16,7 +16,7 @@ final class SplitAnalytics {
     private SplitAnalytics() {
     }
 
-    static List<AnalyticsController.SplitGroupSummaryResponse> load(
+    static List<SplitGroupSummaryResponse> load(
             Connection connection,
             LocalDate start,
             LocalDate end) throws SQLException {
@@ -41,9 +41,9 @@ final class SplitAnalytics {
         return responses(groups);
     }
 
-    private static List<AnalyticsController.SplitGroupSummaryResponse> responses(
+    private static List<SplitGroupSummaryResponse> responses(
             Map<String, SplitAccumulator> groups) {
-        List<AnalyticsController.SplitGroupSummaryResponse> out = new ArrayList<>();
+        List<SplitGroupSummaryResponse> out = new ArrayList<>();
         for (Map.Entry<String, SplitAccumulator> entry : groups.entrySet()) {
             out.add(entry.getValue().response(entry.getKey()));
         }
@@ -77,8 +77,8 @@ final class SplitAnalytics {
             expectedReimbursement = expectedReimbursement.add(fullOutflow.subtract(personal));
         }
 
-        private AnalyticsController.SplitGroupSummaryResponse response(String groupName) {
-            return new AnalyticsController.SplitGroupSummaryResponse(
+        private SplitGroupSummaryResponse response(String groupName) {
+            return new SplitGroupSummaryResponse(
                     groupName,
                     moneyString(sharedOutflows),
                     moneyString(personalOutflows),

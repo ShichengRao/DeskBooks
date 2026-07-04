@@ -9,7 +9,7 @@ import java.util.Map;
 final class SankeyGraph {
     private final List<String> nodeLabels = new ArrayList<>();
     private final Map<String, Integer> nodeIndex = new LinkedHashMap<>();
-    private final List<AnalyticsController.SankeyLinkResponse> graphLinks = new ArrayList<>();
+    private final List<SankeyLinkResponse> graphLinks = new ArrayList<>();
 
     int node(String name) {
         Integer existing = nodeIndex.get(name);
@@ -23,14 +23,14 @@ final class SankeyGraph {
     }
 
     void link(int source, int target, BigDecimal value, String label) {
-        graphLinks.add(new AnalyticsController.SankeyLinkResponse(source, target, value.doubleValue(), label));
+        graphLinks.add(new SankeyLinkResponse(source, target, value.doubleValue(), label));
     }
 
     List<String> nodes() {
         return nodeLabels;
     }
 
-    List<AnalyticsController.SankeyLinkResponse> links() {
+    List<SankeyLinkResponse> links() {
         return graphLinks;
     }
 }

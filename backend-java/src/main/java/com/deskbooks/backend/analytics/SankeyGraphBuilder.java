@@ -7,7 +7,7 @@ final class SankeyGraphBuilder {
     private SankeyGraphBuilder() {
     }
 
-    static AnalyticsController.SankeyResponse build(
+    static SankeyResponse build(
             LocalDate start,
             String label,
             SankeyTransactionRollup transactions,
@@ -30,10 +30,10 @@ final class SankeyGraphBuilder {
                 SankeyFlowCalculator.impliedAccountDelta(totals, transactions, snapshots),
                 snapshots.deltaByBucket());
 
-        return new AnalyticsController.SankeyResponse(
+        return new SankeyResponse(
                 start.getYear(),
                 label,
-                graph.nodes().stream().map(AnalyticsController.SankeyNodeResponse::new).toList(),
+                graph.nodes().stream().map(SankeyNodeResponse::new).toList(),
                 graph.links(),
                 SankeyNotes.build(snapshots.startSnapshot(), snapshots.endSnapshot()));
     }
