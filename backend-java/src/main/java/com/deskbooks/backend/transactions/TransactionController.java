@@ -34,6 +34,7 @@ import tools.jackson.databind.JsonNode;
 class TransactionController {
     private final SqliteConnectionProvider connections;
     private final TransactionReader reader = new TransactionReader();
+    private final TransactionRelations relations = new TransactionRelations();
 
     TransactionController(SqliteConnectionProvider connections) {
         this.connections = connections;
@@ -175,13 +176,7 @@ class TransactionController {
     TransactionResponse setTransactionSplit(@PathVariable long transactionId, @RequestBody JsonNode body) {
         try (Connection connection = connections.open()) {
             requireTransaction(connection, transactionId);
-            String groupName = blankToNull(textOrNull(body, "group_name"));
-            if (groupName == null) {
-                clearSplit(connection, transactionId);
-            } else {
-                upsertSplit(connection, transactionId, groupName, clampedShare(body), blankToNull(textOrNull(body, "notes")));
-            }
-            touchTransaction(connection, transactionId);
+            relations.setSplit(connection, transactionId, body);
             return reader.get(connection, transactionId);
         } catch (SQLException exception) {
             throw databaseError(exception);
@@ -352,19 +347,7 @@ class TransactionController {
             applyTransactionUpdate(connection, transactionId, values);
         }
 
-        if (body.has("clear_split") && body.get("clear_split").asBoolean()) {
-            clearSplit(connection, transactionId);
-            touchTransaction(connection, transactionId);
-        } else if (body.has("split_group_name") && !body.get("split_group_name").isNull()) {
-            String groupName = blankToNull(body.get("split_group_name").asText());
-            if (groupName != null) {
-                upsertSplit(connection, transactionId, groupName, clampedShare(body, "split_personal_share"), blankToNull(textOrNull(body, "split_notes")));
-                touchTransaction(connection, transactionId);
-            }
-        }
-
-        addTags(connection, transactionId, longList(body.get("add_tag_ids")));
-        removeTags(connection, transactionId, longList(body.get("remove_tag_ids")));
+        relations.applyBulkChanges(connection, transactionId, body);
     }
 
     private void applyTransactionUpdate(Connection connection, long transactionId, List<ColumnValue> values)
@@ -383,65 +366,6 @@ class TransactionController {
             statement.setLong(index, transactionId);
             statement.executeUpdate();
         }
-    }
-
-    private void upsertSplit(Connection connection, long transactionId, String groupName, BigDecimal personalShare, String notes) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement("""
-                INSERT INTO transaction_splits (transaction_id, group_name, personal_share, notes)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(transaction_id) DO UPDATE SET
-                  group_name = excluded.group_name,
-                  personal_share = excluded.personal_share,
-                  notes = excluded.notes
-                """)) {
-            statement.setLong(1, transactionId);
-            statement.setString(2, groupName);
-            statement.setBigDecimal(3, personalShare);
-            statement.setString(4, notes);
-            statement.executeUpdate();
-        }
-    }
-
-    private void clearSplit(Connection connection, long transactionId) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement("DELETE FROM transaction_splits WHERE transaction_id = ?")) {
-            statement.setLong(1, transactionId);
-            statement.executeUpdate();
-        }
-    }
-
-    private void addTags(Connection connection, long transactionId, List<Long> tagIds) throws SQLException {
-        if (tagIds.isEmpty()) {
-            return;
-        }
-        try (PreparedStatement statement = connection.prepareStatement("""
-                INSERT OR IGNORE INTO transaction_tags (transaction_id, tag_id)
-                SELECT ?, id FROM tags WHERE id = ?
-                """)) {
-            for (Long tagId : tagIds) {
-                statement.setLong(1, transactionId);
-                statement.setLong(2, tagId);
-                statement.addBatch();
-            }
-            statement.executeBatch();
-        }
-        touchTransaction(connection, transactionId);
-    }
-
-    private void removeTags(Connection connection, long transactionId, List<Long> tagIds) throws SQLException {
-        if (tagIds.isEmpty()) {
-            return;
-        }
-        try (PreparedStatement statement = connection.prepareStatement("""
-                DELETE FROM transaction_tags WHERE transaction_id = ? AND tag_id = ?
-                """)) {
-            for (Long tagId : tagIds) {
-                statement.setLong(1, transactionId);
-                statement.setLong(2, tagId);
-                statement.addBatch();
-            }
-            statement.executeBatch();
-        }
-        touchTransaction(connection, transactionId);
     }
 
     private Set<Long> existingTransactions(Connection connection, List<Long> ids) throws SQLException {
@@ -503,15 +427,6 @@ class TransactionController {
                 long pairId = rs.getLong("transfer_pair_id");
                 return rs.wasNull() ? null : pairId;
             }
-        }
-    }
-
-    private void touchTransaction(Connection connection, long transactionId) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement("""
-                UPDATE transactions SET updated_at = CURRENT_TIMESTAMP WHERE id = ?
-                """)) {
-            statement.setLong(1, transactionId);
-            statement.executeUpdate();
         }
     }
 
@@ -603,22 +518,6 @@ class TransactionController {
     private boolean booleanOrDefault(JsonNode body, String field, boolean defaultValue) {
         JsonNode node = body.get(field);
         return node == null || node.isNull() ? defaultValue : node.asBoolean();
-    }
-
-    private BigDecimal clampedShare(JsonNode body) {
-        return clampedShare(body, "personal_share");
-    }
-
-    private BigDecimal clampedShare(JsonNode body, String field) {
-        JsonNode node = body.get(field);
-        BigDecimal value = node == null || node.isNull() ? new BigDecimal("0.5") : new BigDecimal(node.asText());
-        if (value.compareTo(BigDecimal.ZERO) < 0) {
-            return BigDecimal.ZERO;
-        }
-        if (value.compareTo(BigDecimal.ONE) > 0) {
-            return BigDecimal.ONE;
-        }
-        return value;
     }
 
     private List<Long> longList(JsonNode node) {
