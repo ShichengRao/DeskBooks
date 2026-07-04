@@ -57,3 +57,15 @@ If Gradle has trouble with the machine-local cache, use a temporary cache:
 ```bash
 GRADLE_USER_HOME=/private/tmp/deskbooks-gradle-home gradle test
 ```
+
+## Metrics
+
+Run the Java metric pass from the repo root:
+
+```bash
+make java-metrics
+```
+
+This runs PMD, CPD, JaCoCo, and CK against the Java backend, then prints a
+ranked hotspot summary. Detailed reports are generated under
+`backend-java/build/reports/`.
