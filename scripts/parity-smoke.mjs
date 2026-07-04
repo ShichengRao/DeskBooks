@@ -12,6 +12,7 @@ const backendDir = path.join(root, "backend");
 const javaDir = path.join(root, "backend-java");
 const verbose = process.env.PARITY_VERBOSE === "1";
 const waitTimeoutMs = Number(process.env.PARITY_WAIT_TIMEOUT_MS ?? "90000");
+const javaWaitTimeoutMs = Number(process.env.PARITY_JAVA_WAIT_TIMEOUT_MS ?? process.env.PARITY_WAIT_TIMEOUT_MS ?? "240000");
 
 const running = [];
 let tempRoot;
@@ -80,9 +81,10 @@ async function freePort() {
   });
 }
 
-async function waitForHealth(server) {
-  const deadline = Date.now() + waitTimeoutMs;
+async function waitForHealth(server, timeoutMs = waitTimeoutMs) {
+  const deadline = Date.now() + timeoutMs;
   let lastError;
+  log(`waiting up to ${Math.round(timeoutMs / 1000)}s for ${server.name} health`);
   while (Date.now() < deadline) {
     if (server.child.parityExit) {
       throw new Error(`${server.name} exited before health check passed\n${tail(server.output)}`);
@@ -100,12 +102,13 @@ async function waitForHealth(server) {
     }
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
-  throw new Error(`${server.name} did not become healthy: ${lastError?.message ?? "timeout"}\n${tail(server.output)}`);
+  throw new Error(`${server.name} did not become healthy after ${Math.round(timeoutMs / 1000)}s: ${lastError?.message ?? "timeout"}\n${tail(server.output)}`);
 }
 
-async function waitForStarterData(server) {
-  const deadline = Date.now() + waitTimeoutMs;
+async function waitForStarterData(server, timeoutMs = waitTimeoutMs) {
+  const deadline = Date.now() + timeoutMs;
   let lastError;
+  log(`waiting up to ${Math.round(timeoutMs / 1000)}s for ${server.name} starter data`);
   while (Date.now() < deadline) {
     if (server.child.parityExit) {
       throw new Error(`${server.name} exited before starter data was available\n${tail(server.output)}`);
@@ -131,7 +134,7 @@ async function waitForStarterData(server) {
     }
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
-  throw new Error(`${server.name} starter data did not become available: ${lastError?.message ?? "timeout"}\n${tail(server.output)}`);
+  throw new Error(`${server.name} starter data did not become available after ${Math.round(timeoutMs / 1000)}s: ${lastError?.message ?? "timeout"}\n${tail(server.output)}`);
 }
 
 async function startPython(port, dataDir) {
@@ -183,8 +186,8 @@ async function startJava(port, dataDir) {
   });
   const server = { name: "java", baseUrl: `http://127.0.0.1:${port}`, ...launched };
   running.push(server);
-  await waitForHealth(server);
-  await waitForStarterData(server);
+  await waitForHealth(server, javaWaitTimeoutMs);
+  await waitForStarterData(server, javaWaitTimeoutMs);
   return server;
 }
 
