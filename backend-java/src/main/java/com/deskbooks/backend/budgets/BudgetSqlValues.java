@@ -2,6 +2,8 @@ package com.deskbooks.backend.budgets;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -14,6 +16,11 @@ final class BudgetSqlValues {
 
     static LocalDate normalizeMonth(LocalDate value) {
         return LocalDate.of(value.getYear(), value.getMonth(), 1);
+    }
+
+    static Long nullableLong(ResultSet rs, String column) throws SQLException {
+        long value = rs.getLong(column);
+        return rs.wasNull() ? null : value;
     }
 
     static BigDecimal money(BigDecimal value) {
