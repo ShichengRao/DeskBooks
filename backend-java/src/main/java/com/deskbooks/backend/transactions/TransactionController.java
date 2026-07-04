@@ -5,14 +5,10 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Statement;
 import java.time.LocalDate;
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
-import java.util.StringJoiner;
 
 import com.deskbooks.backend.db.SqliteConnectionProvider;
 import com.deskbooks.backend.foundation.ApiException;
@@ -35,6 +31,7 @@ class TransactionController {
     private final SqliteConnectionProvider connections;
     private final TransactionReader reader = new TransactionReader();
     private final TransactionRelations relations = new TransactionRelations();
+    private final TransactionMutations mutations = new TransactionMutations(reader, relations);
 
     TransactionController(SqliteConnectionProvider connections) {
         this.connections = connections;
@@ -67,7 +64,7 @@ class TransactionController {
                     + filters.whereSql()
                     + " ORDER BY t.date DESC, t.id DESC LIMIT ? OFFSET ?";
             try (PreparedStatement statement = connection.prepareStatement(sql)) {
-                int index = bindParams(statement, filters.params(), 1);
+                int index = TransactionSql.bindParams(statement, filters.params(), 1);
                 statement.setInt(index++, limit);
                 statement.setInt(index, offset);
                 try (ResultSet rs = statement.executeQuery()) {
@@ -102,7 +99,7 @@ class TransactionController {
                     + (filters.joinAccounts() ? " JOIN accounts a ON a.id = t.account_id" : "")
                     + filters.whereSql();
             try (PreparedStatement statement = connection.prepareStatement(sql)) {
-                bindParams(statement, filters.params(), 1);
+                TransactionSql.bindParams(statement, filters.params(), 1);
                 try (ResultSet rs = statement.executeQuery()) {
                     rs.next();
                     return Map.of("count", rs.getLong("count"));
@@ -116,48 +113,7 @@ class TransactionController {
     @PostMapping("")
     TransactionResponse createTransaction(@RequestBody JsonNode body) {
         try (Connection connection = connections.open()) {
-            long accountId = requiredLong(body, "account_id");
-            requireAccount(connection, accountId);
-
-            Long categoryId = optionalLong(body, "category_id");
-            CategoryInfo category = categoryId == null ? null : categoryOr404(connection, categoryId);
-            String kind = textOrDefault(body, "kind", "uncategorized");
-            if (category != null && !body.has("kind")) {
-                kind = category.kind();
-            }
-
-            String descriptionRaw = requiredText(body, "description_raw");
-            String normalized = textOrNull(body, "description_normalized");
-            if (normalized == null || normalized.isBlank()) {
-                normalized = normalizeDescription(descriptionRaw);
-            }
-
-            String sql = """
-                    INSERT INTO transactions (
-                      account_id, date, post_date, description_raw, description_normalized,
-                      merchant, amount, category_id, kind, is_user_categorized,
-                      is_excluded_from_totals, notes, matched_rule_id, raw, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, NULL, ?, CURRENT_TIMESTAMP)
-                    """;
-            try (PreparedStatement statement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
-                statement.setLong(1, accountId);
-                statement.setString(2, requiredDate(body, "date").toString());
-                statement.setString(3, optionalDateString(body, "post_date"));
-                statement.setString(4, descriptionRaw);
-                statement.setString(5, normalized);
-                statement.setString(6, blankToNull(textOrNull(body, "merchant")));
-                statement.setBigDecimal(7, requiredDecimal(body, "amount"));
-                setNullableLong(statement, 8, categoryId);
-                statement.setString(9, kind);
-                statement.setBoolean(10, booleanOrDefault(body, "is_excluded_from_totals", false));
-                statement.setString(11, blankToNull(textOrNull(body, "notes")));
-                statement.setString(12, "{\"source\":\"manual\"}");
-                statement.executeUpdate();
-                try (ResultSet keys = statement.getGeneratedKeys()) {
-                    keys.next();
-                    return reader.get(connection, keys.getLong(1));
-                }
-            }
+            return mutations.create(connection, body);
         } catch (SQLException exception) {
             throw databaseError(exception);
         }
@@ -175,9 +131,7 @@ class TransactionController {
     @PutMapping("/{transactionId}/split")
     TransactionResponse setTransactionSplit(@PathVariable long transactionId, @RequestBody JsonNode body) {
         try (Connection connection = connections.open()) {
-            requireTransaction(connection, transactionId);
-            relations.setSplit(connection, transactionId, body);
-            return reader.get(connection, transactionId);
+            return mutations.setSplit(connection, transactionId, body);
         } catch (SQLException exception) {
             throw databaseError(exception);
         }
@@ -185,24 +139,8 @@ class TransactionController {
 
     @PatchMapping("/bulk/update")
     Map<String, Integer> bulkUpdate(@RequestBody JsonNode body) {
-        List<Long> ids = longList(body.get("ids"));
-        if (ids.isEmpty()) {
-            return Map.of("updated", 0);
-        }
-
         try (Connection connection = connections.open()) {
-            CategoryInfo category = null;
-            if (body.has("category_id") && !body.get("category_id").isNull()) {
-                category = categoryOr404(connection, body.get("category_id").asLong());
-            }
-            Set<Long> found = existingTransactions(connection, ids);
-            if (found.isEmpty()) {
-                return Map.of("updated", 0);
-            }
-            for (Long id : found) {
-                applyBulkUpdate(connection, id, body, category);
-            }
-            return Map.of("updated", found.size());
+            return mutations.bulkUpdate(connection, body);
         } catch (SQLException exception) {
             throw databaseError(exception);
         }
@@ -211,12 +149,7 @@ class TransactionController {
     @PatchMapping("/{transactionId}")
     TransactionResponse updateTransaction(@PathVariable long transactionId, @RequestBody JsonNode body) {
         try (Connection connection = connections.open()) {
-            requireTransaction(connection, transactionId);
-            List<ColumnValue> values = patchValues(connection, body);
-            if (!values.isEmpty()) {
-                applyTransactionUpdate(connection, transactionId, values);
-            }
-            return reader.get(connection, transactionId);
+            return mutations.update(connection, transactionId, body);
         } catch (SQLException exception) {
             throw databaseError(exception);
         }
@@ -225,24 +158,7 @@ class TransactionController {
     @PostMapping("/pair")
     Map<String, String> pairTransactions(@RequestBody JsonNode body) {
         try (Connection connection = connections.open()) {
-            long transactionAId = requiredLong(body, "transaction_a_id");
-            long transactionBId = requiredLong(body, "transaction_b_id");
-            requireTransaction(connection, transactionAId);
-            requireTransaction(connection, transactionBId);
-            try (PreparedStatement statement = connection.prepareStatement("""
-                    UPDATE transactions
-                    SET transfer_pair_id = ?, kind = 'transfer', is_user_categorized = 1, updated_at = CURRENT_TIMESTAMP
-                    WHERE id = ?
-                    """)) {
-                statement.setLong(1, transactionBId);
-                statement.setLong(2, transactionAId);
-                statement.addBatch();
-                statement.setLong(1, transactionAId);
-                statement.setLong(2, transactionBId);
-                statement.addBatch();
-                statement.executeBatch();
-            }
-            return Map.of("status", "paired");
+            return mutations.pair(connection, body);
         } catch (SQLException exception) {
             throw databaseError(exception);
         }
@@ -251,18 +167,7 @@ class TransactionController {
     @PostMapping("/{transactionId}/unpair")
     Map<String, String> unpairTransaction(@PathVariable long transactionId) {
         try (Connection connection = connections.open()) {
-            Long pairId = transferPairId(connection, transactionId);
-            if (pairId == null) {
-                throw new ApiException(HttpStatus.NOT_FOUND, "transaction not paired");
-            }
-            try (PreparedStatement statement = connection.prepareStatement("""
-                    UPDATE transactions SET transfer_pair_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE id IN (?, ?)
-                    """)) {
-                statement.setLong(1, transactionId);
-                statement.setLong(2, pairId);
-                statement.executeUpdate();
-            }
-            return Map.of("status", "unpaired");
+            return mutations.unpair(connection, transactionId);
         } catch (SQLException exception) {
             throw databaseError(exception);
         }
@@ -271,304 +176,10 @@ class TransactionController {
     @DeleteMapping("/{transactionId}")
     Map<String, String> deleteTransaction(@PathVariable long transactionId) {
         try (Connection connection = connections.open()) {
-            requireTransaction(connection, transactionId);
-            Long pairId = transferPairId(connection, transactionId);
-            if (pairId != null) {
-                try (PreparedStatement statement = connection.prepareStatement("""
-                        UPDATE transactions SET transfer_pair_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?
-                        """)) {
-                    statement.setLong(1, pairId);
-                    statement.executeUpdate();
-                }
-            }
-            try (PreparedStatement statement = connection.prepareStatement("DELETE FROM transactions WHERE id = ?")) {
-                statement.setLong(1, transactionId);
-                statement.executeUpdate();
-            }
-            return Map.of("status", "deleted");
+            return mutations.delete(connection, transactionId);
         } catch (SQLException exception) {
             throw databaseError(exception);
         }
-    }
-
-    private List<ColumnValue> patchValues(Connection connection, JsonNode body) throws SQLException {
-        List<ColumnValue> values = new ArrayList<>();
-        addDate(values, body, "date");
-        addDate(values, body, "post_date");
-        if (body.has("description_raw")) {
-            String raw = textOrNull(body, "description_raw");
-            values.add(new ColumnValue("description_raw", raw));
-            if (!body.has("description_normalized")) {
-                values.add(new ColumnValue("description_normalized", raw == null ? null : normalizeDescription(raw)));
-            }
-        }
-        addText(values, body, "description_normalized");
-        addText(values, body, "merchant");
-        addBigDecimal(values, body, "amount");
-        if (body.has("category_id")) {
-            Long categoryId = optionalLong(body, "category_id");
-            CategoryInfo category = categoryId == null ? null : categoryOr404(connection, categoryId);
-            values.add(new ColumnValue("category_id", categoryId));
-            values.add(new ColumnValue("is_user_categorized", true));
-            values.add(new ColumnValue("matched_rule_id", null));
-            if (category != null && !body.has("kind")) {
-                values.add(new ColumnValue("kind", category.kind()));
-            }
-        }
-        if (body.has("kind")) {
-            values.add(new ColumnValue("kind", textOrNull(body, "kind")));
-            values.add(new ColumnValue("is_user_categorized", true));
-            values.add(new ColumnValue("matched_rule_id", null));
-        }
-        addBoolean(values, body, "is_excluded_from_totals");
-        addText(values, body, "notes");
-        addLong(values, body, "transfer_pair_id");
-        return values;
-    }
-
-    private void applyBulkUpdate(Connection connection, long transactionId, JsonNode body, CategoryInfo category) throws SQLException {
-        List<ColumnValue> values = new ArrayList<>();
-        if (category != null) {
-            values.add(new ColumnValue("category_id", category.id()));
-            values.add(new ColumnValue("is_user_categorized", true));
-            values.add(new ColumnValue("matched_rule_id", null));
-            if (!body.has("kind")) {
-                values.add(new ColumnValue("kind", category.kind()));
-            }
-        }
-        if (body.has("kind") && !body.get("kind").isNull()) {
-            values.add(new ColumnValue("kind", body.get("kind").asText()));
-            values.add(new ColumnValue("is_user_categorized", true));
-            values.add(new ColumnValue("matched_rule_id", null));
-        }
-        addBoolean(values, body, "is_excluded_from_totals");
-
-        if (!values.isEmpty()) {
-            applyTransactionUpdate(connection, transactionId, values);
-        }
-
-        relations.applyBulkChanges(connection, transactionId, body);
-    }
-
-    private void applyTransactionUpdate(Connection connection, long transactionId, List<ColumnValue> values)
-            throws SQLException {
-        StringJoiner assignments = new StringJoiner(", ");
-        for (ColumnValue value : values) {
-            assignments.add(value.column() + " = ?");
-        }
-        assignments.add("updated_at = CURRENT_TIMESTAMP");
-        try (PreparedStatement statement = connection.prepareStatement(
-                "UPDATE transactions SET " + assignments + " WHERE id = ?")) {
-            int index = 1;
-            for (ColumnValue value : values) {
-                bindParam(statement, index++, value.value());
-            }
-            statement.setLong(index, transactionId);
-            statement.executeUpdate();
-        }
-    }
-
-    private Set<Long> existingTransactions(Connection connection, List<Long> ids) throws SQLException {
-        Set<Long> found = new LinkedHashSet<>();
-        try (PreparedStatement statement = connection.prepareStatement("""
-                SELECT id FROM transactions WHERE id IN (%s)
-                """.formatted(placeholders(ids.size())))) {
-            bindParams(statement, new ArrayList<>(ids), 1);
-            try (ResultSet rs = statement.executeQuery()) {
-                while (rs.next()) {
-                    found.add(rs.getLong("id"));
-                }
-            }
-        }
-        return found;
-    }
-
-    private CategoryInfo categoryOr404(Connection connection, long categoryId) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement("SELECT id, kind FROM categories WHERE id = ?")) {
-            statement.setLong(1, categoryId);
-            try (ResultSet rs = statement.executeQuery()) {
-                if (!rs.next()) {
-                    throw new ApiException(HttpStatus.NOT_FOUND, "category not found");
-                }
-                return new CategoryInfo(rs.getLong("id"), rs.getString("kind"));
-            }
-        }
-    }
-
-    private void requireAccount(Connection connection, long accountId) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement("SELECT 1 FROM accounts WHERE id = ?")) {
-            statement.setLong(1, accountId);
-            try (ResultSet rs = statement.executeQuery()) {
-                if (!rs.next()) {
-                    throw new ApiException(HttpStatus.NOT_FOUND, "account not found");
-                }
-            }
-        }
-    }
-
-    private void requireTransaction(Connection connection, long transactionId) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement("SELECT 1 FROM transactions WHERE id = ?")) {
-            statement.setLong(1, transactionId);
-            try (ResultSet rs = statement.executeQuery()) {
-                if (!rs.next()) {
-                    throw new ApiException(HttpStatus.NOT_FOUND, "transaction not found");
-                }
-            }
-        }
-    }
-
-    private Long transferPairId(Connection connection, long transactionId) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement("SELECT transfer_pair_id FROM transactions WHERE id = ?")) {
-            statement.setLong(1, transactionId);
-            try (ResultSet rs = statement.executeQuery()) {
-                if (!rs.next()) {
-                    throw new ApiException(HttpStatus.NOT_FOUND, "transaction not found");
-                }
-                long pairId = rs.getLong("transfer_pair_id");
-                return rs.wasNull() ? null : pairId;
-            }
-        }
-    }
-
-    private String normalizeDescription(String description) {
-        return String.join(" ", description.trim().split("\\s+"));
-    }
-
-    private void addText(List<ColumnValue> values, JsonNode body, String field) {
-        if (body.has(field)) {
-            values.add(new ColumnValue(field, textOrNull(body, field)));
-        }
-    }
-
-    private void addDate(List<ColumnValue> values, JsonNode body, String field) {
-        if (body.has(field)) {
-            values.add(new ColumnValue(field, optionalDateString(body, field)));
-        }
-    }
-
-    private void addBigDecimal(List<ColumnValue> values, JsonNode body, String field) {
-        if (body.has(field)) {
-            JsonNode node = body.get(field);
-            values.add(new ColumnValue(field, node == null || node.isNull() ? null : new BigDecimal(node.asText())));
-        }
-    }
-
-    private void addBoolean(List<ColumnValue> values, JsonNode body, String field) {
-        if (body.has(field)) {
-            JsonNode node = body.get(field);
-            values.add(new ColumnValue(field, node == null || node.isNull() ? null : node.asBoolean()));
-        }
-    }
-
-    private void addLong(List<ColumnValue> values, JsonNode body, String field) {
-        if (body.has(field)) {
-            values.add(new ColumnValue(field, optionalLong(body, field)));
-        }
-    }
-
-    private LocalDate requiredDate(JsonNode body, String field) {
-        JsonNode node = requiredNode(body, field);
-        return LocalDate.parse(node.asText());
-    }
-
-    private String optionalDateString(JsonNode body, String field) {
-        JsonNode node = body.get(field);
-        return node == null || node.isNull() || node.asText().isBlank() ? null : LocalDate.parse(node.asText()).toString();
-    }
-
-    private long requiredLong(JsonNode body, String field) {
-        return requiredNode(body, field).asLong();
-    }
-
-    private Long optionalLong(JsonNode body, String field) {
-        JsonNode node = body.get(field);
-        return node == null || node.isNull() ? null : node.asLong();
-    }
-
-    private BigDecimal requiredDecimal(JsonNode body, String field) {
-        return new BigDecimal(requiredNode(body, field).asText());
-    }
-
-    private String requiredText(JsonNode body, String field) {
-        String value = requiredNode(body, field).asText();
-        if (value.isBlank()) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, field + " is required");
-        }
-        return value;
-    }
-
-    private JsonNode requiredNode(JsonNode body, String field) {
-        JsonNode node = body.get(field);
-        if (node == null || node.isNull()) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, field + " is required");
-        }
-        return node;
-    }
-
-    private String textOrDefault(JsonNode body, String field, String defaultValue) {
-        String value = textOrNull(body, field);
-        return value == null ? defaultValue : value;
-    }
-
-    private String textOrNull(JsonNode body, String field) {
-        JsonNode node = body.get(field);
-        return node == null || node.isNull() ? null : node.asText();
-    }
-
-    private boolean booleanOrDefault(JsonNode body, String field, boolean defaultValue) {
-        JsonNode node = body.get(field);
-        return node == null || node.isNull() ? defaultValue : node.asBoolean();
-    }
-
-    private List<Long> longList(JsonNode node) {
-        if (node == null || node.isNull()) {
-            return List.of();
-        }
-        List<Long> values = new ArrayList<>();
-        for (JsonNode item : node) {
-            values.add(item.asLong());
-        }
-        return values;
-    }
-
-    private int bindParams(PreparedStatement statement, List<Object> params, int startIndex) throws SQLException {
-        int index = startIndex;
-        for (Object param : params) {
-            bindParam(statement, index++, param);
-        }
-        return index;
-    }
-
-    private void bindParam(PreparedStatement statement, int index, Object value) throws SQLException {
-        if (value instanceof LocalDate localDate) {
-            statement.setString(index, localDate.toString());
-        } else if (value instanceof BigDecimal decimal) {
-            statement.setBigDecimal(index, decimal);
-        } else if (value instanceof Long longValue) {
-            statement.setLong(index, longValue);
-        } else if (value instanceof Integer intValue) {
-            statement.setInt(index, intValue);
-        } else if (value instanceof Boolean boolValue) {
-            statement.setBoolean(index, boolValue);
-        } else {
-            statement.setObject(index, value);
-        }
-    }
-
-    private void setNullableLong(PreparedStatement statement, int index, Long value) throws SQLException {
-        if (value == null) {
-            statement.setObject(index, null);
-        } else {
-            statement.setLong(index, value);
-        }
-    }
-
-    private String placeholders(int count) {
-        return String.join(", ", java.util.Collections.nCopies(count, "?"));
-    }
-
-    private String blankToNull(String value) {
-        return value == null || value.isBlank() ? null : value;
     }
 
     private ApiException databaseError(SQLException exception) {
@@ -600,12 +211,6 @@ class TransactionController {
     }
 
     record TransactionSplitResponse(long transactionId, String groupName, String personalShare, String notes) {
-    }
-
-    record CategoryInfo(long id, String kind) {
-    }
-
-    record ColumnValue(String column, Object value) {
     }
 
 }
