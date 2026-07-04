@@ -1,9 +1,7 @@
 package com.deskbooks.backend.imports;
 
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -14,16 +12,19 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
-import java.time.format.DateTimeFormatterBuilder;
-import java.time.format.DateTimeParseException;
-import java.time.temporal.ChronoField;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+
+import static com.deskbooks.backend.imports.ImportParsing.guessMerchant;
+import static com.deskbooks.backend.imports.ImportParsing.money;
+import static com.deskbooks.backend.imports.ImportParsing.moneyString;
+import static com.deskbooks.backend.imports.ImportParsing.normalize;
+import static com.deskbooks.backend.imports.ImportParsing.parseAmount;
+import static com.deskbooks.backend.imports.ImportParsing.parseDate;
 
 import com.deskbooks.backend.db.SqliteConnectionProvider;
 import com.deskbooks.backend.foundation.ApiException;
@@ -32,14 +33,6 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
-import org.apache.poi.ss.usermodel.Cell;
-import org.apache.poi.ss.usermodel.CellType;
-import org.apache.poi.ss.usermodel.DataFormatter;
-import org.apache.poi.ss.usermodel.DateUtil;
-import org.apache.poi.ss.usermodel.Row;
-import org.apache.poi.ss.usermodel.Sheet;
-import org.apache.poi.ss.usermodel.Workbook;
-import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -55,7 +48,6 @@ import org.springframework.web.multipart.MultipartFile;
 class ImportController {
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final DateTimeFormatter SQLITE_TIMESTAMP = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-    private static final DataFormatter EXCEL_FORMATTER = new DataFormatter(Locale.US);
     private static final List<CsvImporter> IMPORTERS = List.of(
             new ChaseCreditImporter(),
             new WellsFargoCheckingImporter(),
@@ -234,7 +226,7 @@ class ImportController {
         try (Connection connection = connections.open()) {
             requireAccount(connection, accountId);
             if (filename.toLowerCase(Locale.ROOT).endsWith(".xlsx")) {
-                List<ImportDraftRow> rows = parseAmexXlsx(data);
+                List<ImportDraftRow> rows = AmexWorkbookParser.parse(data);
                 if (rows.isEmpty()) {
                     throw new ApiException(HttpStatus.BAD_REQUEST, "no importer can handle this file");
                 }
@@ -307,70 +299,6 @@ class ImportController {
                     filename,
                     markedRows,
                     sniffNotes);
-    }
-
-    private List<ImportDraftRow> parseAmexXlsx(byte[] data) {
-        try (Workbook workbook = WorkbookFactory.create(new ByteArrayInputStream(data))) {
-            Sheet sheet = workbook.getSheet("Transaction Details");
-            if (sheet == null) {
-                if (workbook.getNumberOfSheets() == 0) {
-                    return List.of();
-                }
-                sheet = workbook.getSheetAt(0);
-            }
-
-            int headerRowIndex = -1;
-            int maxHeaderRow = Math.min(sheet.getLastRowNum(), 29);
-            for (int rowIndex = 0; rowIndex <= maxHeaderRow; rowIndex++) {
-                Row row = sheet.getRow(rowIndex);
-                if ("date".equalsIgnoreCase(cellString(row == null ? null : row.getCell(0)).trim())) {
-                    headerRowIndex = rowIndex;
-                    break;
-                }
-            }
-            if (headerRowIndex < 0) {
-                return List.of();
-            }
-
-            List<ImportDraftRow> out = new ArrayList<>();
-            for (int rowIndex = headerRowIndex + 1; rowIndex <= sheet.getLastRowNum(); rowIndex++) {
-                Row row = sheet.getRow(rowIndex);
-                if (row == null) {
-                    continue;
-                }
-                LocalDate date = cellDate(row.getCell(0));
-                String rawDescription = cellString(row.getCell(1));
-                BigDecimal amount = cellAmount(row.getCell(2));
-                if (date == null || rawDescription.isBlank() || amount == null) {
-                    continue;
-                }
-                amount = amount.negate();
-                String normalized = normalize(rawDescription);
-                String upper = normalized.toUpperCase(Locale.ROOT);
-                String kind = upper.contains("AUTOPAY PAYMENT")
-                        || upper.contains("PAYMENT - THANK YOU")
-                        || upper.contains("PAYMENT RECEIVED")
-                        ? "cc_payment"
-                        : "uncategorized";
-                out.add(new ImportDraftRow(
-                        rowIndex - headerRowIndex - 1,
-                        date,
-                        null,
-                        rawDescription,
-                        normalized,
-                        guessMerchant(normalized),
-                        moneyString(amount),
-                        null,
-                        kind,
-                        List.of(),
-                        null,
-                        false,
-                        Map.of("row", String.valueOf(rowIndex + 1))));
-            }
-            return out;
-        } catch (IOException | RuntimeException exception) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "could not read xlsx file");
-        }
     }
 
     private ImportBatchResponse getBatch(Connection connection, long batchId) throws SQLException {
@@ -467,14 +395,6 @@ class ImportController {
                 }
             }
         }
-    }
-
-    private BigDecimal money(BigDecimal value) {
-        return value == null ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP) : value.setScale(2, RoundingMode.HALF_UP);
-    }
-
-    private String moneyString(BigDecimal value) {
-        return money(value).toPlainString();
     }
 
     private String rawJson(Map<String, String> raw) {
@@ -772,7 +692,7 @@ class ImportController {
                 raw,
                 normalized,
                 merchant == null ? guessMerchant(normalized) : merchant,
-                amount.setScale(2, RoundingMode.HALF_UP).toPlainString(),
+                moneyString(amount),
                 null,
                 kind,
                 List.of(),
@@ -799,7 +719,7 @@ class ImportController {
         BigDecimal credit = parseAmount(value(row, creditKey));
         if (debit != null && debit.compareTo(BigDecimal.ZERO) != 0) return debit.abs().negate();
         if (credit != null && credit.compareTo(BigDecimal.ZERO) != 0) return credit.abs();
-        return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        return money(BigDecimal.ZERO);
     }
 
     private static CsvData readDictRows(String csvText) {
@@ -868,83 +788,6 @@ class ImportController {
         return rows;
     }
 
-    private static BigDecimal parseAmount(String value) {
-        if (value == null) return null;
-        String cleaned = value.trim().replace("$", "").replace(",", "");
-        if (cleaned.isEmpty()) return null;
-        if (cleaned.startsWith("(") && cleaned.endsWith(")")) {
-            cleaned = "-" + cleaned.substring(1, cleaned.length() - 1);
-        }
-        try {
-            return new BigDecimal(cleaned).setScale(2, RoundingMode.HALF_UP);
-        } catch (NumberFormatException exception) {
-            return null;
-        }
-    }
-
-    private static BigDecimal cellAmount(Cell cell) {
-        if (cell == null || cell.getCellType() == CellType.BLANK) {
-            return null;
-        }
-        if (cell.getCellType() == CellType.NUMERIC || cell.getCellType() == CellType.FORMULA) {
-            try {
-                return BigDecimal.valueOf(cell.getNumericCellValue()).setScale(2, RoundingMode.HALF_UP);
-            } catch (IllegalStateException ignored) {
-                // Fall through to formatted text parsing.
-            }
-        }
-        return parseAmount(cellString(cell));
-    }
-
-    private static LocalDate parseDate(String value) {
-        if (value == null || value.isBlank()) return null;
-        String trimmed = value.trim().replace("\"", "");
-        try {
-            if (trimmed.contains("T")) {
-                return OffsetDateTime.parse(trimmed).toLocalDate();
-            }
-        } catch (DateTimeParseException ignored) {
-            // Try the local-date formats below.
-        }
-        List<DateTimeFormatter> formatters = List.of(
-                DateTimeFormatter.ISO_LOCAL_DATE,
-                new DateTimeFormatterBuilder()
-                        .appendPattern("M/d/")
-                        .appendValue(ChronoField.YEAR, 2, 4, java.time.format.SignStyle.NORMAL)
-                        .toFormatter(Locale.US));
-        for (DateTimeFormatter formatter : formatters) {
-            try {
-                return LocalDate.parse(trimmed, formatter);
-            } catch (DateTimeParseException ignored) {
-                // Continue.
-            }
-        }
-        return null;
-    }
-
-    private static LocalDate cellDate(Cell cell) {
-        if (cell == null || cell.getCellType() == CellType.BLANK) {
-            return null;
-        }
-        if (cell.getCellType() == CellType.NUMERIC || cell.getCellType() == CellType.FORMULA) {
-            try {
-                if (DateUtil.isValidExcelDate(cell.getNumericCellValue())) {
-                    return cell.getLocalDateTimeCellValue().toLocalDate();
-                }
-            } catch (RuntimeException ignored) {
-                // Fall through to formatted text parsing.
-            }
-        }
-        return parseDate(cellString(cell));
-    }
-
-    private static String cellString(Cell cell) {
-        if (cell == null) {
-            return "";
-        }
-        return EXCEL_FORMATTER.formatCellValue(cell).trim();
-    }
-
     private static boolean hasAll(List<String> header, String... names) {
         java.util.Set<String> values = headerSet(header);
         for (String name : names) {
@@ -974,26 +817,6 @@ class ImportController {
             }
         }
         return "";
-    }
-
-    private static String normalize(String raw) {
-        return raw == null ? "" : raw.replaceAll("\\s+", " ").trim();
-    }
-
-    private static String guessMerchant(String raw) {
-        String value = normalize(raw)
-                .replaceFirst("(?i)^(DD \\*|TST\\*|SQ \\*|SP \\*|PY \\*|PAYPAL \\*|VENMO \\*)", "")
-                .replaceFirst("\\s+[A-Z]{2}\\s*$", "")
-                .replaceFirst("\\s+\\d{6,}\\s*$", "")
-                .replaceAll("\\s+#\\d+", "")
-                .trim();
-        if (value.isEmpty()) return value;
-        StringBuilder title = new StringBuilder();
-        for (String part : value.toLowerCase(Locale.ROOT).split(" ")) {
-            if (part.isEmpty()) continue;
-            title.append(Character.toUpperCase(part.charAt(0))).append(part.substring(1)).append(" ");
-        }
-        return title.toString().trim();
     }
 
     record ImportPathPreviewRequest(@NotNull String path, long accountId, String importerName) {
