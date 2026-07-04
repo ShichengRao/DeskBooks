@@ -14,7 +14,6 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.TreeMap;
 
 import com.deskbooks.backend.db.SqliteConnectionProvider;
 import com.deskbooks.backend.foundation.ApiException;
@@ -177,51 +176,8 @@ class AnalyticsController {
     List<SplitGroupSummaryResponse> splitGroups(
             @RequestParam(name = "start") LocalDate start,
             @RequestParam(name = "end") LocalDate end) {
-        try (Connection connection = connections.open();
-                PreparedStatement statement = connection.prepareStatement("""
-                        SELECT s.group_name, s.personal_share, t.amount
-                        FROM transaction_splits s
-                        JOIN transactions t ON t.id = s.transaction_id
-                        WHERE t.date >= ?
-                          AND t.date <= ?
-                          AND t.is_excluded_from_totals = 0
-                        """)) {
-            statement.setString(1, start.toString());
-            statement.setString(2, end.toString());
-            Map<String, SplitAccumulator> groups = new TreeMap<>();
-            try (ResultSet rs = statement.executeQuery()) {
-                while (rs.next()) {
-                    String groupName = rs.getString("group_name");
-                    SplitAccumulator group = groups.computeIfAbsent(groupName, ignored -> new SplitAccumulator());
-                    group.transactionCount++;
-                    BigDecimal amount = rs.getBigDecimal("amount");
-                    BigDecimal share = rs.getBigDecimal("personal_share");
-                    if (amount.compareTo(BigDecimal.ZERO) < 0) {
-                        BigDecimal fullOutflow = amount.negate();
-                        BigDecimal personal = fullOutflow.multiply(share);
-                        group.sharedOutflows = group.sharedOutflows.add(fullOutflow);
-                        group.personalOutflows = group.personalOutflows.add(personal);
-                        group.expectedReimbursement = group.expectedReimbursement.add(fullOutflow.subtract(personal));
-                    } else if (amount.compareTo(BigDecimal.ZERO) > 0) {
-                        group.receivedReimbursement = group.receivedReimbursement.add(amount);
-                    }
-                }
-            }
-
-            List<SplitGroupSummaryResponse> out = new ArrayList<>();
-            for (Map.Entry<String, SplitAccumulator> entry : groups.entrySet()) {
-                SplitAccumulator group = entry.getValue();
-                BigDecimal remaining = group.expectedReimbursement.subtract(group.receivedReimbursement);
-                out.add(new SplitGroupSummaryResponse(
-                        entry.getKey(),
-                        moneyString(group.sharedOutflows),
-                        moneyString(group.personalOutflows),
-                        moneyString(group.expectedReimbursement),
-                        moneyString(group.receivedReimbursement),
-                        moneyString(remaining),
-                        group.transactionCount));
-            }
-            return out;
+        try (Connection connection = connections.open()) {
+            return SplitAnalytics.load(connection, start, end);
         } catch (SQLException exception) {
             throw databaseError(exception);
         }
@@ -968,13 +924,5 @@ class AnalyticsController {
         List<SankeyLinkResponse> links() {
             return links;
         }
-    }
-
-    private static final class SplitAccumulator {
-        BigDecimal sharedOutflows = BigDecimal.ZERO;
-        BigDecimal personalOutflows = BigDecimal.ZERO;
-        BigDecimal expectedReimbursement = BigDecimal.ZERO;
-        BigDecimal receivedReimbursement = BigDecimal.ZERO;
-        int transactionCount = 0;
     }
 }
