@@ -2,7 +2,6 @@ package com.deskbooks.backend.imports;
 
 import java.io.IOException;
 import java.math.BigDecimal;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
@@ -10,7 +9,6 @@ import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
 import com.deskbooks.backend.db.SqliteConnectionProvider;
@@ -36,11 +34,13 @@ class ImportController {
     private final SqliteConnectionProvider connections;
     private final ImportBatchStore batches;
     private final ImportPreviewMarker preview;
+    private final ImportPreviewParser parser;
 
     ImportController(SqliteConnectionProvider connections, RuleEngine ruleEngine) {
         this.connections = connections;
         this.batches = new ImportBatchStore(ruleEngine);
         this.preview = new ImportPreviewMarker(ruleEngine, batches);
+        this.parser = new ImportPreviewParser(IMPORTERS);
     }
 
     @GetMapping("/importers")
@@ -65,7 +65,8 @@ class ImportController {
             @RequestParam("account_id") long accountId,
             @RequestParam(name = "importer_name", required = false) String importerName) {
         try {
-            return previewBytes(file.getBytes(), file.getOriginalFilename() == null ? "uploaded.csv" : file.getOriginalFilename(), accountId, importerName);
+            String filename = file.getOriginalFilename() == null ? "uploaded.csv" : file.getOriginalFilename();
+            return previewBytes(file.getBytes(), filename, accountId, importerName);
         } catch (IOException exception) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "could not read upload");
         }
@@ -78,7 +79,11 @@ class ImportController {
             throw new ApiException(HttpStatus.NOT_FOUND, "file not found");
         }
         try {
-            return previewBytes(Files.readAllBytes(path), path.getFileName().toString(), body.accountId(), body.importerName());
+            return previewBytes(
+                    Files.readAllBytes(path),
+                    path.getFileName().toString(),
+                    body.accountId(),
+                    body.importerName());
         } catch (IOException exception) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "could not read file");
         }
@@ -105,46 +110,14 @@ class ImportController {
     private ImportPreviewResponse previewBytes(byte[] data, String filename, long accountId, String importerName) {
         try (Connection connection = connections.open()) {
             batches.requireAccount(connection, accountId);
-            if (filename.toLowerCase(Locale.ROOT).endsWith(".xlsx")) {
-                List<ImportDraftRow> rows = AmexWorkbookParser.parse(data);
-                if (rows.isEmpty()) {
-                    throw new ApiException(HttpStatus.BAD_REQUEST, "no importer can handle this file");
-                }
-                return preview.previewRows(
-                        connection,
-                        rows,
-                        "amex",
-                        accountId,
-                        filename,
-                        List.of("matched importers: amex"));
-            }
-
-            String csvText = new String(data, StandardCharsets.UTF_8);
-            List<CsvImporter> matched = IMPORTERS.stream().filter(importer -> importer.canHandle(csvText)).toList();
-            CsvImporter chosen;
-            if (importerName != null && !importerName.isBlank()) {
-                chosen = IMPORTERS.stream()
-                        .filter(importer -> importer.name().equals(importerName))
-                        .findFirst()
-                        .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "unknown importer: " + importerName));
-            } else {
-                if (matched.isEmpty()) {
-                    throw new ApiException(HttpStatus.BAD_REQUEST, "no importer can handle this file");
-                }
-                chosen = matched.get(0);
-            }
-
-            List<ImportDraftRow> rows = chosen.parse(csvText);
-            String names = matched.isEmpty()
-                    ? ""
-                    : String.join(", ", matched.stream().map(CsvImporter::name).toList());
+            ImportPreviewParser.ParsedImport parsed = parser.parse(data, filename, importerName);
             return preview.previewRows(
                     connection,
-                    rows,
-                    chosen.name(),
+                    parsed.rows(),
+                    parsed.importerName(),
                     accountId,
                     filename,
-                    List.of("matched importers: " + names));
+                    parsed.sniffNotes());
         } catch (SQLException exception) {
             throw databaseError(exception);
         }
