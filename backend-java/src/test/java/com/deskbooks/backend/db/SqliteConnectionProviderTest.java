@@ -1,6 +1,7 @@
 package com.deskbooks.backend.db;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Path;
 import java.sql.Connection;
@@ -39,6 +40,42 @@ class SqliteConnectionProviderTest {
 
             try (Connection opened = opening.get(5, TimeUnit.SECONDS)) {
                 assertFalse(opened.isClosed());
+            }
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void openRetriesWalPragmaWhenReaderTemporarilyHoldsDatabase() throws Exception {
+        SqliteConnectionProvider provider = provider();
+        Path dbPath = dataDir.resolve("app.db");
+        try (Connection setup = DriverManager.getConnection("jdbc:sqlite:" + dbPath);
+                Statement statement = setup.createStatement()) {
+            statement.execute("CREATE TABLE marker (value TEXT NOT NULL)");
+            statement.execute("INSERT INTO marker (value) VALUES ('held')");
+        }
+
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try (Connection reader = DriverManager.getConnection("jdbc:sqlite:" + dbPath);
+                Statement statement = reader.createStatement()) {
+            reader.setAutoCommit(false);
+            var rs = statement.executeQuery("SELECT value FROM marker");
+            try {
+                assertTrue(rs.next());
+
+                Future<Connection> opening = executor.submit(provider::open);
+                Thread.sleep(250);
+
+                assertFalse(opening.isDone());
+                rs.close();
+                reader.commit();
+
+                try (Connection opened = opening.get(5, TimeUnit.SECONDS)) {
+                    assertFalse(opened.isClosed());
+                }
+            } finally {
+                rs.close();
             }
         } finally {
             executor.shutdownNow();

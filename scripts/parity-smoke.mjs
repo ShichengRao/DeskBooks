@@ -137,6 +137,21 @@ async function waitForStarterData(server, timeoutMs = waitTimeoutMs) {
   throw new Error(`${server.name} starter data did not become available after ${Math.round(timeoutMs / 1000)}s: ${lastError?.message ?? "timeout"}\n${tail(server.output)}`);
 }
 
+async function waitForOutput(server, label, predicate, timeoutMs = waitTimeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  log(`waiting up to ${Math.round(timeoutMs / 1000)}s for ${server.name} ${label}`);
+  while (Date.now() < deadline) {
+    if (server.child.parityExit) {
+      throw new Error(`${server.name} exited before ${label}\n${tail(server.output)}`);
+    }
+    if (predicate(server.output.join(""))) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  throw new Error(`${server.name} did not report ${label} after ${Math.round(timeoutMs / 1000)}s\n${tail(server.output)}`);
+}
+
 async function startPython(port, dataDir) {
   const env = {
     ...process.env,
@@ -187,6 +202,12 @@ async function startJava(port, dataDir) {
   const server = { name: "java", baseUrl: `http://127.0.0.1:${port}`, ...launched };
   running.push(server);
   await waitForHealth(server, javaWaitTimeoutMs);
+  await waitForOutput(
+    server,
+    "starter bootstrap",
+    (output) => output.includes("[bootstrap] starter seed complete") || output.includes("[bootstrap] starter seed skipped"),
+    javaWaitTimeoutMs,
+  );
   await waitForStarterData(server, javaWaitTimeoutMs);
   return server;
 }
