@@ -7,7 +7,6 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
-import java.time.YearMonth;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -130,19 +129,7 @@ class AnalyticsController {
             @RequestParam(name = "start", required = false) LocalDate start,
             @RequestParam(name = "end", required = false) LocalDate end) {
         try (Connection connection = connections.open()) {
-            if (start != null || end != null) {
-                if (start == null || end == null) {
-                    throw new ApiException(HttpStatus.BAD_REQUEST, "provide both start and end");
-                }
-                if (end.isBefore(start)) {
-                    throw new ApiException(HttpStatus.BAD_REQUEST, "end must be on or after start");
-                }
-                return reconcileAccountPeriod(connection, accountId, start, end, null, null);
-            }
-            if (year == null || month == null) {
-                throw new ApiException(HttpStatus.BAD_REQUEST, "provide either year/month or start/end");
-            }
-            return reconcileAccountMonth(connection, accountId, year, month);
+            return ReconcileAnalytics.load(connection, accountId, year, month, start, end);
         } catch (SQLException exception) {
             throw databaseError(exception);
         }
@@ -151,22 +138,7 @@ class AnalyticsController {
     @PutMapping("/reconcile")
     ReconcileResponse upsertReconcile(@Valid @RequestBody ReconcileRequest body) {
         try (Connection connection = connections.open()) {
-            try (PreparedStatement statement = connection.prepareStatement("""
-                    INSERT INTO monthly_reconciliations (account_id, year, month, statement_total, notes)
-                    VALUES (?, ?, ?, ?, ?)
-                    ON CONFLICT(account_id, year, month) DO UPDATE SET
-                      statement_total = excluded.statement_total,
-                      notes = excluded.notes,
-                      updated_at = CURRENT_TIMESTAMP
-                    """)) {
-                statement.setLong(1, body.accountId());
-                statement.setInt(2, body.year());
-                statement.setInt(3, body.month());
-                statement.setBigDecimal(4, body.statementTotal() == null ? null : money(body.statementTotal()));
-                statement.setString(5, body.notes());
-                statement.executeUpdate();
-            }
-            return reconcileAccountMonth(connection, body.accountId(), body.year(), body.month());
+            return ReconcileAnalytics.upsert(connection, body);
         } catch (SQLException exception) {
             throw databaseError(exception);
         }
@@ -181,17 +153,6 @@ class AnalyticsController {
         } catch (SQLException exception) {
             throw databaseError(exception);
         }
-    }
-
-    private ReconcileResponse reconcileAccountMonth(Connection connection, long accountId, int year, int month) throws SQLException {
-        YearMonth yearMonth = YearMonth.of(year, month);
-        return reconcileAccountPeriod(
-                connection,
-                accountId,
-                yearMonth.atDay(1),
-                yearMonth.atEndOfMonth(),
-                year,
-                month);
     }
 
     private SankeyResponse sankeyForPeriod(Connection connection, LocalDate start, LocalDate end, String label) throws SQLException {
@@ -634,93 +595,6 @@ class AnalyticsController {
                 "Snapshot window used: %s → %s.".formatted(startDate, endDate));
     }
 
-    private ReconcileResponse reconcileAccountPeriod(
-            Connection connection,
-            long accountId,
-            LocalDate start,
-            LocalDate end,
-            Integer year,
-            Integer month) throws SQLException {
-        Map<String, BigDecimal> byKind = new LinkedHashMap<>();
-        BigDecimal total = BigDecimal.ZERO;
-        BigDecimal inflows = BigDecimal.ZERO;
-        BigDecimal outflows = BigDecimal.ZERO;
-        int transactionCount = 0;
-        try (PreparedStatement statement = connection.prepareStatement("""
-                SELECT amount, kind
-                FROM transactions
-                WHERE account_id = ?
-                  AND date >= ?
-                  AND date <= ?
-                  AND is_excluded_from_totals = 0
-                """)) {
-            statement.setLong(1, accountId);
-            statement.setString(2, start.toString());
-            statement.setString(3, end.toString());
-            try (ResultSet rs = statement.executeQuery()) {
-                while (rs.next()) {
-                    transactionCount++;
-                    BigDecimal amount = rs.getBigDecimal("amount");
-                    String kind = rs.getString("kind");
-                    byKind.merge(kind, amount, BigDecimal::add);
-                    total = total.add(amount);
-                    if (amount.compareTo(BigDecimal.ZERO) >= 0) {
-                        inflows = inflows.add(amount);
-                    } else {
-                        outflows = outflows.add(amount);
-                    }
-                }
-            }
-        }
-
-        ReconciliationRow reconciliation = null;
-        if (year != null && month != null) {
-            reconciliation = reconciliation(connection, accountId, year, month);
-        }
-        BigDecimal statementTotal = reconciliation == null ? null : reconciliation.statementTotal();
-        BigDecimal delta = statementTotal == null ? null : total.subtract(statementTotal);
-        return new ReconcileResponse(
-                accountId,
-                year,
-                month,
-                start,
-                end,
-                transactionCount,
-                moneyString(total),
-                moneyString(inflows),
-                moneyString(outflows),
-                stringifyMoney(byKind),
-                moneyStringOrNull(statementTotal),
-                reconciliation == null ? null : reconciliation.notes(),
-                moneyStringOrNull(delta));
-    }
-
-    private ReconciliationRow reconciliation(Connection connection, long accountId, int year, int month) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement("""
-                SELECT statement_total, notes
-                FROM monthly_reconciliations
-                WHERE account_id = ? AND year = ? AND month = ?
-                """)) {
-            statement.setLong(1, accountId);
-            statement.setInt(2, year);
-            statement.setInt(3, month);
-            try (ResultSet rs = statement.executeQuery()) {
-                if (!rs.next()) {
-                    return null;
-                }
-                return new ReconciliationRow(rs.getBigDecimal("statement_total"), rs.getString("notes"));
-            }
-        }
-    }
-
-    private Map<String, String> stringifyMoney(Map<String, BigDecimal> values) {
-        Map<String, String> out = new LinkedHashMap<>();
-        for (Map.Entry<String, BigDecimal> entry : values.entrySet()) {
-            out.put(entry.getKey(), moneyString(entry.getValue()));
-        }
-        return out;
-    }
-
     private BigDecimal effectiveAmount(BigDecimal amount, BigDecimal personalShare) {
         if (personalShare == null) {
             return amount;
@@ -781,10 +655,6 @@ class AnalyticsController {
 
     private String moneyString(BigDecimal value) {
         return money(value == null ? BigDecimal.ZERO : value).toPlainString();
-    }
-
-    private String moneyStringOrNull(BigDecimal value) {
-        return value == null ? null : moneyString(value);
     }
 
     private ApiException databaseError(SQLException exception) {
@@ -858,9 +728,6 @@ class AnalyticsController {
             String receivedReimbursement,
             String remainingOwed,
             int transactionCount) {
-    }
-
-    private record ReconciliationRow(BigDecimal statementTotal, String notes) {
     }
 
     private record CategoryRow(long id, String name, Long parentId) {
