@@ -9,13 +9,9 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-
-import static com.deskbooks.backend.imports.ImportParsing.money;
 
 import com.deskbooks.backend.db.SqliteConnectionProvider;
 import com.deskbooks.backend.foundation.ApiException;
@@ -38,13 +34,13 @@ class ImportController {
     private static final List<CsvImporter> IMPORTERS = CsvImporters.all();
 
     private final SqliteConnectionProvider connections;
-    private final RuleEngine ruleEngine;
     private final ImportBatchStore batches;
+    private final ImportPreviewMarker preview;
 
     ImportController(SqliteConnectionProvider connections, RuleEngine ruleEngine) {
         this.connections = connections;
-        this.ruleEngine = ruleEngine;
         this.batches = new ImportBatchStore(ruleEngine);
+        this.preview = new ImportPreviewMarker(ruleEngine, batches);
     }
 
     @GetMapping("/importers")
@@ -114,7 +110,7 @@ class ImportController {
                 if (rows.isEmpty()) {
                     throw new ApiException(HttpStatus.BAD_REQUEST, "no importer can handle this file");
                 }
-                return previewRows(
+                return preview.previewRows(
                         connection,
                         rows,
                         "amex",
@@ -142,7 +138,7 @@ class ImportController {
             String names = matched.isEmpty()
                     ? ""
                     : String.join(", ", matched.stream().map(CsvImporter::name).toList());
-            return previewRows(
+            return preview.previewRows(
                     connection,
                     rows,
                     chosen.name(),
@@ -152,37 +148,6 @@ class ImportController {
         } catch (SQLException exception) {
             throw databaseError(exception);
         }
-    }
-
-    private ImportPreviewResponse previewRows(
-            Connection connection,
-            List<ImportDraftRow> rows,
-            String importerName,
-            long accountId,
-            String filename,
-            List<String> sniffNotes) throws SQLException {
-            List<RuleEngine.RuleRecord> activeRules = ruleEngine.loadActiveRules(connection);
-            Map<DuplicateKey, Integer> existing = batches.existingKeyCounts(connection, accountId);
-            Map<DuplicateKey, Integer> fileCounts = new LinkedHashMap<>();
-            List<ImportDraftRow> markedRows = new ArrayList<>();
-            for (ImportDraftRow row : rows) {
-                row = row.withRuleSuggestion(ruleEngine.evaluate(
-                        activeRules,
-                        accountId,
-                        row.descriptionNormalized() == null ? row.descriptionRaw() : row.descriptionNormalized(),
-                        row.amountValue()));
-                DuplicateKey key = new DuplicateKey(row.date(), money(row.amountValue()), row.descriptionNormalized() == null ? "" : row.descriptionNormalized());
-                int position = fileCounts.getOrDefault(key, 0);
-                fileCounts.put(key, position + 1);
-                boolean duplicate = position < existing.getOrDefault(key, 0);
-                markedRows.add(row.withDuplicate(duplicate));
-            }
-            return new ImportPreviewResponse(
-                    importerName,
-                    accountId,
-                    filename,
-                    markedRows,
-                    sniffNotes);
     }
 
     private ApiException databaseError(SQLException exception) {
@@ -242,25 +207,6 @@ class ImportController {
                     suggestedTags,
                     suggestedMatchedRuleId,
                     duplicate,
-                    raw);
-        }
-        ImportDraftRow withRuleSuggestion(RuleEngine.RuleEval eval) {
-            if (!eval.matched()) {
-                return this;
-            }
-            return new ImportDraftRow(
-                    rowIndex,
-                    date,
-                    postDate,
-                    descriptionRaw,
-                    descriptionNormalized,
-                    eval.merchant() == null || eval.merchant().isBlank() ? merchant : eval.merchant(),
-                    amount,
-                    eval.categoryId() == null ? suggestedCategoryId : eval.categoryId(),
-                    eval.kind() == null ? suggestedKind : eval.kind(),
-                    eval.tags() == null ? suggestedTags : eval.tags(),
-                    eval.matchedRuleId(),
-                    isDuplicate,
                     raw);
         }
         BigDecimal amountValue() {

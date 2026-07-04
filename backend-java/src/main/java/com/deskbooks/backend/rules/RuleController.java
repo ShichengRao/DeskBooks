@@ -33,12 +33,12 @@ class RuleController {
     RuleController(SqliteConnectionProvider connections, RuleEngine ruleEngine) {
         this.connections = connections;
         this.ruleEngine = ruleEngine;
-        this.reader = new RuleReader(ruleEngine);
-        this.mutations = new RuleMutations(reader, ruleEngine);
+        this.reader = new RuleReader();
+        this.mutations = new RuleMutations(reader);
     }
 
     @GetMapping("")
-    List<RuleEngine.RuleRecord> listRules() {
+    List<RuleRecord> listRules() {
         try (Connection connection = connections.open()) {
             return reader.list(connection);
         } catch (SQLException exception) {
@@ -47,7 +47,7 @@ class RuleController {
     }
 
     @GetMapping("/proposals")
-    List<RuleEngine.RuleProposal> listRuleProposals(
+    List<RuleProposal> listRuleProposals(
             @RequestParam(name = "min_support", defaultValue = "3") int minSupport,
             @RequestParam(name = "limit", defaultValue = "50") int limit) {
         try (Connection connection = connections.open()) {
@@ -58,7 +58,7 @@ class RuleController {
     }
 
     @GetMapping("/coverage")
-    RuleEngine.RuleCoverage coverage() {
+    RuleCoverage coverage() {
         try (Connection connection = connections.open()) {
             return ruleEngine.coverageSummary(connection);
         } catch (SQLException exception) {
@@ -67,7 +67,7 @@ class RuleController {
     }
 
     @PostMapping("/proposals/backtest")
-    RuleEngine.RuleProposal backtestRuleProposal(@Valid @RequestBody RuleEngine.RuleProposalRequest body) {
+    RuleProposal backtestRuleProposal(@Valid @RequestBody RuleProposalRequest body) {
         try (Connection connection = connections.open()) {
             return ruleEngine.backtestRuleProposal(connection, body);
         } catch (SQLException exception) {
@@ -76,7 +76,7 @@ class RuleController {
     }
 
     @PostMapping("/proposals/reject")
-    Map<String, Object> rejectRuleProposal(@Valid @RequestBody RuleEngine.RuleProposalRequest body) {
+    Map<String, Object> rejectRuleProposal(@Valid @RequestBody RuleProposalRequest body) {
         try (Connection connection = connections.open()) {
             boolean created = ruleEngine.rejectRuleProposal(connection, body);
             return Map.of("status", "rejected", "created", created);
@@ -86,7 +86,7 @@ class RuleController {
     }
 
     @PostMapping("")
-    RuleEngine.RuleRecord createRule(@Valid @RequestBody RuleRequest body) {
+    RuleRecord createRule(@Valid @RequestBody RuleRequest body) {
         try (Connection connection = connections.open()) {
             return mutations.create(connection, body);
         } catch (SQLException exception) {
@@ -95,7 +95,7 @@ class RuleController {
     }
 
     @PatchMapping("/{ruleId}")
-    RuleEngine.RuleRecord updateRule(@PathVariable long ruleId, @RequestBody JsonNode body) {
+    RuleRecord updateRule(@PathVariable long ruleId, @RequestBody JsonNode body) {
         try (Connection connection = connections.open()) {
             return mutations.update(connection, ruleId, body);
         } catch (SQLException exception) {
@@ -124,7 +124,7 @@ class RuleController {
     @PostMapping("/reapply")
     Map<String, Integer> reapplyRules() {
         try (Connection connection = connections.open()) {
-            RuleEngine.ReapplyResult result = ruleEngine.reapplyToUnreviewed(connection);
+            ReapplyResult result = ruleEngine.reapplyToUnreviewed(connection);
             return Map.of("rows_changed", result.rowsChanged(), "rules_fired", result.rulesFired());
         } catch (SQLException exception) {
             throw databaseError(exception);

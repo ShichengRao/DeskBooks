@@ -13,16 +13,14 @@ import tools.jackson.databind.JsonNode;
 
 final class RuleMutations {
     private final RuleReader reader;
-    private final RuleEngine ruleEngine;
     private final RuleLookup lookup = new RuleLookup();
     private final RulePatchBuilder patches = new RulePatchBuilder(lookup);
 
-    RuleMutations(RuleReader reader, RuleEngine ruleEngine) {
+    RuleMutations(RuleReader reader) {
         this.reader = reader;
-        this.ruleEngine = ruleEngine;
     }
 
-    RuleEngine.RuleRecord create(Connection connection, RuleController.RuleRequest body) throws SQLException {
+    RuleRecord create(Connection connection, RuleController.RuleRequest body) throws SQLException {
         lookup.validateReferences(connection, body.matchAccountId(), body.setCategoryId());
         try (PreparedStatement statement = connection.prepareStatement("""
                 INSERT INTO rules (
@@ -41,7 +39,7 @@ final class RuleMutations {
             RuleSql.setNullableLong(statement, 8, body.setCategoryId());
             statement.setString(9, RuleSql.blankToNull(body.setKind()));
             statement.setString(10, RuleSql.blankToNull(body.setMerchant()));
-            statement.setString(11, ruleEngine.tagsJson(body.setTags()));
+            statement.setString(11, RuleTags.toJson(body.setTags()));
             statement.setString(12, RuleSql.blankToNull(body.notes()));
             statement.executeUpdate();
             try (ResultSet keys = statement.getGeneratedKeys()) {
@@ -51,7 +49,7 @@ final class RuleMutations {
         }
     }
 
-    RuleEngine.RuleRecord update(Connection connection, long ruleId, JsonNode body) throws SQLException {
+    RuleRecord update(Connection connection, long ruleId, JsonNode body) throws SQLException {
         lookup.requireRule(connection, ruleId);
         List<RuleColumnValue> values = patches.patchValues(connection, body);
         if (!values.isEmpty()) {

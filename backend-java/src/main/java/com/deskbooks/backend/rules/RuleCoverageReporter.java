@@ -12,8 +12,8 @@ final class RuleCoverageReporter {
         this.rules = rules;
     }
 
-    RuleEngine.RuleCoverage summarize(Connection connection) throws SQLException {
-        List<RuleEngine.RuleRecord> activeRules = rules.loadActiveRules(connection);
+    RuleCoverage summarize(Connection connection) throws SQLException {
+        List<RuleRecord> activeRules = rules.loadActiveRules(connection);
         List<RuleTransactionRow> txs = transactions.load(connection, false);
         int total = txs.size();
         int labeledTransactions = 0;
@@ -26,7 +26,7 @@ final class RuleCoverageReporter {
             if (labeled) {
                 labeledTransactions++;
             }
-            RuleEngine.RuleEval eval = rules.evaluate(activeRules, tx.accountId(), tx.description(), tx.amount());
+            RuleEval eval = rules.evaluate(activeRules, tx.accountId(), tx.description(), tx.amount());
             if (!eval.matched()) {
                 continue;
             }
@@ -44,7 +44,7 @@ final class RuleCoverageReporter {
         }
         Double accuracy = labeledMatched == 0 ? null : ((double) labeledCorrect) / labeledMatched;
         double coverage = total == 0 ? 0.0 : ((double) matched) / total * 100.0;
-        return new RuleEngine.RuleCoverage(
+        return new RuleCoverage(
                 activeRules.size(),
                 total,
                 matched,

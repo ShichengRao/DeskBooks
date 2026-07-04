@@ -38,18 +38,18 @@ final class RuleProposalSummaries {
                 .toList();
     }
 
-    List<RuleEngine.RuleProposalBreakdown> breakdown(List<RuleTransactionRow> matches) {
+    List<RuleProposalBreakdown> breakdown(List<RuleTransactionRow> matches) {
         Map<OutcomeKey, Integer> counts = new HashMap<>();
         for (RuleTransactionRow tx : matches) {
             counts.merge(new OutcomeKey(tx.categoryId(), tx.kind()), 1, Integer::sum);
         }
         return counts.entrySet().stream()
                 .sorted(Map.Entry.<OutcomeKey, Integer>comparingByValue().reversed())
-                .map(entry -> new RuleEngine.RuleProposalBreakdown(entry.getKey().categoryId(), entry.getKey().kind(), entry.getValue()))
+                .map(entry -> new RuleProposalBreakdown(entry.getKey().categoryId(), entry.getKey().kind(), entry.getValue()))
                 .toList();
     }
 
-    List<RuleEngine.RuleProposalExample> examples(
+    List<RuleProposalExample> examples(
             List<RuleTransactionRow> correct,
             List<RuleTransactionRow> incorrect,
             Long categoryId,
@@ -59,7 +59,7 @@ final class RuleProposalSummaries {
         candidates.addAll(correct.stream().limit(3).toList());
         return candidates.stream()
                 .limit(6)
-                .map(tx -> new RuleEngine.RuleProposalExample(
+                .map(tx -> new RuleProposalExample(
                         tx.id(),
                         tx.date(),
                         tx.description(),

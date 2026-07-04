@@ -7,7 +7,7 @@ import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
 final class RuleMatcher {
-    boolean matches(RuleEngine.RuleRecord rule, long accountId, String description, BigDecimal amount) {
+    boolean matches(RuleRecord rule, long accountId, String description, BigDecimal amount) {
         return accountOk(rule.matchAccountId(), accountId)
                 && descriptionMatches(rule.matchDescriptionPattern(), description)
                 && amountMatches(rule, amount);
@@ -57,7 +57,7 @@ final class RuleMatcher {
         return compiled != null && compiled.matcher(description == null ? "" : description).find();
     }
 
-    private boolean amountMatches(RuleEngine.RuleRecord rule, BigDecimal amount) {
+    private boolean amountMatches(RuleRecord rule, BigDecimal amount) {
         BigDecimal value = amount == null ? BigDecimal.ZERO : amount;
         if (rule.matchAmountMin() != null && value.compareTo(new BigDecimal(rule.matchAmountMin())) < 0) {
             return false;

@@ -17,10 +17,10 @@ final class RuleReapplyEngine {
         this.rules = rules;
     }
 
-    RuleEngine.ReapplyResult reapplyToUnreviewed(Connection connection) throws SQLException {
-        List<RuleEngine.RuleRecord> activeRules = rules.loadActiveRules(connection);
+    ReapplyResult reapplyToUnreviewed(Connection connection) throws SQLException {
+        List<RuleRecord> activeRules = rules.loadActiveRules(connection);
         if (activeRules.isEmpty()) {
-            return new RuleEngine.ReapplyResult(0, 0);
+            return new ReapplyResult(0, 0);
         }
         Map<Long, Integer> fires = new LinkedHashMap<>();
         try (PreparedStatement statement = connection.prepareStatement("""
@@ -31,7 +31,7 @@ final class RuleReapplyEngine {
                 """);
                 ResultSet rs = statement.executeQuery()) {
             while (rs.next()) {
-                RuleEngine.RuleEval eval = rules.evaluate(
+                RuleEval eval = rules.evaluate(
                         activeRules,
                         rs.getLong("account_id"),
                         firstNonNull(rs.getString("description_normalized"), rs.getString("description_raw"), ""),
@@ -50,10 +50,10 @@ final class RuleReapplyEngine {
         }
         rules.stampRuleFires(connection, expandFires(fires));
         int rowsChanged = fires.values().stream().mapToInt(Integer::intValue).sum();
-        return new RuleEngine.ReapplyResult(rowsChanged, fires.size());
+        return new ReapplyResult(rowsChanged, fires.size());
     }
 
-    private List<ColumnValue> changedValues(ResultSet rs, RuleEngine.RuleEval eval) throws SQLException {
+    private List<ColumnValue> changedValues(ResultSet rs, RuleEval eval) throws SQLException {
         List<ColumnValue> values = new ArrayList<>();
         Long currentCategoryId = nullableLong(rs, "category_id");
         if (eval.categoryId() != null && !eval.categoryId().equals(currentCategoryId)) {

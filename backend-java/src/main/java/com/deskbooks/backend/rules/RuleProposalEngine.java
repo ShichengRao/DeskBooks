@@ -22,33 +22,33 @@ final class RuleProposalEngine {
         this.rules = rules;
     }
 
-    List<RuleEngine.RuleProposal> generate(Connection connection, int minSupport, int limit) throws SQLException {
+    List<RuleProposal> generate(Connection connection, int minSupport, int limit) throws SQLException {
         ProposalContext context = proposalContext(connection, minSupport);
         if (context.totalLabeled() == 0) {
             return List.of();
         }
-        List<RuleEngine.RuleProposal> proposals = new ArrayList<>();
+        List<RuleProposal> proposals = new ArrayList<>();
         for (Map.Entry<String, List<RuleTransactionRow>> entry : groupProposalCandidates(context.labeledTxs()).entrySet()) {
-            RuleEngine.RuleProposal proposal = buildRuleProposal(entry.getKey(), entry.getValue(), context);
+            RuleProposal proposal = buildRuleProposal(entry.getKey(), entry.getValue(), context);
             if (proposal != null) {
                 proposals.add(proposal);
             }
         }
         proposals.sort(Comparator
-                .comparingInt(RuleEngine.RuleProposal::allTransactionMatches)
-                .thenComparingInt(RuleEngine.RuleProposal::correctMatches)
-                .thenComparingDouble(RuleEngine.RuleProposal::accuracy)
-                .thenComparingInt(RuleEngine.RuleProposal::totalUserLabeledMatches)
+                .comparingInt(RuleProposal::allTransactionMatches)
+                .thenComparingInt(RuleProposal::correctMatches)
+                .thenComparingDouble(RuleProposal::accuracy)
+                .thenComparingInt(RuleProposal::totalUserLabeledMatches)
                 .reversed());
         return proposals.stream().limit(Math.max(0, limit)).toList();
     }
 
-    RuleEngine.RuleProposal backtest(Connection connection, RuleEngine.RuleProposalRequest request) throws SQLException {
+    RuleProposal backtest(Connection connection, RuleProposalRequest request) throws SQLException {
         List<RuleTransactionRow> labeledTxs = transactions.load(connection, true);
         List<RuleTransactionRow> allTxs = transactions.load(connection, false);
         int totalLabeled = labeledTxs.size();
         int totalTransactions = allTxs.size();
-        List<RuleEngine.RuleRecord> activeRules = rules.loadActiveRules(connection);
+        List<RuleRecord> activeRules = rules.loadActiveRules(connection);
 
         List<RuleTransactionRow> matches = matchingTransactions(labeledTxs, request);
         int allMatches = matchingTransactions(allTxs, request).size();
@@ -61,7 +61,7 @@ final class RuleProposalEngine {
         }
         List<RuleTransactionRow> correct = summaries.correctMatches(matches, request.setCategoryId(), request.setKind());
         List<RuleTransactionRow> incorrect = summaries.incorrectMatches(matches, request.setCategoryId(), request.setKind());
-        return new RuleEngine.RuleProposal(
+        return new RuleProposal(
                 request.key(),
                 request.name(),
                 request.matchDescriptionPattern(),
@@ -83,14 +83,14 @@ final class RuleProposalEngine {
                 summaries.examples(correct, incorrect, request.setCategoryId(), request.setKind()));
     }
 
-    boolean reject(Connection connection, RuleEngine.RuleProposalRequest request) throws SQLException {
+    boolean reject(Connection connection, RuleProposalRequest request) throws SQLException {
         return proposals.reject(connection, request);
     }
 
     private ProposalContext proposalContext(Connection connection, int minSupport) throws SQLException {
         List<RuleTransactionRow> labeled = transactions.load(connection, true);
         List<RuleTransactionRow> all = transactions.load(connection, false);
-        List<RuleEngine.RuleRecord> activeRules = rules.loadActiveRules(connection);
+        List<RuleRecord> activeRules = rules.loadActiveRules(connection);
         return new ProposalContext(
                 labeled,
                 all,
@@ -113,7 +113,7 @@ final class RuleProposalEngine {
         return byKey;
     }
 
-    private RuleEngine.RuleProposal buildRuleProposal(String key, List<RuleTransactionRow> txs, ProposalContext context) {
+    private RuleProposal buildRuleProposal(String key, List<RuleTransactionRow> txs, ProposalContext context) {
         RuleProposalOutcome outcome = summaries.majorityOutcome(txs, context.minSupport());
         if (outcome == null) {
             return null;
@@ -136,7 +136,7 @@ final class RuleProposalEngine {
         if (accuracy < MINIMUM_PROPOSAL_ACCURACY) {
             return null;
         }
-        return new RuleEngine.RuleProposal(
+        return new RuleProposal(
                 key,
                 key,
                 pattern,
@@ -170,7 +170,7 @@ final class RuleProposalEngine {
                 continue;
             }
             allMatches++;
-            RuleEngine.RuleEval eval = rules.evaluate(context.activeRules(), tx.accountId(), tx.description(), tx.amount());
+            RuleEval eval = rules.evaluate(context.activeRules(), tx.accountId(), tx.description(), tx.amount());
             if (!eval.matched()) {
                 addedMatches++;
             }
@@ -180,13 +180,13 @@ final class RuleProposalEngine {
 
     private List<RuleTransactionRow> matchingTransactions(
             List<RuleTransactionRow> transactions,
-            RuleEngine.RuleProposalRequest request) {
+            RuleProposalRequest request) {
         return transactions.stream()
                 .filter(tx -> matchesRequest(tx, request))
                 .toList();
     }
 
-    private boolean matchesRequest(RuleTransactionRow tx, RuleEngine.RuleProposalRequest request) {
+    private boolean matchesRequest(RuleTransactionRow tx, RuleProposalRequest request) {
         return matcher.accountOk(request.matchAccountId(), tx.accountId())
                 && matcher.proposalMatches(
                         request.matchDescriptionPattern(),
@@ -201,7 +201,7 @@ final class RuleProposalEngine {
             int totalLabeled,
             int totalTransactions,
             List<RuleProposalSignature> activeSignatures,
-            List<RuleEngine.RuleRecord> activeRules,
+            List<RuleRecord> activeRules,
             List<String> rejectedSignatures,
             int minSupport) {
     }

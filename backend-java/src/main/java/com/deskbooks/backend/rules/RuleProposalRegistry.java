@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.Locale;
 
 final class RuleProposalRegistry {
-    List<RuleProposalSignature> activeSignatures(List<RuleEngine.RuleRecord> activeRules) {
+    List<RuleProposalSignature> activeSignatures(List<RuleRecord> activeRules) {
         return activeRules.stream()
                 .map(rule -> new RuleProposalSignature(
                         rule.matchDescriptionPattern(),
@@ -42,7 +42,7 @@ final class RuleProposalRegistry {
                 && !rejectedSignatures.contains(signature(key, pattern, null, categoryId, kind));
     }
 
-    boolean reject(Connection connection, RuleEngine.RuleProposalRequest request) throws SQLException {
+    boolean reject(Connection connection, RuleProposalRequest request) throws SQLException {
         String signature = signature(
                 request.key(),
                 request.matchDescriptionPattern(),
@@ -70,7 +70,7 @@ final class RuleProposalRegistry {
     private void insertRejection(
             Connection connection,
             String signature,
-            RuleEngine.RuleProposalRequest request) throws SQLException {
+            RuleProposalRequest request) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("""
                 INSERT INTO rule_proposal_rejections (
                   signature, key, name, match_account_id, match_description_pattern,
