@@ -1,7 +1,6 @@
 package com.deskbooks.backend.networth;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -9,7 +8,6 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.LocalDate;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -35,6 +33,8 @@ import tools.jackson.databind.JsonNode;
 @RequestMapping("/api/snapshots")
 class NetWorthController {
     private final SqliteConnectionProvider connections;
+    private final NetWorthReader reader = new NetWorthReader();
+    private final NetWorthSeries series = new NetWorthSeries();
 
     NetWorthController(SqliteConnectionProvider connections) {
         this.connections = connections;
@@ -43,18 +43,7 @@ class NetWorthController {
     @GetMapping("")
     List<NetWorthSnapshotResponse> listSnapshots() {
         try (Connection connection = connections.open()) {
-            List<NetWorthSnapshotResponse> snapshots = new ArrayList<>();
-            try (PreparedStatement statement = connection.prepareStatement("""
-                    SELECT id, snapshot_date, notes
-                    FROM net_worth_snapshots
-                    ORDER BY snapshot_date DESC
-                    """);
-                    ResultSet rs = statement.executeQuery()) {
-                while (rs.next()) {
-                    snapshots.add(snapshotFrom(connection, rs));
-                }
-            }
-            return snapshots;
+            return reader.list(connection);
         } catch (SQLException exception) {
             throw databaseError(exception);
         }
@@ -84,7 +73,7 @@ class NetWorthController {
                 }
                 upsertBalances(connection, snapshotId, balancesOrEmpty(body.balances()));
                 connection.commit();
-                return getSnapshot(connection, snapshotId);
+                return reader.get(connection, snapshotId);
             } catch (SQLException exception) {
                 rollback(connection);
                 throw exception;
@@ -137,7 +126,7 @@ class NetWorthController {
                     replaceBalances(connection, snapshotId, balancesFromJson(body.get("balances")));
                 }
                 connection.commit();
-                return getSnapshot(connection, snapshotId);
+                return reader.get(connection, snapshotId);
             } catch (SQLException | RuntimeException exception) {
                 rollback(connection);
                 throw exception;
@@ -170,130 +159,10 @@ class NetWorthController {
         }
 
         try (Connection connection = connections.open()) {
-            StringBuilder sql = new StringBuilder("""
-                    SELECT id, snapshot_date
-                    FROM net_worth_snapshots
-                    """);
-            List<LocalDate> params = new ArrayList<>();
-            if (start != null || end != null) {
-                sql.append(" WHERE ");
-                List<String> filters = new ArrayList<>();
-                if (start != null) {
-                    filters.add("snapshot_date >= ?");
-                    params.add(start);
-                }
-                if (end != null) {
-                    filters.add("snapshot_date <= ?");
-                    params.add(end);
-                }
-                sql.append(String.join(" AND ", filters));
-            }
-            sql.append(" ORDER BY snapshot_date ASC");
-
-            List<NetWorthSeriesPointResponse> points = new ArrayList<>();
-            try (PreparedStatement statement = connection.prepareStatement(sql.toString())) {
-                for (int i = 0; i < params.size(); i++) {
-                    statement.setString(i + 1, params.get(i).toString());
-                }
-                try (ResultSet rs = statement.executeQuery()) {
-                    while (rs.next()) {
-                        points.add(seriesPoint(connection, rs.getLong("id"), LocalDate.parse(rs.getString("snapshot_date"))));
-                    }
-                }
-            }
-            return points;
+            return series.list(connection, start, end);
         } catch (SQLException exception) {
             throw databaseError(exception);
         }
-    }
-
-    private NetWorthSnapshotResponse getSnapshot(Connection connection, long snapshotId) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement("""
-                SELECT id, snapshot_date, notes FROM net_worth_snapshots WHERE id = ?
-                """)) {
-            statement.setLong(1, snapshotId);
-            try (ResultSet rs = statement.executeQuery()) {
-                if (!rs.next()) {
-                    throw new ApiException(HttpStatus.NOT_FOUND, "snapshot not found");
-                }
-                return snapshotFrom(connection, rs);
-            }
-        }
-    }
-
-    private NetWorthSnapshotResponse snapshotFrom(Connection connection, ResultSet rs) throws SQLException {
-        long snapshotId = rs.getLong("id");
-        return new NetWorthSnapshotResponse(
-                snapshotId,
-                LocalDate.parse(rs.getString("snapshot_date")),
-                rs.getString("notes"),
-                balances(connection, snapshotId));
-    }
-
-    private List<AccountBalanceResponse> balances(Connection connection, long snapshotId) throws SQLException {
-        List<AccountBalanceResponse> balances = new ArrayList<>();
-        try (PreparedStatement statement = connection.prepareStatement("""
-                SELECT account_id, balance, notes
-                FROM account_balances
-                WHERE snapshot_id = ?
-                ORDER BY account_id
-                """)) {
-            statement.setLong(1, snapshotId);
-            try (ResultSet rs = statement.executeQuery()) {
-                while (rs.next()) {
-                    BigDecimal balance = rs.getBigDecimal("balance");
-                    balances.add(new AccountBalanceResponse(
-                            rs.getLong("account_id"),
-                            balance == null ? null : moneyString(balance),
-                            rs.getString("notes")));
-                }
-            }
-        }
-        return balances;
-    }
-
-    private NetWorthSeriesPointResponse seriesPoint(Connection connection, long snapshotId, LocalDate snapshotDate) throws SQLException {
-        Map<String, BigDecimal> byCategory = new LinkedHashMap<>();
-        Map<String, BigDecimal> byAccount = new LinkedHashMap<>();
-        BigDecimal total = BigDecimal.ZERO;
-        BigDecimal taxable = BigDecimal.ZERO;
-        BigDecimal taxAdvantaged = BigDecimal.ZERO;
-
-        try (PreparedStatement statement = connection.prepareStatement("""
-                SELECT a.name, a.account_category, ab.balance
-                FROM account_balances ab
-                JOIN accounts a ON a.id = ab.account_id
-                WHERE ab.snapshot_id = ?
-                ORDER BY a.sort_order, a.name
-                """)) {
-            statement.setLong(1, snapshotId);
-            try (ResultSet rs = statement.executeQuery()) {
-                while (rs.next()) {
-                    BigDecimal rawBalance = rs.getBigDecimal("balance");
-                    if (rawBalance == null) {
-                        continue;
-                    }
-                    String category = rs.getString("account_category");
-                    BigDecimal value = signedBalance(category, rawBalance);
-                    byCategory.merge(category, value, BigDecimal::add);
-                    byAccount.merge(rs.getString("name"), value, BigDecimal::add);
-                    total = total.add(value);
-                    if ("tax_advantaged".equals(category)) {
-                        taxAdvantaged = taxAdvantaged.add(value);
-                    } else {
-                        taxable = taxable.add(value);
-                    }
-                }
-            }
-        }
-
-        return new NetWorthSeriesPointResponse(
-                snapshotDate,
-                moneyString(total),
-                stringifyMoney(byCategory),
-                stringifyMoney(byAccount),
-                moneyString(taxable),
-                moneyString(taxAdvantaged));
     }
 
     private void upsertBalances(Connection connection, long snapshotId, List<AccountBalanceRequest> balances) throws SQLException {
@@ -375,23 +244,6 @@ class NetWorthController {
 
     private List<AccountBalanceRequest> balancesOrEmpty(List<AccountBalanceRequest> balances) {
         return balances == null ? List.of() : balances;
-    }
-
-    private BigDecimal signedBalance(String category, BigDecimal balance) {
-        if ("credit".equals(category) || "liability".equals(category)) {
-            return balance.abs().negate();
-        }
-        return balance;
-    }
-
-    private Map<String, String> stringifyMoney(Map<String, BigDecimal> values) {
-        Map<String, String> out = new LinkedHashMap<>();
-        values.forEach((key, value) -> out.put(key, moneyString(value)));
-        return out;
-    }
-
-    private String moneyString(BigDecimal value) {
-        return value.setScale(2, RoundingMode.HALF_UP).toPlainString();
     }
 
     private void rollback(Connection connection) {
