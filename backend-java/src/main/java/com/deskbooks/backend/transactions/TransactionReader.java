@@ -26,7 +26,7 @@ final class TransactionReader {
         return String.join(", ", SELECT_COLUMNS);
     }
 
-    TransactionController.TransactionResponse get(Connection connection, long transactionId) throws SQLException {
+    TransactionResponse get(Connection connection, long transactionId) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("""
                 SELECT %s FROM transactions t WHERE t.id = ?
                 """.formatted(selectColumns()))) {
@@ -40,10 +40,10 @@ final class TransactionReader {
         }
     }
 
-    TransactionController.TransactionResponse from(Connection connection, ResultSet rs) throws SQLException {
+    TransactionResponse from(Connection connection, ResultSet rs) throws SQLException {
         long id = rs.getLong("id");
         BigDecimal amount = rs.getBigDecimal("amount");
-        return new TransactionController.TransactionResponse(
+        return new TransactionResponse(
                 id,
                 rs.getLong("account_id"),
                 localDate(rs, "date"),
@@ -64,8 +64,8 @@ final class TransactionReader {
                 split(connection, id));
     }
 
-    private List<TransactionController.TagResponse> tags(Connection connection, long transactionId) throws SQLException {
-        List<TransactionController.TagResponse> tags = new ArrayList<>();
+    private List<TagResponse> tags(Connection connection, long transactionId) throws SQLException {
+        List<TagResponse> tags = new ArrayList<>();
         try (PreparedStatement statement = connection.prepareStatement("""
                 SELECT tags.id, tags.name, tags.color
                 FROM transaction_tags
@@ -76,7 +76,7 @@ final class TransactionReader {
             statement.setLong(1, transactionId);
             try (ResultSet rs = statement.executeQuery()) {
                 while (rs.next()) {
-                    tags.add(new TransactionController.TagResponse(
+                    tags.add(new TagResponse(
                             rs.getLong("id"),
                             rs.getString("name"),
                             rs.getString("color")));
@@ -86,7 +86,7 @@ final class TransactionReader {
         return tags;
     }
 
-    private TransactionController.TransactionSplitResponse split(Connection connection, long transactionId)
+    private TransactionSplitResponse split(Connection connection, long transactionId)
             throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("""
                 SELECT transaction_id, group_name, personal_share, notes
@@ -98,7 +98,7 @@ final class TransactionReader {
                 if (!rs.next()) {
                     return null;
                 }
-                return new TransactionController.TransactionSplitResponse(
+                return new TransactionSplitResponse(
                         rs.getLong("transaction_id"),
                         rs.getString("group_name"),
                         rateString(rs.getBigDecimal("personal_share")),

@@ -25,7 +25,7 @@ final class TransactionMutations {
         this.relations = relations;
     }
 
-    TransactionController.TransactionResponse create(Connection connection, JsonNode body) throws SQLException {
+    TransactionResponse create(Connection connection, JsonNode body) throws SQLException {
         long accountId = TransactionJson.requiredLong(body, "account_id");
         lookup.requireAccount(connection, accountId);
 
@@ -70,7 +70,7 @@ final class TransactionMutations {
         }
     }
 
-    TransactionController.TransactionResponse setSplit(Connection connection, long transactionId, JsonNode body)
+    TransactionResponse setSplit(Connection connection, long transactionId, JsonNode body)
             throws SQLException {
         lookup.requireTransaction(connection, transactionId);
         relations.setSplit(connection, transactionId, body);
@@ -94,7 +94,7 @@ final class TransactionMutations {
         return Map.of("updated", found.size());
     }
 
-    TransactionController.TransactionResponse update(Connection connection, long transactionId, JsonNode body)
+    TransactionResponse update(Connection connection, long transactionId, JsonNode body)
             throws SQLException {
         lookup.requireTransaction(connection, transactionId);
         List<TransactionColumnValue> values = patches.patchValues(connection, body);
