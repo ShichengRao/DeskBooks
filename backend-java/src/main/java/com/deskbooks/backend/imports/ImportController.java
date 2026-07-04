@@ -675,7 +675,14 @@ class ImportController {
             LocalDate date = parseDate(value(row, dateKey));
             if (date == null || amount == null) return null;
             String desc = normalize(description);
-            return draft(index, date, postDateKey == null ? null : parseDate(value(row, postDateKey)), description, amount, suggestKind(desc, amount, creditCard, extra), row);
+            return draft(
+                    index,
+                    date,
+                    postDateKey == null ? null : parseDate(value(row, postDateKey)),
+                    description,
+                    amount,
+                    ImportKindSuggester.suggest(desc, amount, creditCard, extra),
+                    row);
         }
     }
 
@@ -699,19 +706,6 @@ class ImportController {
                 null,
                 false,
                 source);
-    }
-
-    private static String suggestKind(String description, BigDecimal amount, boolean creditCard, String extra) {
-        String haystack = (description + " " + extra).toUpperCase(Locale.ROOT);
-        if ((haystack.contains("REFUND") || haystack.contains("RETURN") || haystack.contains("REVERSAL")) && amount.compareTo(BigDecimal.ZERO) > 0) return "refund";
-        if (haystack.contains("PAYMENT") && (creditCard || haystack.contains("CREDIT CARD") || haystack.contains("CRD"))) return "cc_payment";
-        if (haystack.contains("AUTOPAY") && creditCard) return "cc_payment";
-        if (haystack.contains("DIRECT DEP") || haystack.contains("DIRECTDEP") || haystack.contains("PAYROLL")) return "income";
-        if (haystack.contains("INTEREST") && amount.compareTo(BigDecimal.ZERO) > 0) return "income";
-        if (haystack.contains("TAX REFUND") || haystack.contains("TREAS 310 TAX REF")) return "income";
-        if (haystack.contains("IRS") || haystack.contains("USATAXPYMT")) return "tax";
-        if (haystack.contains("TRANSFER") || haystack.contains("XFER") || haystack.contains("EXT TRNSFR")) return "transfer";
-        return "uncategorized";
     }
 
     private static BigDecimal debitCredit(Map<String, String> row, String debitKey, String creditKey) {
