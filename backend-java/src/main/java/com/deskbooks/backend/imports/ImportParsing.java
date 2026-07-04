@@ -12,10 +12,9 @@ import java.time.temporal.ChronoField;
 import java.util.List;
 import java.util.Locale;
 
+import com.deskbooks.backend.workbooks.WorkbookCells;
 import org.apache.poi.ss.usermodel.Cell;
-import org.apache.poi.ss.usermodel.CellType;
 import org.apache.poi.ss.usermodel.DataFormatter;
-import org.apache.poi.ss.usermodel.DateUtil;
 
 final class ImportParsing {
     private static final DataFormatter EXCEL_FORMATTER = new DataFormatter(Locale.US);
@@ -52,17 +51,7 @@ final class ImportParsing {
     }
 
     static BigDecimal cellAmount(Cell cell) {
-        if (cell == null || cell.getCellType() == CellType.BLANK) {
-            return null;
-        }
-        if (cell.getCellType() == CellType.NUMERIC || cell.getCellType() == CellType.FORMULA) {
-            try {
-                return BigDecimal.valueOf(cell.getNumericCellValue()).setScale(2, RoundingMode.HALF_UP);
-            } catch (IllegalStateException ignored) {
-                // Fall through to formatted text parsing.
-            }
-        }
-        return parseAmount(cellString(cell));
+        return WorkbookCells.decimal(cell, EXCEL_FORMATTER, ImportParsing::parseAmount);
     }
 
     static LocalDate parseDate(String value) {
@@ -94,26 +83,11 @@ final class ImportParsing {
     }
 
     static LocalDate cellDate(Cell cell) {
-        if (cell == null || cell.getCellType() == CellType.BLANK) {
-            return null;
-        }
-        if (cell.getCellType() == CellType.NUMERIC || cell.getCellType() == CellType.FORMULA) {
-            try {
-                if (DateUtil.isValidExcelDate(cell.getNumericCellValue())) {
-                    return cell.getLocalDateTimeCellValue().toLocalDate();
-                }
-            } catch (RuntimeException ignored) {
-                // Fall through to formatted text parsing.
-            }
-        }
-        return parseDate(cellString(cell));
+        return WorkbookCells.date(cell, EXCEL_FORMATTER, ImportParsing::parseDate);
     }
 
     static String cellString(Cell cell) {
-        if (cell == null) {
-            return "";
-        }
-        return EXCEL_FORMATTER.formatCellValue(cell).trim();
+        return WorkbookCells.string(cell, EXCEL_FORMATTER);
     }
 
     static String normalize(String raw) {
