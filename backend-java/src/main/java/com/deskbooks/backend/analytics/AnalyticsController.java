@@ -66,69 +66,8 @@ class AnalyticsController {
     List<MonthlyPointResponse> monthly(
             @RequestParam(name = "start") LocalDate start,
             @RequestParam(name = "end") LocalDate end) {
-        try (Connection connection = connections.open();
-                PreparedStatement statement = connection.prepareStatement("""
-                        SELECT t.id, t.date, t.kind, t.amount, s.personal_share, c.name AS category_name
-                        FROM transactions t
-                        LEFT JOIN categories c ON c.id = t.category_id
-                        LEFT JOIN transaction_splits s ON s.transaction_id = t.id
-                        WHERE t.date >= ?
-                          AND t.date <= ?
-                          AND t.is_excluded_from_totals = 0
-                        ORDER BY t.date, t.id
-                        """)) {
-            statement.setString(1, start.toString());
-            statement.setString(2, end.toString());
-            Map<String, MonthlyAccumulator> byMonth = new TreeMap<>();
-            try (ResultSet rs = statement.executeQuery()) {
-                while (rs.next()) {
-                    LocalDate transactionDate = LocalDate.parse(rs.getString("date"));
-                    String month = YearMonth.from(transactionDate).toString();
-                    MonthlyAccumulator bucket = byMonth.computeIfAbsent(month, ignored -> new MonthlyAccumulator());
-                    String kind = rs.getString("kind");
-                    BigDecimal amount = effectiveAmount(rs.getBigDecimal("amount"), rs.getBigDecimal("personal_share"));
-                    bucket.byKind.merge(kind, amount, BigDecimal::add);
-
-                    String categoryName = rs.getString("category_name");
-                    String categoryLabel = categoryName == null || categoryName.isBlank() ? "Uncategorized" : categoryName;
-                    if ("expense".equals(kind)) {
-                        BigDecimal outflow = amount.negate();
-                        bucket.byExpenseCategory.merge(categoryLabel, outflow, BigDecimal::add);
-                        bucket.expensesTotal = bucket.expensesTotal.add(outflow);
-                    } else if ("uncategorized".equals(kind) && amount.compareTo(BigDecimal.ZERO) < 0) {
-                        BigDecimal outflow = amount.negate();
-                        bucket.byExpenseCategory.merge("Uncategorized", outflow, BigDecimal::add);
-                        bucket.expensesTotal = bucket.expensesTotal.add(outflow);
-                    } else if ("income".equals(kind)) {
-                        bucket.byIncomeCategory.merge(categoryLabel, amount, BigDecimal::add);
-                        bucket.incomeTotal = bucket.incomeTotal.add(amount);
-                    } else if ("donation".equals(kind)) {
-                        bucket.donationsTotal = bucket.donationsTotal.add(amount.negate());
-                    } else if ("tax".equals(kind)) {
-                        bucket.taxesTotal = bucket.taxesTotal.add(amount.negate());
-                    }
-                }
-            }
-
-            List<MonthlyPointResponse> out = new ArrayList<>();
-            for (Map.Entry<String, MonthlyAccumulator> entry : byMonth.entrySet()) {
-                MonthlyAccumulator bucket = entry.getValue();
-                BigDecimal net = bucket.incomeTotal
-                        .subtract(bucket.expensesTotal)
-                        .subtract(bucket.donationsTotal)
-                        .subtract(bucket.taxesTotal);
-                out.add(new MonthlyPointResponse(
-                        entry.getKey(),
-                        numericMoney(bucket.byKind),
-                        numericMoney(bucket.byExpenseCategory),
-                        numericMoney(bucket.byIncomeCategory),
-                        money(bucket.expensesTotal),
-                        money(bucket.incomeTotal),
-                        money(bucket.donationsTotal),
-                        money(bucket.taxesTotal),
-                        money(net)));
-            }
-            return out;
+        try (Connection connection = connections.open()) {
+            return MonthlyAnalytics.load(connection, start, end);
         } catch (SQLException exception) {
             throw databaseError(exception);
         }
@@ -826,14 +765,6 @@ class AnalyticsController {
         return out;
     }
 
-    private Map<String, BigDecimal> numericMoney(Map<String, BigDecimal> values) {
-        Map<String, BigDecimal> out = new LinkedHashMap<>();
-        for (Map.Entry<String, BigDecimal> entry : values.entrySet()) {
-            out.put(entry.getKey(), money(entry.getValue()));
-        }
-        return out;
-    }
-
     private BigDecimal effectiveAmount(BigDecimal amount, BigDecimal personalShare) {
         if (personalShare == null) {
             return amount;
@@ -1037,16 +968,6 @@ class AnalyticsController {
         List<SankeyLinkResponse> links() {
             return links;
         }
-    }
-
-    private static final class MonthlyAccumulator {
-        Map<String, BigDecimal> byKind = new LinkedHashMap<>();
-        Map<String, BigDecimal> byExpenseCategory = new LinkedHashMap<>();
-        Map<String, BigDecimal> byIncomeCategory = new LinkedHashMap<>();
-        BigDecimal expensesTotal = BigDecimal.ZERO;
-        BigDecimal incomeTotal = BigDecimal.ZERO;
-        BigDecimal donationsTotal = BigDecimal.ZERO;
-        BigDecimal taxesTotal = BigDecimal.ZERO;
     }
 
     private static final class SplitAccumulator {
