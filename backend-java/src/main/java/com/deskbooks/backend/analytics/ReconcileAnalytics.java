@@ -1,15 +1,10 @@
 package com.deskbooks.backend.analytics;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.YearMonth;
-import java.util.LinkedHashMap;
-import java.util.Map;
 
 import com.deskbooks.backend.foundation.ApiException;
 import org.springframework.http.HttpStatus;
@@ -38,21 +33,7 @@ final class ReconcileAnalytics {
     static ReconcileResponse upsert(
             Connection connection,
             ReconcileRequest body) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement("""
-                INSERT INTO monthly_reconciliations (account_id, year, month, statement_total, notes)
-                VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(account_id, year, month) DO UPDATE SET
-                  statement_total = excluded.statement_total,
-                  notes = excluded.notes,
-                  updated_at = CURRENT_TIMESTAMP
-                """)) {
-            statement.setLong(1, body.accountId());
-            statement.setInt(2, body.year());
-            statement.setInt(3, body.month());
-            statement.setBigDecimal(4, body.statementTotal() == null ? null : money(body.statementTotal()));
-            statement.setString(5, body.notes());
-            statement.executeUpdate();
-        }
+        ReconcileStatementStore.upsert(connection, body);
         return accountMonth(connection, body.accountId(), body.year(), body.month());
     }
 
@@ -87,10 +68,10 @@ final class ReconcileAnalytics {
             LocalDate end,
             Integer year,
             Integer month) throws SQLException {
-        PeriodTotals totals = periodTotals(connection, accountId, start, end);
-        ReconciliationRow reconciliation = year == null || month == null
+        ReconcilePeriodTotals totals = ReconcilePeriodTotals.load(connection, accountId, start, end);
+        ReconcileStatement reconciliation = year == null || month == null
                 ? null
-                : reconciliation(connection, accountId, year, month);
+                : ReconcileStatementStore.find(connection, accountId, year, month);
         BigDecimal statementTotal = reconciliation == null ? null : reconciliation.statementTotal();
         BigDecimal delta = statementTotal == null ? null : totals.total().subtract(statementTotal);
         return new ReconcileResponse(
@@ -100,111 +81,12 @@ final class ReconcileAnalytics {
                 start,
                 end,
                 totals.transactionCount(),
-                moneyString(totals.total()),
-                moneyString(totals.inflows()),
-                moneyString(totals.outflows()),
-                stringifyMoney(totals.byKind()),
-                moneyStringOrNull(statementTotal),
+                ReconcileMoney.moneyString(totals.total()),
+                ReconcileMoney.moneyString(totals.inflows()),
+                ReconcileMoney.moneyString(totals.outflows()),
+                ReconcileMoney.stringify(totals.byKind()),
+                ReconcileMoney.moneyStringOrNull(statementTotal),
                 reconciliation == null ? null : reconciliation.notes(),
-                moneyStringOrNull(delta));
-    }
-
-    private static PeriodTotals periodTotals(
-            Connection connection,
-            long accountId,
-            LocalDate start,
-            LocalDate end) throws SQLException {
-        PeriodAccumulator totals = new PeriodAccumulator();
-        try (PreparedStatement statement = connection.prepareStatement("""
-                SELECT amount, kind
-                FROM transactions
-                WHERE account_id = ?
-                  AND date >= ?
-                  AND date <= ?
-                  AND is_excluded_from_totals = 0
-                """)) {
-            statement.setLong(1, accountId);
-            statement.setString(2, start.toString());
-            statement.setString(3, end.toString());
-            try (ResultSet rs = statement.executeQuery()) {
-                while (rs.next()) {
-                    totals.add(rs.getBigDecimal("amount"), rs.getString("kind"));
-                }
-            }
-        }
-        return totals.snapshot();
-    }
-
-    private static ReconciliationRow reconciliation(Connection connection, long accountId, int year, int month)
-            throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement("""
-                SELECT statement_total, notes
-                FROM monthly_reconciliations
-                WHERE account_id = ? AND year = ? AND month = ?
-                """)) {
-            statement.setLong(1, accountId);
-            statement.setInt(2, year);
-            statement.setInt(3, month);
-            try (ResultSet rs = statement.executeQuery()) {
-                if (!rs.next()) {
-                    return null;
-                }
-                return new ReconciliationRow(rs.getBigDecimal("statement_total"), rs.getString("notes"));
-            }
-        }
-    }
-
-    private static Map<String, String> stringifyMoney(Map<String, BigDecimal> values) {
-        Map<String, String> out = new LinkedHashMap<>();
-        for (Map.Entry<String, BigDecimal> entry : values.entrySet()) {
-            out.put(entry.getKey(), moneyString(entry.getValue()));
-        }
-        return out;
-    }
-
-    private static BigDecimal money(BigDecimal value) {
-        return value.setScale(2, RoundingMode.HALF_UP);
-    }
-
-    private static String moneyString(BigDecimal value) {
-        return money(value == null ? BigDecimal.ZERO : value).toPlainString();
-    }
-
-    private static String moneyStringOrNull(BigDecimal value) {
-        return value == null ? null : moneyString(value);
-    }
-
-    private record ReconciliationRow(BigDecimal statementTotal, String notes) {
-    }
-
-    private record PeriodTotals(
-            Map<String, BigDecimal> byKind,
-            BigDecimal total,
-            BigDecimal inflows,
-            BigDecimal outflows,
-            int transactionCount) {
-    }
-
-    private static final class PeriodAccumulator {
-        private final Map<String, BigDecimal> byKind = new LinkedHashMap<>();
-        private BigDecimal total = BigDecimal.ZERO;
-        private BigDecimal inflows = BigDecimal.ZERO;
-        private BigDecimal outflows = BigDecimal.ZERO;
-        private int transactionCount = 0;
-
-        void add(BigDecimal amount, String kind) {
-            transactionCount++;
-            byKind.merge(kind, amount, BigDecimal::add);
-            total = total.add(amount);
-            if (amount.compareTo(BigDecimal.ZERO) >= 0) {
-                inflows = inflows.add(amount);
-            } else {
-                outflows = outflows.add(amount);
-            }
-        }
-
-        PeriodTotals snapshot() {
-            return new PeriodTotals(byKind, total, inflows, outflows, transactionCount);
-        }
+                ReconcileMoney.moneyStringOrNull(delta));
     }
 }
