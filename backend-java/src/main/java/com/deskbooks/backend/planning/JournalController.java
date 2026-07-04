@@ -1,10 +1,6 @@
 package com.deskbooks.backend.planning;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.sql.Connection;
-import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -15,9 +11,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.StringJoiner;
-import java.util.zip.ZipFile;
-
-import javax.xml.parsers.DocumentBuilderFactory;
 
 import com.deskbooks.backend.db.SqliteConnectionProvider;
 import com.deskbooks.backend.foundation.ApiException;
@@ -34,14 +27,13 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import org.w3c.dom.Element;
-import org.w3c.dom.NodeList;
 import tools.jackson.databind.JsonNode;
 
 @RestController
 @RequestMapping("/api/journal")
 class JournalController {
     private final SqliteConnectionProvider connections;
+    private final JournalImportParser importParser = new JournalImportParser();
 
     JournalController(SqliteConnectionProvider connections) {
         this.connections = connections;
@@ -95,22 +87,7 @@ class JournalController {
 
     @PostMapping("/import-preview")
     JournalImportPreviewResponse importPreview(@Valid @RequestBody JournalImportPreviewRequest body) {
-        Path path = Path.of(body.path()).toAbsolutePath().normalize();
-        if (!Files.isRegularFile(path)) {
-            throw new ApiException(HttpStatus.NOT_FOUND, "file not found");
-        }
-        List<String> pages = documentPages(path);
-        List<JournalImportDraftResponse> drafts = new ArrayList<>();
-        for (int i = 0; i < pages.size(); i++) {
-            String page = pages.get(i).trim();
-            if (!page.isBlank()) {
-                drafts.add(new JournalImportDraftResponse(i + 1, stripExtension(path.getFileName().toString()) + " page " + (i + 1), page));
-            }
-        }
-        if (drafts.isEmpty()) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "no journal text found");
-        }
-        return new JournalImportPreviewResponse(path.getFileName().toString(), drafts);
+        return importParser.preview(body);
     }
 
     @GetMapping("/{entryId}")
@@ -238,94 +215,6 @@ class JournalController {
             statement.setString(6, summary);
             statement.executeUpdate();
         }
-    }
-
-    private List<String> documentPages(Path path) {
-        String filename = path.getFileName().toString().toLowerCase();
-        try {
-            if (filename.endsWith(".txt") || filename.endsWith(".md") || filename.endsWith(".markdown")) {
-                return splitTextPages(Files.readString(path));
-            }
-            if (filename.endsWith(".docx")) {
-                return docxPages(path);
-            }
-        } catch (IOException exception) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "could not read journal import text");
-        }
-        throw new ApiException(HttpStatus.BAD_REQUEST, "supported journal imports: .txt, .md, .markdown, .docx");
-    }
-
-    private List<String> splitTextPages(String text) {
-        if (text.contains("\f")) {
-            return List.of(text.split("\\f"));
-        }
-        List<String> pages = new ArrayList<>();
-        List<String> current = new ArrayList<>();
-        for (String line : text.split("\\R", -1)) {
-            String marker = line.trim().toLowerCase();
-            if (marker.equals("--- page ---") || marker.equals("=== page ===")) {
-                pages.add(String.join("\n", current));
-                current = new ArrayList<>();
-            } else {
-                current.add(line);
-            }
-        }
-        pages.add(String.join("\n", current));
-        return pages.stream().map(String::trim).filter(page -> !page.isBlank()).toList();
-    }
-
-    private List<String> docxPages(Path path) throws IOException {
-        try (ZipFile docx = new ZipFile(path.toFile())) {
-            var entry = docx.getEntry("word/document.xml");
-            if (entry == null) {
-                throw new ApiException(HttpStatus.BAD_REQUEST, "could not read docx document text");
-            }
-            var factory = DocumentBuilderFactory.newInstance();
-            factory.setNamespaceAware(true);
-            var document = factory.newDocumentBuilder().parse(docx.getInputStream(entry));
-            NodeList paragraphs = document.getElementsByTagNameNS("http://schemas.openxmlformats.org/wordprocessingml/2006/main", "p");
-            List<String> pages = new ArrayList<>();
-            List<String> current = new ArrayList<>();
-            for (int i = 0; i < paragraphs.getLength(); i++) {
-                Element paragraph = (Element) paragraphs.item(i);
-                String text = paragraphText(paragraph).trim();
-                if (!text.isBlank()) {
-                    current.add(text);
-                }
-                boolean hasPageBreak = paragraph.getElementsByTagNameNS("http://schemas.openxmlformats.org/wordprocessingml/2006/main", "lastRenderedPageBreak").getLength() > 0;
-                NodeList breaks = paragraph.getElementsByTagNameNS("http://schemas.openxmlformats.org/wordprocessingml/2006/main", "br");
-                for (int j = 0; j < breaks.getLength(); j++) {
-                    Element br = (Element) breaks.item(j);
-                    hasPageBreak = hasPageBreak || "page".equals(br.getAttributeNS("http://schemas.openxmlformats.org/wordprocessingml/2006/main", "type"));
-                }
-                if (hasPageBreak && !current.isEmpty()) {
-                    pages.add(String.join("\n\n", current));
-                    current = new ArrayList<>();
-                }
-            }
-            if (!current.isEmpty()) {
-                pages.add(String.join("\n\n", current));
-            }
-            return pages.stream().map(String::trim).filter(page -> !page.isBlank()).toList();
-        } catch (ApiException exception) {
-            throw exception;
-        } catch (Exception exception) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "could not read docx document text");
-        }
-    }
-
-    private String paragraphText(Element paragraph) {
-        NodeList textNodes = paragraph.getElementsByTagNameNS("http://schemas.openxmlformats.org/wordprocessingml/2006/main", "t");
-        StringBuilder builder = new StringBuilder();
-        for (int i = 0; i < textNodes.getLength(); i++) {
-            builder.append(textNodes.item(i).getTextContent());
-        }
-        return builder.toString();
-    }
-
-    private String stripExtension(String filename) {
-        int dot = filename.lastIndexOf('.');
-        return dot <= 0 ? filename : filename.substring(0, dot);
     }
 
     private ApiException databaseError(SQLException exception) {
