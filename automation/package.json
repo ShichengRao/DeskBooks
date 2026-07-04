@@ -1,0 +1,14 @@
+{
+  "name": "deskbooks-automation",
+  "private": true,
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "fetch": "node src/run-fetchers.mjs",
+    "check": "node --check src/run-fetchers.mjs && node --check src/fetcher-api.mjs && node --check src/keychain.mjs && node --check fetchers/example-static-csv.mjs && node --check fetchers/chase-credit.mjs"
+  },
+  "dependencies": {
+    "playwright": "^1.45.0"
+  }
+}

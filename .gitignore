@@ -22,6 +22,10 @@ dist/
 
 # Data (local user data — never commit)
 .env.local
+automation/config.local.json
+automation/logs/
+automation/browser-profiles/
+automation/downloads/
 backend/data/profiles.json
 backend/data/profiles/
 backend/data/*.db
