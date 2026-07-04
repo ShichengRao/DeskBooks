@@ -1,7 +1,6 @@
 package com.deskbooks.backend.transactions;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -33,13 +32,8 @@ import tools.jackson.databind.JsonNode;
 @RestController
 @RequestMapping("/api/transactions")
 class TransactionController {
-    private static final List<String> SELECT_COLUMNS = List.of(
-            "t.id", "t.account_id", "t.date", "t.post_date", "t.description_raw",
-            "t.description_normalized", "t.merchant", "t.amount", "t.category_id", "t.kind",
-            "t.is_user_categorized", "t.is_excluded_from_totals", "t.notes", "t.transfer_pair_id",
-            "t.import_batch_id", "t.matched_rule_id");
-
     private final SqliteConnectionProvider connections;
+    private final TransactionReader reader = new TransactionReader();
 
     TransactionController(SqliteConnectionProvider connections) {
         this.connections = connections;
@@ -66,7 +60,7 @@ class TransactionController {
         try (Connection connection = connections.open()) {
             TransactionFilters.FilterSql filters = TransactionFilters.build(
                     start, end, accountId, accountCategory, categoryId, kind, amountMin, amountMax, q, excludeExcluded);
-            String sql = "SELECT " + String.join(", ", SELECT_COLUMNS)
+            String sql = "SELECT " + reader.selectColumns()
                     + " FROM transactions t"
                     + (filters.joinAccounts() ? " JOIN accounts a ON a.id = t.account_id" : "")
                     + filters.whereSql()
@@ -78,7 +72,7 @@ class TransactionController {
                 try (ResultSet rs = statement.executeQuery()) {
                     List<TransactionResponse> transactions = new ArrayList<>();
                     while (rs.next()) {
-                        transactions.add(transactionFrom(connection, rs));
+                        transactions.add(reader.from(connection, rs));
                     }
                     return transactions;
                 }
@@ -160,7 +154,7 @@ class TransactionController {
                 statement.executeUpdate();
                 try (ResultSet keys = statement.getGeneratedKeys()) {
                     keys.next();
-                    return getTransaction(connection, keys.getLong(1));
+                    return reader.get(connection, keys.getLong(1));
                 }
             }
         } catch (SQLException exception) {
@@ -171,7 +165,7 @@ class TransactionController {
     @GetMapping("/{transactionId}")
     TransactionResponse getTransaction(@PathVariable long transactionId) {
         try (Connection connection = connections.open()) {
-            return getTransaction(connection, transactionId);
+            return reader.get(connection, transactionId);
         } catch (SQLException exception) {
             throw databaseError(exception);
         }
@@ -188,7 +182,7 @@ class TransactionController {
                 upsertSplit(connection, transactionId, groupName, clampedShare(body), blankToNull(textOrNull(body, "notes")));
             }
             touchTransaction(connection, transactionId);
-            return getTransaction(connection, transactionId);
+            return reader.get(connection, transactionId);
         } catch (SQLException exception) {
             throw databaseError(exception);
         }
@@ -227,7 +221,7 @@ class TransactionController {
             if (!values.isEmpty()) {
                 applyTransactionUpdate(connection, transactionId, values);
             }
-            return getTransaction(connection, transactionId);
+            return reader.get(connection, transactionId);
         } catch (SQLException exception) {
             throw databaseError(exception);
         }
@@ -391,83 +385,6 @@ class TransactionController {
         }
     }
 
-    private TransactionResponse getTransaction(Connection connection, long transactionId) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement("""
-                SELECT %s FROM transactions t WHERE t.id = ?
-                """.formatted(String.join(", ", SELECT_COLUMNS)))) {
-            statement.setLong(1, transactionId);
-            try (ResultSet rs = statement.executeQuery()) {
-                if (!rs.next()) {
-                    throw new ApiException(HttpStatus.NOT_FOUND, "transaction not found");
-                }
-                return transactionFrom(connection, rs);
-            }
-        }
-    }
-
-    private TransactionResponse transactionFrom(Connection connection, ResultSet rs) throws SQLException {
-        long id = rs.getLong("id");
-        BigDecimal amount = rs.getBigDecimal("amount");
-        return new TransactionResponse(
-                id,
-                rs.getLong("account_id"),
-                localDate(rs, "date"),
-                localDate(rs, "post_date"),
-                rs.getString("description_raw"),
-                rs.getString("description_normalized"),
-                rs.getString("merchant"),
-                moneyString(amount == null ? BigDecimal.ZERO : amount),
-                nullableLong(rs, "category_id"),
-                rs.getString("kind"),
-                rs.getBoolean("is_user_categorized"),
-                rs.getBoolean("is_excluded_from_totals"),
-                rs.getString("notes"),
-                nullableLong(rs, "transfer_pair_id"),
-                nullableLong(rs, "import_batch_id"),
-                nullableLong(rs, "matched_rule_id"),
-                tags(connection, id),
-                split(connection, id));
-    }
-
-    private List<TagResponse> tags(Connection connection, long transactionId) throws SQLException {
-        List<TagResponse> tags = new ArrayList<>();
-        try (PreparedStatement statement = connection.prepareStatement("""
-                SELECT tags.id, tags.name, tags.color
-                FROM transaction_tags
-                JOIN tags ON tags.id = transaction_tags.tag_id
-                WHERE transaction_tags.transaction_id = ?
-                ORDER BY tags.name
-                """)) {
-            statement.setLong(1, transactionId);
-            try (ResultSet rs = statement.executeQuery()) {
-                while (rs.next()) {
-                    tags.add(new TagResponse(rs.getLong("id"), rs.getString("name"), rs.getString("color")));
-                }
-            }
-        }
-        return tags;
-    }
-
-    private TransactionSplitResponse split(Connection connection, long transactionId) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement("""
-                SELECT transaction_id, group_name, personal_share, notes
-                FROM transaction_splits
-                WHERE transaction_id = ?
-                """)) {
-            statement.setLong(1, transactionId);
-            try (ResultSet rs = statement.executeQuery()) {
-                if (!rs.next()) {
-                    return null;
-                }
-                return new TransactionSplitResponse(
-                        rs.getLong("transaction_id"),
-                        rs.getString("group_name"),
-                        rateString(rs.getBigDecimal("personal_share")),
-                        rs.getString("notes"));
-            }
-        }
-    }
-
     private void upsertSplit(Connection connection, long transactionId, String groupName, BigDecimal personalShare, String notes) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("""
                 INSERT INTO transaction_splits (transaction_id, group_name, personal_share, notes)
@@ -600,24 +517,6 @@ class TransactionController {
 
     private String normalizeDescription(String description) {
         return String.join(" ", description.trim().split("\\s+"));
-    }
-
-    private LocalDate localDate(ResultSet rs, String column) throws SQLException {
-        String value = rs.getString(column);
-        if (value == null) {
-            return null;
-        }
-        if (value.matches("\\d{10,}")) {
-            return java.time.Instant.ofEpochMilli(Long.parseLong(value))
-                    .atZone(java.time.ZoneId.systemDefault())
-                    .toLocalDate();
-        }
-        return LocalDate.parse(value);
-    }
-
-    private Long nullableLong(ResultSet rs, String column) throws SQLException {
-        long value = rs.getLong(column);
-        return rs.wasNull() ? null : value;
     }
 
     private void addText(List<ColumnValue> values, JsonNode body, String field) {
@@ -771,14 +670,6 @@ class TransactionController {
 
     private String blankToNull(String value) {
         return value == null || value.isBlank() ? null : value;
-    }
-
-    private String moneyString(BigDecimal value) {
-        return value.setScale(2, RoundingMode.HALF_UP).toPlainString();
-    }
-
-    private String rateString(BigDecimal value) {
-        return (value == null ? new BigDecimal("0.5") : value).setScale(4, RoundingMode.HALF_UP).toPlainString();
     }
 
     private ApiException databaseError(SQLException exception) {
