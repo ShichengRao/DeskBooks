@@ -114,6 +114,10 @@ Supported import formats:
 
 Synthetic examples for these formats live in `samples/`.
 
+Optional local automation can fetch institution exports into a staging
+directory and preview or apply them through the same import path. See
+`docs/AUTOMATED_IMPORTS.md`.
+
 ### Rules
 
 Create and manage regex rules that categorize transactions. Rules can be

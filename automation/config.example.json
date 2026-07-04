@@ -1,0 +1,32 @@
+{
+  "headless": false,
+  "stagingDir": "~/Library/Application Support/DeskBooks/import-staging",
+  "browserProfileDir": "~/Library/Application Support/DeskBooks/browser-profiles/default",
+  "sources": [
+    {
+      "name": "chase_credit_manual",
+      "enabled": false,
+      "browser": true,
+      "module": "./fetchers/chase-credit.mjs",
+      "accountId": 3,
+      "importerName": "chase_credit",
+      "mode": "manual",
+      "credentialService": "DeskBooks.Chase",
+      "username": "your-chase-username",
+      "dateRangeDays": 365,
+      "activityPreset": "choose a date range",
+      "startUrl": "https://secure.chase.com/",
+      "allowedHostSuffixes": ["chase.com"],
+      "downloadTimeoutMs": 600000
+    },
+    {
+      "name": "example_chase_sample",
+      "enabled": false,
+      "browser": false,
+      "module": "./fetchers/example-static-csv.mjs",
+      "accountId": 1,
+      "importerName": "chase_credit",
+      "inputPath": "../samples/chase_credit_sample.csv"
+    }
+  ]
+}
