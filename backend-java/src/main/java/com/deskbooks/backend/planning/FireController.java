@@ -151,7 +151,7 @@ class FireController {
                     rateString(decimal(rs, "growth_credit")),
                     moneyString(decimal(rs, "annual_retirement_spending")),
                     rateString(decimal(rs, "withdrawal_rate")),
-                    PlanningSql.localDateTime(rs, "updated_at"));
+                    PlanningRows.localDateTime(rs, "updated_at"));
         }
     }
 

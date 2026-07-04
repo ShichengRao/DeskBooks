@@ -104,11 +104,11 @@ class JournalController {
         try (Connection connection = connections.open()) {
             JournalEntryResponse before = getEntry(connection, entryId);
             List<PatchValue> values = new ArrayList<>();
-            PlanningSql.addDate(values, body, "entry_date");
-            PlanningSql.addText(values, body, "title");
-            PlanningSql.addText(values, body, "body_markdown");
-            PlanningSql.addLong(values, body, "goal_id");
-            String changeSummary = PlanningSql.textOrNull(body, "change_summary");
+            PlanningPatchValues.addDate(values, body, "entry_date");
+            PlanningPatchValues.addText(values, body, "title");
+            PlanningPatchValues.addText(values, body, "body_markdown");
+            PlanningPatchValues.addLong(values, body, "goal_id");
+            String changeSummary = PlanningPatchValues.textOrNull(body, "change_summary");
             if (!values.isEmpty()) {
                 StringJoiner assignments = new StringJoiner(", ");
                 for (PatchValue value : values) {
@@ -165,9 +165,9 @@ class JournalController {
                                 rs.getLong("entry_id"),
                                 rs.getString("title"),
                                 rs.getString("body_markdown"),
-                                PlanningSql.localDate(rs, "entry_date"),
-                                PlanningSql.nullableLong(rs, "goal_id"),
-                                PlanningSql.localDateTime(rs, "changed_at"),
+                                PlanningRows.localDate(rs, "entry_date"),
+                                PlanningRows.nullableLong(rs, "goal_id"),
+                                PlanningRows.localDateTime(rs, "changed_at"),
                                 rs.getString("change_summary")));
                     }
                     return revisions;
@@ -196,9 +196,9 @@ class JournalController {
                 LocalDate.parse(rs.getString("entry_date")),
                 rs.getString("title"),
                 rs.getString("body_markdown"),
-                PlanningSql.nullableLong(rs, "goal_id"),
-                PlanningSql.localDateTime(rs, "created_at"),
-                PlanningSql.localDateTime(rs, "updated_at"));
+                PlanningRows.nullableLong(rs, "goal_id"),
+                PlanningRows.localDateTime(rs, "created_at"),
+                PlanningRows.localDateTime(rs, "updated_at"));
     }
 
     private void insertRevision(Connection connection, JournalEntryResponse entry, String summary) throws SQLException {

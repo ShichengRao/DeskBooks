@@ -48,7 +48,7 @@ final class GoalStore {
             statement.setString(3, body.targetDate() == null ? null : body.targetDate().toString());
             statement.setString(4, body.kind() == null ? "savings" : body.kind());
             statement.setString(5, body.status() == null ? "active" : body.status());
-            statement.setString(6, PlanningSql.longListJson(body.linkedAccountIds()));
+            statement.setString(6, PlanningJson.longListJson(body.linkedAccountIds()));
             statement.setString(7, body.notesMarkdown());
             statement.setInt(8, body.sortOrder() == null ? 0 : body.sortOrder());
             statement.executeUpdate();
@@ -125,17 +125,17 @@ final class GoalStore {
 
     private List<PatchValue> patchValues(JsonNode body) {
         List<PatchValue> values = new ArrayList<>();
-        PlanningSql.addText(values, body, "title");
-        PlanningSql.addBigDecimal(values, body, "target_amount");
-        PlanningSql.addDate(values, body, "target_date");
-        PlanningSql.addText(values, body, "kind");
-        PlanningSql.addText(values, body, STATUS);
+        PlanningPatchValues.addText(values, body, "title");
+        PlanningPatchValues.addBigDecimal(values, body, "target_amount");
+        PlanningPatchValues.addDate(values, body, "target_date");
+        PlanningPatchValues.addText(values, body, "kind");
+        PlanningPatchValues.addText(values, body, STATUS);
         if (body.has(LINKED_ACCOUNT_IDS)) {
-            values.add(new PatchValue(LINKED_ACCOUNT_IDS, PlanningSql.longListJson(body.get(LINKED_ACCOUNT_IDS))));
+            values.add(new PatchValue(LINKED_ACCOUNT_IDS, PlanningJson.longListJson(body.get(LINKED_ACCOUNT_IDS))));
         }
-        PlanningSql.addText(values, body, "notes_markdown");
-        PlanningSql.addInteger(values, body, "sort_order");
-        PlanningSql.addBoolean(values, body, ARCHIVED);
+        PlanningPatchValues.addText(values, body, "notes_markdown");
+        PlanningPatchValues.addInteger(values, body, "sort_order");
+        PlanningPatchValues.addBoolean(values, body, ARCHIVED);
         return values;
     }
 
@@ -144,14 +144,14 @@ final class GoalStore {
                 rs.getLong("id"),
                 rs.getString("title"),
                 GoalMoney.string(rs.getBigDecimal("target_amount")),
-                PlanningSql.localDate(rs, "target_date"),
+                PlanningRows.localDate(rs, "target_date"),
                 rs.getString("kind"),
                 rs.getString(STATUS),
-                PlanningSql.longList(rs.getString(LINKED_ACCOUNT_IDS)),
+                PlanningJson.longList(rs.getString(LINKED_ACCOUNT_IDS)),
                 rs.getString("notes_markdown"),
                 rs.getInt("sort_order"),
                 rs.getBoolean(ARCHIVED),
-                PlanningSql.localDateTime(rs, "created_at"),
-                PlanningSql.localDateTime(rs, "updated_at"));
+                PlanningRows.localDateTime(rs, "created_at"),
+                PlanningRows.localDateTime(rs, "updated_at"));
     }
 }

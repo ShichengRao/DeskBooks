@@ -34,14 +34,14 @@ final class GoalRevisions {
                 INSERT INTO goal_revisions (goal_id, snapshot, change_summary) VALUES (?, ?, ?)
                 """)) {
             statement.setLong(1, goal.id());
-            statement.setString(2, PlanningSql.jsonString(snapshot(goal)));
+            statement.setString(2, PlanningJson.string(snapshot(goal)));
             statement.setString(3, summary);
             statement.executeUpdate();
         }
     }
 
     String updateSummary(JsonNode body, List<String> changed) {
-        String changeSummary = PlanningSql.textOrNull(body, "change_summary");
+        String changeSummary = PlanningPatchValues.textOrNull(body, "change_summary");
         return changeSummary == null || changeSummary.isBlank()
                 ? "updated: " + String.join(", ", changed)
                 : changeSummary;
@@ -51,8 +51,8 @@ final class GoalRevisions {
         return new GoalController.GoalRevisionResponse(
                 rs.getLong("id"),
                 rs.getLong("goal_id"),
-                PlanningSql.jsonObject(rs.getString("snapshot")),
-                PlanningSql.localDateTime(rs, "changed_at"),
+                PlanningJson.object(rs.getString("snapshot")),
+                PlanningRows.localDateTime(rs, "changed_at"),
                 rs.getString("change_summary"));
     }
 
