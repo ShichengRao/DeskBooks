@@ -5,6 +5,7 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.Properties;
 
 import com.deskbooks.backend.profiles.ProfileInfo;
 import com.deskbooks.backend.profiles.ProfileRegistry;
@@ -12,6 +13,8 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class SqliteConnectionProvider {
+    private static final String BUSY_TIMEOUT_MILLIS = "30000";
+
     private final ProfileRegistry profiles;
     private final SqliteSchema schema;
 
@@ -28,7 +31,9 @@ public class SqliteConnectionProvider {
             throw new SQLException("could not create profile database directory", exception);
         }
 
-        Connection connection = DriverManager.getConnection("jdbc:sqlite:" + activeProfile.dbPath());
+        Connection connection = DriverManager.getConnection(
+                "jdbc:sqlite:" + activeProfile.dbPath(),
+                connectionProperties());
         try {
             applyPragmas(connection);
             schema.ensure(connection);
@@ -41,9 +46,16 @@ public class SqliteConnectionProvider {
 
     private void applyPragmas(Connection connection) throws SQLException {
         try (Statement statement = connection.createStatement()) {
+            statement.execute("PRAGMA busy_timeout = " + BUSY_TIMEOUT_MILLIS);
             statement.execute("PRAGMA foreign_keys = ON");
             statement.execute("PRAGMA journal_mode = WAL");
             statement.execute("PRAGMA synchronous = NORMAL");
         }
+    }
+
+    private Properties connectionProperties() {
+        Properties properties = new Properties();
+        properties.setProperty("busy_timeout", BUSY_TIMEOUT_MILLIS);
+        return properties;
     }
 }
