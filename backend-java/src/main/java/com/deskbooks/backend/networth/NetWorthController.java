@@ -2,16 +2,10 @@ package com.deskbooks.backend.networth;
 
 import java.math.BigDecimal;
 import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Statement;
 import java.time.LocalDate;
-import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 import com.deskbooks.backend.db.SqliteConnectionProvider;
 import com.deskbooks.backend.foundation.ApiException;
@@ -34,7 +28,8 @@ import tools.jackson.databind.JsonNode;
 class NetWorthController {
     private final SqliteConnectionProvider connections;
     private final NetWorthReader reader = new NetWorthReader();
-    private final NetWorthSeries series = new NetWorthSeries();
+    private final NetWorthSeries seriesReader = new NetWorthSeries();
+    private final NetWorthSnapshotMutations mutations = new NetWorthSnapshotMutations(reader);
 
     NetWorthController(SqliteConnectionProvider connections) {
         this.connections = connections;
@@ -52,32 +47,7 @@ class NetWorthController {
     @PostMapping("")
     NetWorthSnapshotResponse createSnapshot(@Valid @RequestBody NetWorthSnapshotRequest body) {
         try (Connection connection = connections.open()) {
-            if (snapshotExists(connection, body.snapshotDate())) {
-                throw new ApiException(HttpStatus.CONFLICT, "snapshot for this date already exists");
-            }
-
-            try {
-                connection.setAutoCommit(false);
-                long snapshotId;
-                try (PreparedStatement statement = connection.prepareStatement("""
-                        INSERT INTO net_worth_snapshots (snapshot_date, notes)
-                        VALUES (?, ?)
-                        """, Statement.RETURN_GENERATED_KEYS)) {
-                    statement.setString(1, body.snapshotDate().toString());
-                    statement.setString(2, body.notes());
-                    statement.executeUpdate();
-                    try (ResultSet keys = statement.getGeneratedKeys()) {
-                        keys.next();
-                        snapshotId = keys.getLong(1);
-                    }
-                }
-                upsertBalances(connection, snapshotId, balancesOrEmpty(body.balances()));
-                connection.commit();
-                return reader.get(connection, snapshotId);
-            } catch (SQLException exception) {
-                rollback(connection);
-                throw exception;
-            }
+            return mutations.create(connection, body);
         } catch (SQLException exception) {
             throw databaseError(exception);
         }
@@ -97,40 +67,7 @@ class NetWorthController {
     @PatchMapping("/{snapshotId}")
     NetWorthSnapshotResponse updateSnapshot(@PathVariable long snapshotId, @RequestBody JsonNode body) {
         try (Connection connection = connections.open()) {
-            requireSnapshot(connection, snapshotId);
-            try {
-                connection.setAutoCommit(false);
-                if (body.has("snapshot_date") && !body.get("snapshot_date").isNull()) {
-                    LocalDate snapshotDate = LocalDate.parse(body.get("snapshot_date").asText());
-                    if (snapshotExistsForDifferentId(connection, snapshotDate, snapshotId)) {
-                        throw new ApiException(HttpStatus.CONFLICT, "snapshot for this date already exists");
-                    }
-                    try (PreparedStatement statement = connection.prepareStatement("""
-                            UPDATE net_worth_snapshots SET snapshot_date = ? WHERE id = ?
-                            """)) {
-                        statement.setString(1, snapshotDate.toString());
-                        statement.setLong(2, snapshotId);
-                        statement.executeUpdate();
-                    }
-                }
-                if (body.has("notes") && !body.get("notes").isNull()) {
-                    try (PreparedStatement statement = connection.prepareStatement("""
-                            UPDATE net_worth_snapshots SET notes = ? WHERE id = ?
-                            """)) {
-                        statement.setString(1, body.get("notes").asText());
-                        statement.setLong(2, snapshotId);
-                        statement.executeUpdate();
-                    }
-                }
-                if (body.has("balances") && !body.get("balances").isNull()) {
-                    replaceBalances(connection, snapshotId, balancesFromJson(body.get("balances")));
-                }
-                connection.commit();
-                return reader.get(connection, snapshotId);
-            } catch (SQLException | RuntimeException exception) {
-                rollback(connection);
-                throw exception;
-            }
+            return mutations.update(connection, snapshotId, body);
         } catch (SQLException exception) {
             throw databaseError(exception);
         }
@@ -139,12 +76,7 @@ class NetWorthController {
     @DeleteMapping("/{snapshotId}")
     Map<String, String> deleteSnapshot(@PathVariable long snapshotId) {
         try (Connection connection = connections.open()) {
-            requireSnapshot(connection, snapshotId);
-            try (PreparedStatement statement = connection.prepareStatement("DELETE FROM net_worth_snapshots WHERE id = ?")) {
-                statement.setLong(1, snapshotId);
-                statement.executeUpdate();
-            }
-            return Map.of("status", "deleted");
+            return mutations.delete(connection, snapshotId);
         } catch (SQLException exception) {
             throw databaseError(exception);
         }
@@ -159,98 +91,9 @@ class NetWorthController {
         }
 
         try (Connection connection = connections.open()) {
-            return series.list(connection, start, end);
+            return seriesReader.list(connection, start, end);
         } catch (SQLException exception) {
             throw databaseError(exception);
-        }
-    }
-
-    private void upsertBalances(Connection connection, long snapshotId, List<AccountBalanceRequest> balances) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement("""
-                INSERT INTO account_balances (snapshot_id, account_id, balance, notes)
-                VALUES (?, ?, ?, ?)
-                """)) {
-            for (AccountBalanceRequest balance : balances) {
-                statement.setLong(1, snapshotId);
-                statement.setLong(2, balance.accountId());
-                statement.setBigDecimal(3, balance.balance());
-                statement.setString(4, balance.notes());
-                statement.addBatch();
-            }
-            statement.executeBatch();
-        }
-    }
-
-    private void replaceBalances(Connection connection, long snapshotId, List<AccountBalanceRequest> balances) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement("""
-                DELETE FROM account_balances WHERE snapshot_id = ?
-                """)) {
-            statement.setLong(1, snapshotId);
-            statement.executeUpdate();
-        }
-        upsertBalances(connection, snapshotId, balances);
-    }
-
-    private List<AccountBalanceRequest> balancesFromJson(JsonNode balancesNode) {
-        List<AccountBalanceRequest> balances = new ArrayList<>();
-        Set<Long> seenAccountIds = new LinkedHashSet<>();
-        for (JsonNode node : balancesNode) {
-            long accountId = node.get("account_id").asLong();
-            if (!seenAccountIds.add(accountId)) {
-                throw new ApiException(HttpStatus.BAD_REQUEST, "duplicate account balance in snapshot");
-            }
-            JsonNode balanceNode = node.get("balance");
-            BigDecimal balance = balanceNode == null || balanceNode.isNull() ? null : new BigDecimal(balanceNode.asText());
-            JsonNode notesNode = node.get("notes");
-            String notes = notesNode == null || notesNode.isNull() ? null : notesNode.asText();
-            balances.add(new AccountBalanceRequest(accountId, balance, notes));
-        }
-        return balances;
-    }
-
-    private boolean snapshotExists(Connection connection, LocalDate snapshotDate) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement("""
-                SELECT 1 FROM net_worth_snapshots WHERE snapshot_date = ?
-                """)) {
-            statement.setString(1, snapshotDate.toString());
-            try (ResultSet rs = statement.executeQuery()) {
-                return rs.next();
-            }
-        }
-    }
-
-    private boolean snapshotExistsForDifferentId(Connection connection, LocalDate snapshotDate, long snapshotId) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement("""
-                SELECT 1 FROM net_worth_snapshots WHERE snapshot_date = ? AND id <> ?
-                """)) {
-            statement.setString(1, snapshotDate.toString());
-            statement.setLong(2, snapshotId);
-            try (ResultSet rs = statement.executeQuery()) {
-                return rs.next();
-            }
-        }
-    }
-
-    private void requireSnapshot(Connection connection, long snapshotId) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement("SELECT 1 FROM net_worth_snapshots WHERE id = ?")) {
-            statement.setLong(1, snapshotId);
-            try (ResultSet rs = statement.executeQuery()) {
-                if (!rs.next()) {
-                    throw new ApiException(HttpStatus.NOT_FOUND, "snapshot not found");
-                }
-            }
-        }
-    }
-
-    private List<AccountBalanceRequest> balancesOrEmpty(List<AccountBalanceRequest> balances) {
-        return balances == null ? List.of() : balances;
-    }
-
-    private void rollback(Connection connection) {
-        try {
-            connection.rollback();
-        } catch (SQLException ignored) {
-            // The original exception carries the actionable failure.
         }
     }
 
