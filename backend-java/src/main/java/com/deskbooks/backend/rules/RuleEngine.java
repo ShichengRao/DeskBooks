@@ -18,8 +18,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.StringJoiner;
-import java.util.regex.Pattern;
-import java.util.regex.PatternSyntaxException;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -30,6 +28,7 @@ import org.springframework.stereotype.Component;
 public class RuleEngine {
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final DateTimeFormatter SQLITE_TIMESTAMP = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private final RuleMatcher matcher = new RuleMatcher();
 
     public List<RuleRecord> loadActiveRules(Connection connection) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("""
@@ -51,7 +50,7 @@ public class RuleEngine {
 
     public RuleEval evaluate(List<RuleRecord> rules, long accountId, String description, BigDecimal amount) {
         for (RuleRecord rule : rules) {
-            if (matches(rule, accountId, description, amount)) {
+            if (matcher.matches(rule, accountId, description, amount)) {
                 return new RuleEval(
                         rule.setCategoryId(),
                         rule.setKind(),
@@ -210,17 +209,29 @@ public class RuleEngine {
         List<RuleRecord> activeRules = loadActiveRules(connection);
 
         List<TransactionRow> matches = labeledTxs.stream()
-                .filter(tx -> accountOk(request.matchAccountId(), tx))
-                .filter(tx -> proposalMatches(request.matchDescriptionPattern(), tx))
+                .filter(tx -> matcher.accountOk(request.matchAccountId(), tx.accountId()))
+                .filter(tx -> matcher.proposalMatches(
+                        request.matchDescriptionPattern(),
+                        tx.descriptionNormalized(),
+                        tx.descriptionRaw(),
+                        tx.merchant()))
                 .toList();
         int allMatches = (int) allTxs.stream()
-                .filter(tx -> accountOk(request.matchAccountId(), tx))
-                .filter(tx -> proposalMatches(request.matchDescriptionPattern(), tx))
+                .filter(tx -> matcher.accountOk(request.matchAccountId(), tx.accountId()))
+                .filter(tx -> matcher.proposalMatches(
+                        request.matchDescriptionPattern(),
+                        tx.descriptionNormalized(),
+                        tx.descriptionRaw(),
+                        tx.merchant()))
                 .count();
         int addedMatches = 0;
         for (TransactionRow tx : allTxs) {
-            if (accountOk(request.matchAccountId(), tx)
-                    && proposalMatches(request.matchDescriptionPattern(), tx)
+            if (matcher.accountOk(request.matchAccountId(), tx.accountId())
+                    && matcher.proposalMatches(
+                            request.matchDescriptionPattern(),
+                            tx.descriptionNormalized(),
+                            tx.descriptionRaw(),
+                            tx.merchant())
                     && !evaluate(activeRules, tx.accountId(), tx.description(), tx.amount()).matched()) {
                 addedMatches++;
             }
@@ -330,28 +341,6 @@ public class RuleEngine {
         }
     }
 
-    private boolean matches(RuleRecord rule, long accountId, String description, BigDecimal amount) {
-        if (rule.matchAccountId() != null && rule.matchAccountId() != accountId) {
-            return false;
-        }
-        if (rule.matchDescriptionPattern() != null && !rule.matchDescriptionPattern().isBlank()) {
-            try {
-                if (!Pattern.compile(rule.matchDescriptionPattern(), Pattern.CASE_INSENSITIVE)
-                        .matcher(description == null ? "" : description)
-                        .find()) {
-                    return false;
-                }
-            } catch (PatternSyntaxException exception) {
-                return false;
-            }
-        }
-        BigDecimal value = amount == null ? BigDecimal.ZERO : amount;
-        if (rule.matchAmountMin() != null && value.compareTo(new BigDecimal(rule.matchAmountMin())) < 0) {
-            return false;
-        }
-        return rule.matchAmountMax() == null || value.compareTo(new BigDecimal(rule.matchAmountMax())) <= 0;
-    }
-
     private ProposalContext proposalContext(Connection connection, int minSupport) throws SQLException {
         List<TransactionRow> labeled = loadLabeledTrainingTransactions(connection);
         List<TransactionRow> all = loadTransactions(connection, false);
@@ -423,7 +412,7 @@ public class RuleEngine {
     private Map<String, List<TransactionRow>> groupProposalCandidates(List<TransactionRow> labeledTxs) {
         Map<String, List<TransactionRow>> byKey = new LinkedHashMap<>();
         for (TransactionRow tx : labeledTxs) {
-            String key = proposalKey(tx);
+            String key = matcher.proposalKey(tx.merchant(), tx.descriptionNormalized(), tx.descriptionRaw());
             if (!key.isBlank() && key.split("\\s+").length >= 2) {
                 byKey.computeIfAbsent(key, ignored -> new ArrayList<>()).add(tx);
             }
@@ -436,15 +425,13 @@ public class RuleEngine {
         if (outcome == null) {
             return null;
         }
-        String pattern = proposalPattern(key);
-        if (!validProposalPattern(pattern)) {
-            return null;
-        }
+        String pattern = matcher.proposalPattern(key);
         if (!candidateIsAvailable(context, key, pattern, outcome.categoryId(), outcome.kind())) {
             return null;
         }
         List<TransactionRow> matches = context.labeledTxs().stream()
-                .filter(tx -> proposalMatches(pattern, tx))
+                .filter(tx -> matcher.proposalMatches(
+                        pattern, tx.descriptionNormalized(), tx.descriptionRaw(), tx.merchant()))
                 .toList();
         if (matches.isEmpty()) {
             return null;
@@ -508,38 +495,11 @@ public class RuleEngine {
         return !context.rejectedSignatures().contains(rejected);
     }
 
-    private boolean validProposalPattern(String pattern) {
-        if (pattern.isBlank()) {
-            return false;
-        }
-        try {
-            Pattern.compile(pattern, Pattern.CASE_INSENSITIVE);
-            return true;
-        } catch (PatternSyntaxException exception) {
-            return false;
-        }
-    }
-
-    private boolean proposalMatches(String pattern, TransactionRow tx) {
-        Pattern compiled;
-        try {
-            compiled = Pattern.compile(pattern, Pattern.CASE_INSENSITIVE);
-        } catch (PatternSyntaxException exception) {
-            return false;
-        }
-        String desc = firstNonNull(tx.descriptionNormalized(), tx.descriptionRaw(), "");
-        String merchant = tx.merchant() == null ? "" : tx.merchant();
-        return compiled.matcher(desc).find()
-                || compiled.matcher(merchant).find()
-                || compiled.matcher(generalizeDescription(desc)).find()
-                || compiled.matcher(generalizeDescription(merchant)).find();
-    }
-
     private MatchCounts allAndAddedMatches(String pattern, ProposalContext context) {
         int allMatches = 0;
         int addedMatches = 0;
         for (TransactionRow tx : context.allTxs()) {
-            if (!proposalMatches(pattern, tx)) {
+            if (!matcher.proposalMatches(pattern, tx.descriptionNormalized(), tx.descriptionRaw(), tx.merchant())) {
                 continue;
             }
             allMatches++;
@@ -581,59 +541,6 @@ public class RuleEngine {
                         tx.kind(),
                         Objects.equals(tx.categoryId(), categoryId) && kind.equals(tx.kind())))
                 .toList();
-    }
-
-    private boolean accountOk(Long matchAccountId, TransactionRow tx) {
-        return matchAccountId == null || matchAccountId == tx.accountId();
-    }
-
-    private String proposalKey(TransactionRow tx) {
-        return generalizeDescription(firstNonNull(tx.merchant(), tx.descriptionNormalized(), tx.descriptionRaw(), ""));
-    }
-
-    private String generalizeDescription(String value) {
-        String s = value == null ? "" : value.trim();
-        if (s.isBlank()) {
-            return "";
-        }
-        s = s.replaceAll("(?i)\\bX+X*\\d{3,}\\b", "");
-        s = s.replaceAll("\\b[Xx]{2,}\\d{3,}\\b", "");
-        s = s.replaceAll("\\b\\d{10,}\\b", "");
-        s = s.replaceAll("\\b\\d{6,8}\\b", "");
-        s = s.replaceAll("\\b[A-Z][a-z]+\\s+[A-Z][a-z]+\\b", "");
-        s = s.replaceAll("\\b[A-Z][a-z]+,?\\s*[A-Z][a-z]+\\b", "");
-        s = s.replaceAll("(?i)^\\s*DD\\s+(?=DoorDash\\b)", "");
-        s = s.replaceAll("(?i)^\\s*(Aplpay|Apple\\s+Pay)\\s+", "");
-        s = s.replaceAll("(?i)\\s+New\\s+York\\s*$", "");
-        s = s.replaceAll("[*#:;-]+", " ");
-        s = s.replaceAll("\\s+", " ").trim();
-        if (Pattern.compile("\\bNYCT\\b", Pattern.CASE_INSENSITIVE).matcher(s).find()
-                && Pattern.compile("\\bPAYGO\\b", Pattern.CASE_INSENSITIVE).matcher(s).find()) {
-            return "Nyct Paygo";
-        }
-        return s;
-    }
-
-    private String proposalPattern(String key) {
-        List<String> tokens = new ArrayList<>();
-        for (String token : key.trim().split("\\s+")) {
-            if (!token.isBlank()) {
-                tokens.add(regexEscape(token));
-            }
-        }
-        return String.join(".*", tokens);
-    }
-
-    private String regexEscape(String value) {
-        StringBuilder out = new StringBuilder();
-        for (int i = 0; i < value.length(); i++) {
-            char ch = value.charAt(i);
-            if ("\\.[]{}()*+-?^$|".indexOf(ch) >= 0) {
-                out.append('\\');
-            }
-            out.append(ch);
-        }
-        return out.toString();
     }
 
     private String proposalSignature(String key, String pattern, Long matchAccountId, Long categoryId, String kind) {
