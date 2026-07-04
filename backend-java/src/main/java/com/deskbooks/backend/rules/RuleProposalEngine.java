@@ -16,10 +16,12 @@ final class RuleProposalEngine {
     private final RuleTransactionReader transactions = new RuleTransactionReader();
     private final RuleProposalRegistry proposals = new RuleProposalRegistry();
     private final RuleProposalSummaries summaries = new RuleProposalSummaries();
+    private final RuleProposalBacktester backtester;
 
     RuleProposalEngine(RuleMatcher matcher, RuleEngine rules) {
         this.matcher = matcher;
         this.rules = rules;
+        this.backtester = new RuleProposalBacktester(matcher, rules, transactions, summaries);
     }
 
     List<RuleProposal> generate(Connection connection, int minSupport, int limit) throws SQLException {
@@ -44,43 +46,7 @@ final class RuleProposalEngine {
     }
 
     RuleProposal backtest(Connection connection, RuleProposalRequest request) throws SQLException {
-        List<RuleTransactionRow> labeledTxs = transactions.load(connection, true);
-        List<RuleTransactionRow> allTxs = transactions.load(connection, false);
-        int totalLabeled = labeledTxs.size();
-        int totalTransactions = allTxs.size();
-        List<RuleRecord> activeRules = rules.loadActiveRules(connection);
-
-        List<RuleTransactionRow> matches = matchingTransactions(labeledTxs, request);
-        int allMatches = matchingTransactions(allTxs, request).size();
-        int addedMatches = 0;
-        for (RuleTransactionRow tx : allTxs) {
-            if (matchesRequest(tx, request)
-                    && !rules.evaluate(activeRules, tx.accountId(), tx.description(), tx.amount()).matched()) {
-                addedMatches++;
-            }
-        }
-        List<RuleTransactionRow> correct = summaries.correctMatches(matches, request.setCategoryId(), request.setKind());
-        List<RuleTransactionRow> incorrect = summaries.incorrectMatches(matches, request.setCategoryId(), request.setKind());
-        return new RuleProposal(
-                request.key(),
-                request.name(),
-                request.matchDescriptionPattern(),
-                request.matchAccountId(),
-                request.setCategoryId(),
-                request.setKind(),
-                request.setMerchant(),
-                correct.size(),
-                matches.size(),
-                allMatches,
-                addedMatches,
-                correct.size(),
-                incorrect.size(),
-                matches.isEmpty() ? 0.0 : ((double) correct.size()) / matches.size(),
-                totalLabeled == 0 ? 0.0 : ((double) matches.size()) / totalLabeled * 100.0,
-                totalTransactions == 0 ? 0.0 : ((double) allMatches) / totalTransactions * 100.0,
-                totalTransactions == 0 ? 0.0 : ((double) addedMatches) / totalTransactions * 100.0,
-                summaries.breakdown(matches),
-                summaries.examples(correct, incorrect, request.setCategoryId(), request.setKind()));
+        return backtester.backtest(connection, request);
     }
 
     boolean reject(Connection connection, RuleProposalRequest request) throws SQLException {
@@ -176,23 +142,6 @@ final class RuleProposalEngine {
             }
         }
         return new MatchCounts(allMatches, addedMatches);
-    }
-
-    private List<RuleTransactionRow> matchingTransactions(
-            List<RuleTransactionRow> transactions,
-            RuleProposalRequest request) {
-        return transactions.stream()
-                .filter(tx -> matchesRequest(tx, request))
-                .toList();
-    }
-
-    private boolean matchesRequest(RuleTransactionRow tx, RuleProposalRequest request) {
-        return matcher.accountOk(request.matchAccountId(), tx.accountId())
-                && matcher.proposalMatches(
-                        request.matchDescriptionPattern(),
-                        tx.descriptionNormalized(),
-                        tx.descriptionRaw(),
-                        tx.merchant());
     }
 
     private record ProposalContext(
