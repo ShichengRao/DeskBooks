@@ -22,26 +22,25 @@ final class JournalImportParser {
     private static final String DOCX_TEXT_ERROR = "could not read docx document text";
     private static final String PAGE_BREAK_TYPE = "page";
 
-    JournalController.JournalImportPreviewResponse preview(
-            JournalController.JournalImportPreviewRequest body) {
+    JournalImportPreviewResponse preview(JournalImportPreviewRequest body) {
         Path path = Path.of(body.path()).toAbsolutePath().normalize();
         if (!Files.isRegularFile(path)) {
             throw new ApiException(HttpStatus.NOT_FOUND, "file not found");
         }
-        List<JournalController.JournalImportDraftResponse> drafts = drafts(path, documentPages(path));
+        List<JournalImportDraftResponse> drafts = drafts(path, documentPages(path));
         if (drafts.isEmpty()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "no journal text found");
         }
-        return new JournalController.JournalImportPreviewResponse(path.getFileName().toString(), drafts);
+        return new JournalImportPreviewResponse(path.getFileName().toString(), drafts);
     }
 
-    private List<JournalController.JournalImportDraftResponse> drafts(Path path, List<String> pages) {
+    private List<JournalImportDraftResponse> drafts(Path path, List<String> pages) {
         String baseTitle = stripExtension(path.getFileName().toString());
-        List<JournalController.JournalImportDraftResponse> drafts = new ArrayList<>();
+        List<JournalImportDraftResponse> drafts = new ArrayList<>();
         for (int i = 0; i < pages.size(); i++) {
             String page = pages.get(i).trim();
             if (!page.isBlank()) {
-                drafts.add(new JournalController.JournalImportDraftResponse(
+                drafts.add(new JournalImportDraftResponse(
                         i + 1,
                         baseTitle + " page " + (i + 1),
                         page));
