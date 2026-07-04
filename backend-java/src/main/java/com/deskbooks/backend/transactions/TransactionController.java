@@ -11,7 +11,6 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.StringJoiner;
@@ -65,7 +64,8 @@ class TransactionController {
         }
 
         try (Connection connection = connections.open()) {
-            FilterSql filters = filters(start, end, accountId, accountCategory, categoryId, kind, amountMin, amountMax, q, excludeExcluded);
+            TransactionFilters.FilterSql filters = TransactionFilters.build(
+                    start, end, accountId, accountCategory, categoryId, kind, amountMin, amountMax, q, excludeExcluded);
             String sql = "SELECT " + String.join(", ", SELECT_COLUMNS)
                     + " FROM transactions t"
                     + (filters.joinAccounts() ? " JOIN accounts a ON a.id = t.account_id" : "")
@@ -101,7 +101,8 @@ class TransactionController {
             @RequestParam(name = "q", required = false) String q,
             @RequestParam(name = "exclude_excluded", defaultValue = "false") boolean excludeExcluded) {
         try (Connection connection = connections.open()) {
-            FilterSql filters = filters(start, end, accountId, accountCategory, categoryId, kind, amountMin, amountMax, q, excludeExcluded);
+            TransactionFilters.FilterSql filters = TransactionFilters.build(
+                    start, end, accountId, accountCategory, categoryId, kind, amountMin, amountMax, q, excludeExcluded);
             String sql = "SELECT COUNT(t.id) AS count FROM transactions t"
                     + (filters.joinAccounts() ? " JOIN accounts a ON a.id = t.account_id" : "")
                     + filters.whereSql();
@@ -224,20 +225,7 @@ class TransactionController {
             requireTransaction(connection, transactionId);
             List<ColumnValue> values = patchValues(connection, body);
             if (!values.isEmpty()) {
-                StringJoiner assignments = new StringJoiner(", ");
-                for (ColumnValue value : values) {
-                    assignments.add(value.column() + " = ?");
-                }
-                assignments.add("updated_at = CURRENT_TIMESTAMP");
-                try (PreparedStatement statement = connection.prepareStatement(
-                        "UPDATE transactions SET " + assignments + " WHERE id = ?")) {
-                    int index = 1;
-                    for (ColumnValue value : values) {
-                        bindParam(statement, index++, value.value());
-                    }
-                    statement.setLong(index, transactionId);
-                    statement.executeUpdate();
-                }
+                applyTransactionUpdate(connection, transactionId, values);
             }
             return getTransaction(connection, transactionId);
         } catch (SQLException exception) {
@@ -314,73 +302,6 @@ class TransactionController {
         }
     }
 
-    private FilterSql filters(
-            LocalDate start,
-            LocalDate end,
-            Long accountId,
-            List<String> accountCategory,
-            Long categoryId,
-            List<String> kind,
-            BigDecimal amountMin,
-            BigDecimal amountMax,
-            String q,
-            boolean excludeExcluded) {
-        List<String> where = new ArrayList<>();
-        List<Object> params = new ArrayList<>();
-        boolean joinAccounts = accountCategory != null && !accountCategory.isEmpty();
-        if (start != null) {
-            where.add("t.date >= ?");
-            params.add(start);
-        }
-        if (end != null) {
-            where.add("t.date <= ?");
-            params.add(end);
-        }
-        if (accountId != null) {
-            where.add("t.account_id = ?");
-            params.add(accountId);
-        }
-        if (joinAccounts) {
-            where.add("a.account_category IN (" + placeholders(accountCategory.size()) + ")");
-            params.addAll(accountCategory);
-        }
-        if (categoryId != null) {
-            where.add("t.category_id = ?");
-            params.add(categoryId);
-        }
-        if (kind != null && !kind.isEmpty()) {
-            where.add("t.kind IN (" + placeholders(kind.size()) + ")");
-            params.addAll(kind);
-        }
-        if (amountMin != null) {
-            where.add("t.amount >= ?");
-            params.add(amountMin);
-        }
-        if (amountMax != null) {
-            where.add("t.amount <= ?");
-            params.add(amountMax);
-        }
-        if (q != null && !q.isBlank()) {
-            String like = "%" + q.toLowerCase(Locale.ROOT) + "%";
-            where.add("""
-                    (
-                      LOWER(COALESCE(t.description_raw, '')) LIKE ?
-                      OR LOWER(COALESCE(t.description_normalized, '')) LIKE ?
-                      OR LOWER(COALESCE(t.merchant, '')) LIKE ?
-                      OR LOWER(COALESCE(t.notes, '')) LIKE ?
-                    )
-                    """);
-            params.add(like);
-            params.add(like);
-            params.add(like);
-            params.add(like);
-        }
-        if (excludeExcluded) {
-            where.add("t.is_excluded_from_totals = 0");
-        }
-        return new FilterSql(where.isEmpty() ? "" : " WHERE " + String.join(" AND ", where), params, joinAccounts);
-    }
-
     private List<ColumnValue> patchValues(Connection connection, JsonNode body) throws SQLException {
         List<ColumnValue> values = new ArrayList<>();
         addDate(values, body, "date");
@@ -434,20 +355,7 @@ class TransactionController {
         addBoolean(values, body, "is_excluded_from_totals");
 
         if (!values.isEmpty()) {
-            StringJoiner assignments = new StringJoiner(", ");
-            for (ColumnValue value : values) {
-                assignments.add(value.column() + " = ?");
-            }
-            assignments.add("updated_at = CURRENT_TIMESTAMP");
-            try (PreparedStatement statement = connection.prepareStatement(
-                    "UPDATE transactions SET " + assignments + " WHERE id = ?")) {
-                int index = 1;
-                for (ColumnValue value : values) {
-                    bindParam(statement, index++, value.value());
-                }
-                statement.setLong(index, transactionId);
-                statement.executeUpdate();
-            }
+            applyTransactionUpdate(connection, transactionId, values);
         }
 
         if (body.has("clear_split") && body.get("clear_split").asBoolean()) {
@@ -463,6 +371,24 @@ class TransactionController {
 
         addTags(connection, transactionId, longList(body.get("add_tag_ids")));
         removeTags(connection, transactionId, longList(body.get("remove_tag_ids")));
+    }
+
+    private void applyTransactionUpdate(Connection connection, long transactionId, List<ColumnValue> values)
+            throws SQLException {
+        StringJoiner assignments = new StringJoiner(", ");
+        for (ColumnValue value : values) {
+            assignments.add(value.column() + " = ?");
+        }
+        assignments.add("updated_at = CURRENT_TIMESTAMP");
+        try (PreparedStatement statement = connection.prepareStatement(
+                "UPDATE transactions SET " + assignments + " WHERE id = ?")) {
+            int index = 1;
+            for (ColumnValue value : values) {
+                bindParam(statement, index++, value.value());
+            }
+            statement.setLong(index, transactionId);
+            statement.executeUpdate();
+        }
     }
 
     private TransactionResponse getTransaction(Connection connection, long transactionId) throws SQLException {
@@ -892,6 +818,4 @@ class TransactionController {
     record ColumnValue(String column, Object value) {
     }
 
-    record FilterSql(String whereSql, List<Object> params, boolean joinAccounts) {
-    }
 }
