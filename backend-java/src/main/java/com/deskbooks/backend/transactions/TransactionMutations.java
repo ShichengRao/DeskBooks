@@ -54,7 +54,7 @@ final class TransactionMutations {
     }
 
     Map<String, Integer> bulkUpdate(Connection connection, JsonNode body) throws SQLException {
-        List<Long> ids = TransactionJson.longList(body.get("ids"));
+        List<Long> ids = TransactionJsonValues.longList(body.get("ids"));
         if (ids.isEmpty()) {
             return Map.of("updated", 0);
         }
@@ -81,8 +81,8 @@ final class TransactionMutations {
     }
 
     Map<String, String> pair(Connection connection, JsonNode body) throws SQLException {
-        long transactionAId = TransactionJson.requiredLong(body, "transaction_a_id");
-        long transactionBId = TransactionJson.requiredLong(body, "transaction_b_id");
+        long transactionAId = TransactionJsonValues.requiredLong(body, "transaction_a_id");
+        long transactionBId = TransactionJsonValues.requiredLong(body, "transaction_b_id");
         lookup.requireTransaction(connection, transactionAId);
         lookup.requireTransaction(connection, transactionBId);
         try (PreparedStatement statement = connection.prepareStatement("""

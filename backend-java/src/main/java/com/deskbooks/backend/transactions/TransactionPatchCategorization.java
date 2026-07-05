@@ -38,7 +38,7 @@ final class TransactionPatchCategorization {
     void addPatchCategory(Connection connection, List<TransactionColumnValue> values, JsonNode body)
             throws SQLException {
         if (body.has(CATEGORY_ID)) {
-            Long categoryId = TransactionJson.optionalLong(body, CATEGORY_ID);
+            Long categoryId = TransactionJsonValues.optionalLong(body, CATEGORY_ID);
             TransactionCategoryInfo category = categoryId == null ? null : lookup.categoryOr404(connection, categoryId);
             addCategorizedValues(
                     values,
@@ -50,7 +50,7 @@ final class TransactionPatchCategorization {
 
     void addPatchKind(List<TransactionColumnValue> values, JsonNode body) {
         if (body.has(KIND)) {
-            values.add(new TransactionColumnValue(KIND, TransactionJson.textOrNull(body, KIND)));
+            values.add(new TransactionColumnValue(KIND, TransactionJsonText.orNull(body, KIND)));
             markUserCategorized(values);
         }
     }

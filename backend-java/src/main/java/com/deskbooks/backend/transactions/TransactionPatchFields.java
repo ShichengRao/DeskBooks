@@ -8,12 +8,12 @@ import tools.jackson.databind.JsonNode;
 final class TransactionPatchFields {
     void addDescription(List<TransactionColumnValue> values, JsonNode body) {
         if (body.has("description_raw")) {
-            String raw = TransactionJson.textOrNull(body, "description_raw");
+            String raw = TransactionJsonText.orNull(body, "description_raw");
             values.add(new TransactionColumnValue("description_raw", raw));
             if (!body.has("description_normalized")) {
                 values.add(new TransactionColumnValue(
                         "description_normalized",
-                        raw == null ? null : TransactionJson.normalizeDescription(raw)));
+                        raw == null ? null : TransactionJsonText.normalizeDescription(raw)));
             }
         }
         addText(values, body, "description_normalized");
@@ -21,13 +21,13 @@ final class TransactionPatchFields {
 
     void addText(List<TransactionColumnValue> values, JsonNode body, String field) {
         if (body.has(field)) {
-            values.add(new TransactionColumnValue(field, TransactionJson.textOrNull(body, field)));
+            values.add(new TransactionColumnValue(field, TransactionJsonText.orNull(body, field)));
         }
     }
 
     void addDate(List<TransactionColumnValue> values, JsonNode body, String field) {
         if (body.has(field)) {
-            values.add(new TransactionColumnValue(field, TransactionJson.optionalDateString(body, field)));
+            values.add(new TransactionColumnValue(field, TransactionJsonValues.optionalDateString(body, field)));
         }
     }
 
@@ -49,7 +49,7 @@ final class TransactionPatchFields {
 
     void addLong(List<TransactionColumnValue> values, JsonNode body, String field) {
         if (body.has(field)) {
-            values.add(new TransactionColumnValue(field, TransactionJson.optionalLong(body, field)));
+            values.add(new TransactionColumnValue(field, TransactionJsonValues.optionalLong(body, field)));
         }
     }
 }

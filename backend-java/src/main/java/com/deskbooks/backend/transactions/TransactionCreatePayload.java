@@ -23,25 +23,25 @@ record TransactionCreatePayload(
             Connection connection,
             JsonNode body,
             TransactionLookup lookup) throws SQLException {
-        long accountId = TransactionJson.requiredLong(body, "account_id");
+        long accountId = TransactionJsonValues.requiredLong(body, "account_id");
         lookup.requireAccount(connection, accountId);
 
-        Long categoryId = TransactionJson.optionalLong(body, "category_id");
+        Long categoryId = TransactionJsonValues.optionalLong(body, "category_id");
         TransactionCategoryInfo category = categoryId == null ? null : lookup.categoryOr404(connection, categoryId);
 
-        String descriptionRaw = TransactionJson.requiredText(body, "description_raw");
+        String descriptionRaw = TransactionJsonText.required(body, "description_raw");
         return new TransactionCreatePayload(
                 accountId,
-                TransactionJson.requiredDate(body, "date").toString(),
-                TransactionJson.optionalDateString(body, "post_date"),
+                TransactionJsonValues.requiredDate(body, "date").toString(),
+                TransactionJsonValues.optionalDateString(body, "post_date"),
                 descriptionRaw,
                 normalizedDescription(body, descriptionRaw),
-                TransactionJson.blankToNull(TransactionJson.textOrNull(body, "merchant")),
-                TransactionJson.requiredDecimal(body, "amount"),
+                TransactionJsonText.blankToNull(TransactionJsonText.orNull(body, "merchant")),
+                TransactionJsonValues.requiredDecimal(body, "amount"),
                 categoryId,
                 createKind(body, category),
-                TransactionJson.booleanOrDefault(body, "is_excluded_from_totals", false),
-                TransactionJson.blankToNull(TransactionJson.textOrNull(body, "notes")));
+                TransactionJsonValues.booleanOrDefault(body, "is_excluded_from_totals", false),
+                TransactionJsonText.blankToNull(TransactionJsonText.orNull(body, "notes")));
     }
 
     void bind(PreparedStatement statement) throws SQLException {
@@ -59,7 +59,7 @@ record TransactionCreatePayload(
     }
 
     private static String createKind(JsonNode body, TransactionCategoryInfo category) {
-        String kind = TransactionJson.textOrDefault(body, "kind", "uncategorized");
+        String kind = TransactionJsonText.orDefault(body, "kind", "uncategorized");
         if (category != null && !body.has("kind")) {
             return category.kind();
         }
@@ -67,9 +67,9 @@ record TransactionCreatePayload(
     }
 
     private static String normalizedDescription(JsonNode body, String descriptionRaw) {
-        String normalized = TransactionJson.textOrNull(body, "description_normalized");
+        String normalized = TransactionJsonText.orNull(body, "description_normalized");
         if (normalized == null || normalized.isBlank()) {
-            return TransactionJson.normalizeDescription(descriptionRaw);
+            return TransactionJsonText.normalizeDescription(descriptionRaw);
         }
         return normalized;
     }
