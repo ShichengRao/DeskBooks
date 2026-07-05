@@ -1,6 +1,5 @@
 package com.deskbooks.backend.imports;
 
-import com.deskbooks.backend.imports.ImportController.ImportDraftRow;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;

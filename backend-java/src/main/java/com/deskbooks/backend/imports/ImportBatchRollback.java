@@ -17,7 +17,7 @@ final class ImportBatchRollback {
     }
 
     Map<String, String> rollback(Connection connection, long batchId) throws SQLException {
-        ImportController.ImportBatchResponse batch = metadata.get(connection, batchId);
+        ImportBatchResponse batch = metadata.get(connection, batchId);
         if (!"applied".equals(batch.status())) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "batch is not in 'applied' state");
         }

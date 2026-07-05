@@ -22,24 +22,24 @@ final class ImportPreviewMarker {
         this.batches = batches;
     }
 
-    ImportController.ImportPreviewResponse previewRows(
+    ImportPreviewResponse previewRows(
             Connection connection,
-            List<ImportController.ImportDraftRow> rows,
+            List<ImportDraftRow> rows,
             String importerName,
             long accountId,
             String filename,
             List<String> sniffNotes) throws SQLException {
         List<RuleRecord> activeRules = ruleEngine.loadActiveRules(connection);
-        Map<ImportController.DuplicateKey, Integer> existing = batches.existingKeyCounts(connection, accountId);
-        Map<ImportController.DuplicateKey, Integer> fileCounts = new LinkedHashMap<>();
-        List<ImportController.ImportDraftRow> markedRows = new ArrayList<>();
-        for (ImportController.ImportDraftRow row : rows) {
+        Map<DuplicateKey, Integer> existing = batches.existingKeyCounts(connection, accountId);
+        Map<DuplicateKey, Integer> fileCounts = new LinkedHashMap<>();
+        List<ImportDraftRow> markedRows = new ArrayList<>();
+        for (ImportDraftRow row : rows) {
             row = withRuleSuggestion(row, ruleEngine.evaluate(
                     activeRules,
                     accountId,
                     row.descriptionNormalized() == null ? row.descriptionRaw() : row.descriptionNormalized(),
                     row.amountValue()));
-            ImportController.DuplicateKey key = new ImportController.DuplicateKey(
+            DuplicateKey key = new DuplicateKey(
                     row.date(),
                     money(row.amountValue()),
                     row.descriptionNormalized() == null ? "" : row.descriptionNormalized());
@@ -48,7 +48,7 @@ final class ImportPreviewMarker {
             boolean duplicate = position < existing.getOrDefault(key, 0);
             markedRows.add(row.withDuplicate(duplicate));
         }
-        return new ImportController.ImportPreviewResponse(
+        return new ImportPreviewResponse(
                 importerName,
                 accountId,
                 filename,
@@ -56,11 +56,11 @@ final class ImportPreviewMarker {
                 sniffNotes);
     }
 
-    private ImportController.ImportDraftRow withRuleSuggestion(ImportController.ImportDraftRow row, RuleEval eval) {
+    private ImportDraftRow withRuleSuggestion(ImportDraftRow row, RuleEval eval) {
         if (!eval.matched()) {
             return row;
         }
-        return new ImportController.ImportDraftRow(
+        return new ImportDraftRow(
                 row.rowIndex(),
                 row.date(),
                 row.postDate(),

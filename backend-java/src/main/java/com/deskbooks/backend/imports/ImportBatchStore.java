@@ -22,7 +22,7 @@ final class ImportBatchStore {
         this.ruleEngine = ruleEngine;
     }
 
-    List<ImportController.ImportBatchResponse> list(Connection connection) throws SQLException {
+    List<ImportBatchResponse> list(Connection connection) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("""
                 SELECT id, source_filename, importer_name, account_id, imported_at,
                        row_count_total, row_count_applied, row_count_duplicate, status, notes
@@ -30,7 +30,7 @@ final class ImportBatchStore {
                 ORDER BY imported_at DESC, id DESC
                 """);
                 ResultSet rs = statement.executeQuery()) {
-            List<ImportController.ImportBatchResponse> batches = new ArrayList<>();
+            List<ImportBatchResponse> batches = new ArrayList<>();
             while (rs.next()) {
                 batches.add(metadata.batchFrom(rs));
             }
@@ -38,7 +38,7 @@ final class ImportBatchStore {
         }
     }
 
-    ImportController.ImportBatchResponse apply(Connection connection, ImportController.ImportApplyRequest body) throws SQLException {
+    ImportBatchResponse apply(Connection connection, ImportApplyRequest body) throws SQLException {
         requireAccount(connection, body.accountId());
         connection.setAutoCommit(false);
         boolean committed = false;
@@ -61,8 +61,8 @@ final class ImportBatchStore {
         return new ImportBatchRollback(metadata, transactions).rollback(connection, batchId);
     }
 
-    Map<ImportController.DuplicateKey, Integer> existingKeyCounts(Connection connection, long accountId) throws SQLException {
-        Map<ImportController.DuplicateKey, Integer> counts = new LinkedHashMap<>();
+    Map<DuplicateKey, Integer> existingKeyCounts(Connection connection, long accountId) throws SQLException {
+        Map<DuplicateKey, Integer> counts = new LinkedHashMap<>();
         try (PreparedStatement statement = connection.prepareStatement("""
                 SELECT date, amount, description_normalized
                 FROM transactions

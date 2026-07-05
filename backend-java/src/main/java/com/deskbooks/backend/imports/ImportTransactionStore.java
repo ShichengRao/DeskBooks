@@ -11,7 +11,7 @@ final class ImportTransactionStore {
             Connection connection,
             long accountId,
             long batchId,
-            ImportController.ImportDraftRow row) throws SQLException {
+            ImportDraftRow row) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("""
                 INSERT INTO transactions (
                   account_id, date, post_date, description_raw, description_normalized,
@@ -36,7 +36,7 @@ final class ImportTransactionStore {
             PreparedStatement statement,
             long accountId,
             long batchId,
-            ImportController.ImportDraftRow row) throws SQLException {
+            ImportDraftRow row) throws SQLException {
         statement.setLong(1, accountId);
         statement.setString(2, row.date().toString());
         statement.setString(3, row.postDate() == null ? null : row.postDate().toString());

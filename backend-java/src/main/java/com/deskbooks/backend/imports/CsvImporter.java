@@ -9,5 +9,5 @@ interface CsvImporter {
 
     boolean canHandle(String csvText);
 
-    List<ImportController.ImportDraftRow> parse(String csvText);
+    List<ImportDraftRow> parse(String csvText);
 }

@@ -27,7 +27,7 @@ final class AmexWorkbookParser {
     private AmexWorkbookParser() {
     }
 
-    static List<ImportController.ImportDraftRow> parse(byte[] data) {
+    static List<ImportDraftRow> parse(byte[] data) {
         try (Workbook workbook = WorkbookFactory.create(new ByteArrayInputStream(data))) {
             Sheet sheet = firstTransactionSheet(workbook);
             if (sheet == null) {
@@ -64,10 +64,10 @@ final class AmexWorkbookParser {
         return -1;
     }
 
-    private static List<ImportController.ImportDraftRow> parseRows(Sheet sheet, int headerRowIndex) {
-        List<ImportController.ImportDraftRow> rows = new ArrayList<>();
+    private static List<ImportDraftRow> parseRows(Sheet sheet, int headerRowIndex) {
+        List<ImportDraftRow> rows = new ArrayList<>();
         for (int rowIndex = headerRowIndex + 1; rowIndex <= sheet.getLastRowNum(); rowIndex++) {
-            ImportController.ImportDraftRow row = parseRow(sheet.getRow(rowIndex), rowIndex, headerRowIndex);
+            ImportDraftRow row = parseRow(sheet.getRow(rowIndex), rowIndex, headerRowIndex);
             if (row != null) {
                 rows.add(row);
             }
@@ -75,7 +75,7 @@ final class AmexWorkbookParser {
         return rows;
     }
 
-    private static ImportController.ImportDraftRow parseRow(Row row, int rowIndex, int headerRowIndex) {
+    private static ImportDraftRow parseRow(Row row, int rowIndex, int headerRowIndex) {
         if (row == null) {
             return null;
         }
@@ -87,7 +87,7 @@ final class AmexWorkbookParser {
         }
 
         String normalized = normalize(rawDescription);
-        return new ImportController.ImportDraftRow(
+        return new ImportDraftRow(
                 rowIndex - headerRowIndex - 1,
                 date,
                 null,

@@ -10,15 +10,15 @@ final class ImportDuplicateKeys {
     private ImportDuplicateKeys() {
     }
 
-    static ImportController.DuplicateKey from(ResultSet rs) throws SQLException {
-        return new ImportController.DuplicateKey(
+    static DuplicateKey from(ResultSet rs) throws SQLException {
+        return new DuplicateKey(
                 LocalDate.parse(rs.getString("date")),
                 money(rs.getBigDecimal("amount")),
                 normalizedDescription(rs.getString("description_normalized")));
     }
 
-    static ImportController.DuplicateKey from(ImportController.ImportDraftRow row) {
-        return new ImportController.DuplicateKey(
+    static DuplicateKey from(ImportDraftRow row) {
+        return new DuplicateKey(
                 row.date(),
                 money(row.amountValue()),
                 normalizedDescription(row.descriptionNormalized()));

@@ -10,7 +10,7 @@ import com.deskbooks.backend.foundation.ApiException;
 import org.springframework.http.HttpStatus;
 
 final class ImportBatchMetadata {
-    long create(Connection connection, ImportController.ImportApplyRequest body) throws SQLException {
+    long create(Connection connection, ImportApplyRequest body) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("""
                 INSERT INTO import_batches (
                   source_filename, importer_name, account_id, row_count_total,
@@ -42,7 +42,7 @@ final class ImportBatchMetadata {
         }
     }
 
-    ImportController.ImportBatchResponse get(Connection connection, long batchId) throws SQLException {
+    ImportBatchResponse get(Connection connection, long batchId) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("""
                 SELECT id, source_filename, importer_name, account_id, imported_at,
                        row_count_total, row_count_applied, row_count_duplicate, status, notes
@@ -67,8 +67,8 @@ final class ImportBatchMetadata {
         }
     }
 
-    ImportController.ImportBatchResponse batchFrom(ResultSet rs) throws SQLException {
-        return new ImportController.ImportBatchResponse(
+    ImportBatchResponse batchFrom(ResultSet rs) throws SQLException {
+        return new ImportBatchResponse(
                 rs.getLong("id"),
                 rs.getString("source_filename"),
                 rs.getString("importer_name"),

@@ -24,7 +24,7 @@ final class ImportPreviewParser {
     }
 
     private ParsedImport parseAmexWorkbook(byte[] data) {
-        List<ImportController.ImportDraftRow> rows = AmexWorkbookParser.parse(data);
+        List<ImportDraftRow> rows = AmexWorkbookParser.parse(data);
         if (rows.isEmpty()) {
             throw noImporter();
         }
@@ -77,7 +77,7 @@ final class ImportPreviewParser {
 
     record ParsedImport(
             String importerName,
-            List<ImportController.ImportDraftRow> rows,
+            List<ImportDraftRow> rows,
             List<String> sniffNotes) {
     }
 }

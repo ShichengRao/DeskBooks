@@ -18,14 +18,14 @@ final class ImportBatchApplier {
 
     ImportBatchStore.ImportCounts apply(
             Connection connection,
-            ImportController.ImportApplyRequest body,
+            ImportApplyRequest body,
             long batchId) throws SQLException {
-        Map<ImportController.DuplicateKey, Integer> existing = batches.existingKeyCounts(connection, body.accountId());
+        Map<DuplicateKey, Integer> existing = batches.existingKeyCounts(connection, body.accountId());
         ImportFileDuplicateCounts fileCounts = new ImportFileDuplicateCounts();
         List<Long> ruleFires = new ArrayList<>();
         int applied = 0;
         int duplicates = 0;
-        for (ImportController.ImportDraftRow row : body.rows()) {
+        for (ImportDraftRow row : body.rows()) {
             boolean duplicate = fileCounts.position(row) < existing.getOrDefault(ImportDuplicateKeys.from(row), 0);
             if (duplicate && body.skipDuplicates()) {
                 duplicates++;
@@ -42,10 +42,10 @@ final class ImportBatchApplier {
 }
 
 final class ImportFileDuplicateCounts {
-    private final Map<ImportController.DuplicateKey, Integer> counts = new LinkedHashMap<>();
+    private final Map<DuplicateKey, Integer> counts = new LinkedHashMap<>();
 
-    int position(ImportController.ImportDraftRow row) {
-        ImportController.DuplicateKey key = ImportDuplicateKeys.from(row);
+    int position(ImportDraftRow row) {
+        DuplicateKey key = ImportDuplicateKeys.from(row);
         int position = counts.getOrDefault(key, 0);
         counts.put(key, position + 1);
         return position;

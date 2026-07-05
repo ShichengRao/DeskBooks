@@ -6,7 +6,6 @@ import static com.deskbooks.backend.imports.ImportParsing.normalize;
 import static com.deskbooks.backend.imports.ImportParsing.parseAmount;
 import static com.deskbooks.backend.imports.ImportParsing.parseDate;
 
-import com.deskbooks.backend.imports.ImportController.ImportDraftRow;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
