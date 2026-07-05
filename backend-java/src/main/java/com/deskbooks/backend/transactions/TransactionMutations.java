@@ -10,8 +10,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.StringJoiner;
 
-import com.deskbooks.backend.foundation.ApiException;
-import org.springframework.http.HttpStatus;
 import tools.jackson.databind.JsonNode;
 
 final class TransactionMutations {
@@ -19,6 +17,7 @@ final class TransactionMutations {
     private final TransactionRelations relations;
     private final TransactionLookup lookup = new TransactionLookup();
     private final TransactionPatchBuilder patches = new TransactionPatchBuilder(lookup);
+    private final TransactionTransferMutations transfers = new TransactionTransferMutations(lookup);
 
     TransactionMutations(TransactionReader reader, TransactionRelations relations) {
         this.reader = reader;
@@ -81,56 +80,17 @@ final class TransactionMutations {
     }
 
     Map<String, String> pair(Connection connection, JsonNode body) throws SQLException {
-        long transactionAId = TransactionJsonValues.requiredLong(body, "transaction_a_id");
-        long transactionBId = TransactionJsonValues.requiredLong(body, "transaction_b_id");
-        lookup.requireTransaction(connection, transactionAId);
-        lookup.requireTransaction(connection, transactionBId);
-        try (PreparedStatement statement = connection.prepareStatement("""
-                UPDATE transactions
-                SET transfer_pair_id = ?, kind = 'transfer', is_user_categorized = 1, updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
-                """)) {
-            statement.setLong(1, transactionBId);
-            statement.setLong(2, transactionAId);
-            statement.addBatch();
-            statement.setLong(1, transactionAId);
-            statement.setLong(2, transactionBId);
-            statement.addBatch();
-            statement.executeBatch();
-        }
-        return Map.of("status", "paired");
+        return transfers.pair(connection, body);
     }
 
     Map<String, String> unpair(Connection connection, long transactionId) throws SQLException {
-        Long pairId = lookup.transferPairId(connection, transactionId);
-        if (pairId == null) {
-            throw new ApiException(HttpStatus.NOT_FOUND, "transaction not paired");
-        }
-        try (PreparedStatement statement = connection.prepareStatement("""
-                UPDATE transactions SET transfer_pair_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE id IN (?, ?)
-                """)) {
-            statement.setLong(1, transactionId);
-            statement.setLong(2, pairId);
-            statement.executeUpdate();
-        }
-        return Map.of("status", "unpaired");
+        return transfers.unpair(connection, transactionId);
     }
 
     Map<String, String> delete(Connection connection, long transactionId) throws SQLException {
         lookup.requireTransaction(connection, transactionId);
-        Long pairId = lookup.transferPairId(connection, transactionId);
-        if (pairId != null) {
-            try (PreparedStatement statement = connection.prepareStatement("""
-                    UPDATE transactions SET transfer_pair_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?
-                    """)) {
-                statement.setLong(1, pairId);
-                statement.executeUpdate();
-            }
-        }
-        try (PreparedStatement statement = connection.prepareStatement("DELETE FROM transactions WHERE id = ?")) {
-            statement.setLong(1, transactionId);
-            statement.executeUpdate();
-        }
+        transfers.unlinkPairedTransaction(connection, transactionId);
+        deleteTransaction(connection, transactionId);
         return Map.of("status", "deleted");
     }
 
@@ -163,6 +123,13 @@ final class TransactionMutations {
                 TransactionSql.bindParam(statement, index++, value.value());
             }
             statement.setLong(index, transactionId);
+            statement.executeUpdate();
+        }
+    }
+
+    private void deleteTransaction(Connection connection, long transactionId) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("DELETE FROM transactions WHERE id = ?")) {
+            statement.setLong(1, transactionId);
             statement.executeUpdate();
         }
     }
