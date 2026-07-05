@@ -6,6 +6,8 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.LocalDate;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 final class NetWorthSnapshotStore {
     private NetWorthSnapshotStore() {
@@ -24,5 +26,16 @@ final class NetWorthSnapshotStore {
                 return keys.getLong(1);
             }
         }
+    }
+
+    static Set<LocalDate> dates(Connection connection) throws SQLException {
+        Set<LocalDate> out = new LinkedHashSet<>();
+        try (PreparedStatement statement = connection.prepareStatement("SELECT snapshot_date FROM net_worth_snapshots");
+                ResultSet rs = statement.executeQuery()) {
+            while (rs.next()) {
+                out.add(LocalDate.parse(rs.getString("snapshot_date")));
+            }
+        }
+        return out;
     }
 }
