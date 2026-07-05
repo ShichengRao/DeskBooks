@@ -8,10 +8,10 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.StringJoiner;
 
 final class RuleReapplyEngine {
     private final RuleEngine rules;
+    private final RuleReapplyUpdater updater = new RuleReapplyUpdater();
 
     RuleReapplyEngine(RuleEngine rules) {
         this.rules = rules;
@@ -39,35 +39,18 @@ final class RuleReapplyEngine {
                 if (!eval.matched()) {
                     continue;
                 }
-                List<ColumnValue> values = changedValues(rs, eval);
+                List<RuleReapplyColumnValue> values = updater.changedValues(rs, eval);
                 if (values.isEmpty()) {
                     continue;
                 }
-                values.add(new ColumnValue("matched_rule_id", eval.matchedRuleId()));
-                updateTransaction(connection, rs.getLong("id"), values);
+                values.add(new RuleReapplyColumnValue("matched_rule_id", eval.matchedRuleId()));
+                updater.updateTransaction(connection, rs.getLong("id"), values);
                 fires.merge(eval.matchedRuleId(), 1, Integer::sum);
             }
         }
         rules.stampRuleFires(connection, expandFires(fires));
         int rowsChanged = fires.values().stream().mapToInt(Integer::intValue).sum();
         return new ReapplyResult(rowsChanged, fires.size());
-    }
-
-    private List<ColumnValue> changedValues(ResultSet rs, RuleEval eval) throws SQLException {
-        List<ColumnValue> values = new ArrayList<>();
-        Long currentCategoryId = nullableLong(rs, "category_id");
-        if (eval.categoryId() != null && !eval.categoryId().equals(currentCategoryId)) {
-            values.add(new ColumnValue("category_id", eval.categoryId()));
-        }
-        String currentKind = rs.getString("kind");
-        if (eval.kind() != null && !eval.kind().equals(currentKind)) {
-            values.add(new ColumnValue("kind", eval.kind()));
-        }
-        String currentMerchant = rs.getString("merchant");
-        if (eval.merchant() != null && !eval.merchant().isBlank() && !eval.merchant().equals(currentMerchant)) {
-            values.add(new ColumnValue("merchant", eval.merchant()));
-        }
-        return values;
     }
 
     private List<Long> expandFires(Map<Long, Integer> fires) {
@@ -80,32 +63,6 @@ final class RuleReapplyEngine {
         return ids;
     }
 
-    private void updateTransaction(Connection connection, long transactionId, List<ColumnValue> values) throws SQLException {
-        StringJoiner assignments = new StringJoiner(", ");
-        for (ColumnValue value : values) {
-            assignments.add(value.column() + " = ?");
-        }
-        assignments.add("updated_at = CURRENT_TIMESTAMP");
-        try (PreparedStatement statement = connection.prepareStatement(
-                "UPDATE transactions SET " + assignments + " WHERE id = ?")) {
-            int index = 1;
-            for (ColumnValue value : values) {
-                if (value.value() == null) {
-                    statement.setObject(index++, null);
-                } else {
-                    statement.setObject(index++, value.value());
-                }
-            }
-            statement.setLong(index, transactionId);
-            statement.executeUpdate();
-        }
-    }
-
-    private Long nullableLong(ResultSet rs, String column) throws SQLException {
-        long value = rs.getLong(column);
-        return rs.wasNull() ? null : value;
-    }
-
     private String firstNonNull(String... values) {
         for (String value : values) {
             if (value != null) {
@@ -113,8 +70,5 @@ final class RuleReapplyEngine {
             }
         }
         return null;
-    }
-
-    private record ColumnValue(String column, Object value) {
     }
 }
