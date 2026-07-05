@@ -26,21 +26,7 @@ final class TransactionMutations {
     }
 
     TransactionResponse create(Connection connection, JsonNode body) throws SQLException {
-        long accountId = TransactionJson.requiredLong(body, "account_id");
-        lookup.requireAccount(connection, accountId);
-
-        Long categoryId = TransactionJson.optionalLong(body, "category_id");
-        TransactionCategoryInfo category = categoryId == null ? null : lookup.categoryOr404(connection, categoryId);
-        String kind = TransactionJson.textOrDefault(body, "kind", "uncategorized");
-        if (category != null && !body.has("kind")) {
-            kind = category.kind();
-        }
-
-        String descriptionRaw = TransactionJson.requiredText(body, "description_raw");
-        String normalized = TransactionJson.textOrNull(body, "description_normalized");
-        if (normalized == null || normalized.isBlank()) {
-            normalized = TransactionJson.normalizeDescription(descriptionRaw);
-        }
+        TransactionCreatePayload payload = TransactionCreatePayload.from(connection, body, lookup);
 
         String sql = """
                 INSERT INTO transactions (
@@ -50,17 +36,7 @@ final class TransactionMutations {
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, NULL, ?, CURRENT_TIMESTAMP)
                 """;
         try (PreparedStatement statement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
-            statement.setLong(1, accountId);
-            statement.setString(2, TransactionJson.requiredDate(body, "date").toString());
-            statement.setString(3, TransactionJson.optionalDateString(body, "post_date"));
-            statement.setString(4, descriptionRaw);
-            statement.setString(5, normalized);
-            statement.setString(6, TransactionJson.blankToNull(TransactionJson.textOrNull(body, "merchant")));
-            statement.setBigDecimal(7, TransactionJson.requiredDecimal(body, "amount"));
-            TransactionSql.setNullableLong(statement, 8, categoryId);
-            statement.setString(9, kind);
-            statement.setBoolean(10, TransactionJson.booleanOrDefault(body, "is_excluded_from_totals", false));
-            statement.setString(11, TransactionJson.blankToNull(TransactionJson.textOrNull(body, "notes")));
+            payload.bind(statement);
             statement.setString(12, "{\"source\":\"manual\"}");
             statement.executeUpdate();
             try (ResultSet keys = statement.getGeneratedKeys()) {
