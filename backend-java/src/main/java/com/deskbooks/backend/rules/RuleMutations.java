@@ -15,6 +15,7 @@ final class RuleMutations {
     private final RuleReader reader;
     private final RuleLookup lookup = new RuleLookup();
     private final RulePatchBuilder patches = new RulePatchBuilder(lookup);
+    private final RuleDeletionMutations deletions = new RuleDeletionMutations(lookup);
 
     RuleMutations(RuleReader reader) {
         this.reader = reader;
@@ -59,34 +60,11 @@ final class RuleMutations {
     }
 
     Map<String, Integer> bulkDelete(Connection connection, RuleController.RuleBulkDelete body) throws SQLException {
-        List<Long> ids = body.ids() == null ? List.of() : body.ids().stream().distinct().sorted().toList();
-        if (ids.isEmpty()) {
-            return Map.of("deleted", 0);
-        }
-        try {
-            connection.setAutoCommit(false);
-            clearMatchedRuleIds(connection, ids);
-            int deleted = deleteRules(connection, ids);
-            connection.commit();
-            return Map.of("deleted", deleted);
-        } catch (SQLException exception) {
-            rollback(connection);
-            throw exception;
-        }
+        return deletions.bulkDelete(connection, body);
     }
 
     Map<String, String> delete(Connection connection, long ruleId) throws SQLException {
-        lookup.requireRule(connection, ruleId);
-        try {
-            connection.setAutoCommit(false);
-            clearMatchedRuleIds(connection, List.of(ruleId));
-            deleteRules(connection, List.of(ruleId));
-            connection.commit();
-            return Map.of("status", "deleted");
-        } catch (SQLException exception) {
-            rollback(connection);
-            throw exception;
-        }
+        return deletions.delete(connection, ruleId);
     }
 
     private void applyRuleUpdate(
@@ -105,30 +83,6 @@ final class RuleMutations {
             }
             statement.setLong(index, ruleId);
             statement.executeUpdate();
-        }
-    }
-
-    private void clearMatchedRuleIds(Connection connection, List<Long> ids) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement(
-                "UPDATE transactions SET matched_rule_id = NULL WHERE matched_rule_id IN (" + RuleSql.placeholders(ids.size()) + ")")) {
-            RuleSql.bindIds(statement, ids);
-            statement.executeUpdate();
-        }
-    }
-
-    private int deleteRules(Connection connection, List<Long> ids) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement(
-                "DELETE FROM rules WHERE id IN (" + RuleSql.placeholders(ids.size()) + ")")) {
-            RuleSql.bindIds(statement, ids);
-            return statement.executeUpdate();
-        }
-    }
-
-    private void rollback(Connection connection) {
-        try {
-            connection.rollback();
-        } catch (SQLException ignored) {
-            // Preserve the original failure.
         }
     }
 }
