@@ -13,10 +13,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.util.Comparator;
 import java.util.stream.Stream;
 
 import com.deskbooks.backend.DeskBooksApplication;
+import com.deskbooks.backend.db.SqliteConnectionProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -41,6 +44,9 @@ class TransactionControllerTest {
 
     @Autowired
     private WebApplicationContext context;
+
+    @Autowired
+    private SqliteConnectionProvider connections;
 
     private MockMvc mvc;
 
@@ -91,6 +97,40 @@ class TransactionControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id", equalTo(2)))
                 .andExpect(jsonPath("$.kind", equalTo("cc_payment")));
+
+        createTag("Shared", "#35a06b");
+
+        mvc.perform(patch("/api/transactions/bulk/update")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "ids": [1],
+                                  "add_tag_ids": [1]
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.updated", equalTo(1)));
+
+        mvc.perform(get("/api/transactions/1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.tags", hasSize(1)))
+                .andExpect(jsonPath("$.tags[0].name", equalTo("Shared")))
+                .andExpect(jsonPath("$.tags[0].color", equalTo("#35a06b")));
+
+        mvc.perform(patch("/api/transactions/bulk/update")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "ids": [1],
+                                  "remove_tag_ids": [1]
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.updated", equalTo(1)));
+
+        mvc.perform(get("/api/transactions/1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.tags", hasSize(0)));
 
         mvc.perform(get("/api/transactions"))
                 .andExpect(status().isOk())
@@ -230,6 +270,17 @@ class TransactionControllerTest {
                                 }
                                 """.formatted(name, kind)))
                 .andExpect(status().isOk());
+    }
+
+    private void createTag(String name, String color) throws Exception {
+        try (Connection connection = connections.open();
+                PreparedStatement statement = connection.prepareStatement("""
+                        INSERT INTO tags (name, color) VALUES (?, ?)
+                        """)) {
+            statement.setString(1, name);
+            statement.setString(2, color);
+            statement.executeUpdate();
+        }
     }
 
     private void cleanDataDir() throws IOException {
