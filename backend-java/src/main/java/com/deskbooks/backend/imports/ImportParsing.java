@@ -1,15 +1,7 @@
 package com.deskbooks.backend.imports;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDate;
-import java.time.OffsetDateTime;
-import java.time.format.DateTimeFormatter;
-import java.time.format.DateTimeFormatterBuilder;
-import java.time.format.DateTimeParseException;
-import java.time.format.SignStyle;
-import java.time.temporal.ChronoField;
-import java.util.List;
 import java.util.Locale;
 
 import com.deskbooks.backend.workbooks.WorkbookCells;
@@ -23,31 +15,15 @@ final class ImportParsing {
     }
 
     static BigDecimal money(BigDecimal value) {
-        return value == null
-                ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP)
-                : value.setScale(2, RoundingMode.HALF_UP);
+        return ImportAmountParsing.money(value);
     }
 
     static String moneyString(BigDecimal value) {
-        return money(value).toPlainString();
+        return ImportAmountParsing.moneyString(value);
     }
 
     static BigDecimal parseAmount(String value) {
-        if (value == null) {
-            return null;
-        }
-        String cleaned = value.trim().replace("$", "").replace(",", "");
-        if (cleaned.isEmpty()) {
-            return null;
-        }
-        if (cleaned.startsWith("(") && cleaned.endsWith(")")) {
-            cleaned = "-" + cleaned.substring(1, cleaned.length() - 1);
-        }
-        try {
-            return new BigDecimal(cleaned).setScale(2, RoundingMode.HALF_UP);
-        } catch (NumberFormatException exception) {
-            return null;
-        }
+        return ImportAmountParsing.parseAmount(value);
     }
 
     static BigDecimal cellAmount(Cell cell) {
@@ -55,31 +31,7 @@ final class ImportParsing {
     }
 
     static LocalDate parseDate(String value) {
-        if (value == null || value.isBlank()) {
-            return null;
-        }
-        String trimmed = value.trim().replace("\"", "");
-        try {
-            if (trimmed.contains("T")) {
-                return OffsetDateTime.parse(trimmed).toLocalDate();
-            }
-        } catch (DateTimeParseException ignored) {
-            // Try the local-date formats below.
-        }
-        List<DateTimeFormatter> formatters = List.of(
-                DateTimeFormatter.ISO_LOCAL_DATE,
-                new DateTimeFormatterBuilder()
-                        .appendPattern("M/d/")
-                        .appendValue(ChronoField.YEAR, 2, 4, SignStyle.NORMAL)
-                        .toFormatter(Locale.US));
-        for (DateTimeFormatter formatter : formatters) {
-            try {
-                return LocalDate.parse(trimmed, formatter);
-            } catch (DateTimeParseException ignored) {
-                // Continue.
-            }
-        }
-        return null;
+        return ImportDateParsing.parseDate(value);
     }
 
     static LocalDate cellDate(Cell cell) {
@@ -91,26 +43,10 @@ final class ImportParsing {
     }
 
     static String normalize(String raw) {
-        return raw == null ? "" : raw.replaceAll("\\s+", " ").trim();
+        return ImportTextParsing.normalize(raw);
     }
 
     static String guessMerchant(String raw) {
-        String value = normalize(raw)
-                .replaceFirst("(?i)^(DD \\*|TST\\*|SQ \\*|SP \\*|PY \\*|PAYPAL \\*|VENMO \\*)", "")
-                .replaceFirst("\\s+[A-Z]{2}\\s*$", "")
-                .replaceFirst("\\s+\\d{6,}\\s*$", "")
-                .replaceAll("\\s+#\\d+", "")
-                .trim();
-        if (value.isEmpty()) {
-            return value;
-        }
-        StringBuilder title = new StringBuilder();
-        for (String part : value.toLowerCase(Locale.ROOT).split(" ")) {
-            if (part.isEmpty()) {
-                continue;
-            }
-            title.append(Character.toUpperCase(part.charAt(0))).append(part.substring(1)).append(" ");
-        }
-        return title.toString().trim();
+        return ImportTextParsing.guessMerchant(raw);
     }
 }
