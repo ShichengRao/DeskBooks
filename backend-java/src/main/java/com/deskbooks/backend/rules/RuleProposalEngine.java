@@ -15,23 +15,25 @@ final class RuleProposalEngine {
     private final RuleEngine rules;
     private final RuleTransactionReader transactions = new RuleTransactionReader();
     private final RuleProposalRegistry proposals = new RuleProposalRegistry();
-    private final RuleProposalSummaries summaries = new RuleProposalSummaries();
     private final RuleProposalBacktester backtester;
+    private final RuleProposalBuilder builder;
 
     RuleProposalEngine(RuleMatcher matcher, RuleEngine rules) {
         this.matcher = matcher;
         this.rules = rules;
+        RuleProposalSummaries summaries = new RuleProposalSummaries();
         this.backtester = new RuleProposalBacktester(matcher, rules, transactions, summaries);
+        this.builder = new RuleProposalBuilder(matcher, rules, proposals, summaries);
     }
 
     List<RuleProposal> generate(Connection connection, int minSupport, int limit) throws SQLException {
-        ProposalContext context = proposalContext(connection, minSupport);
+        RuleProposalContext context = proposalContext(connection, minSupport);
         if (context.totalLabeled() == 0) {
             return List.of();
         }
         List<RuleProposal> proposals = new ArrayList<>();
         for (Map.Entry<String, List<RuleTransactionRow>> entry : groupProposalCandidates(context.labeledTxs()).entrySet()) {
-            RuleProposal proposal = buildRuleProposal(entry.getKey(), entry.getValue(), context);
+            RuleProposal proposal = builder.build(entry.getKey(), entry.getValue(), context);
             if (proposal != null) {
                 proposals.add(proposal);
             }
@@ -53,11 +55,11 @@ final class RuleProposalEngine {
         return proposals.reject(connection, request);
     }
 
-    private ProposalContext proposalContext(Connection connection, int minSupport) throws SQLException {
+    private RuleProposalContext proposalContext(Connection connection, int minSupport) throws SQLException {
         List<RuleTransactionRow> labeled = transactions.load(connection, true);
         List<RuleTransactionRow> all = transactions.load(connection, false);
         List<RuleRecord> activeRules = rules.loadActiveRules(connection);
-        return new ProposalContext(
+        return new RuleProposalContext(
                 labeled,
                 all,
                 labeled.size(),
@@ -77,84 +79,5 @@ final class RuleProposalEngine {
             }
         }
         return byKey;
-    }
-
-    private RuleProposal buildRuleProposal(String key, List<RuleTransactionRow> txs, ProposalContext context) {
-        RuleProposalOutcome outcome = summaries.majorityOutcome(txs, context.minSupport());
-        if (outcome == null) {
-            return null;
-        }
-        String pattern = matcher.proposalPattern(key);
-        if (!candidateIsAvailable(context, key, pattern, outcome.categoryId(), outcome.kind())) {
-            return null;
-        }
-        List<RuleTransactionRow> matches = context.labeledTxs().stream()
-                .filter(tx -> matcher.proposalMatches(
-                        pattern, tx.descriptionNormalized(), tx.descriptionRaw(), tx.merchant()))
-                .toList();
-        if (matches.isEmpty()) {
-            return null;
-        }
-        MatchCounts allAndAdded = allAndAddedMatches(pattern, context);
-        List<RuleTransactionRow> correct = summaries.correctMatches(matches, outcome.categoryId(), outcome.kind());
-        List<RuleTransactionRow> incorrect = summaries.incorrectMatches(matches, outcome.categoryId(), outcome.kind());
-        double accuracy = matches.isEmpty() ? 0.0 : ((double) correct.size()) / matches.size();
-        if (accuracy < MINIMUM_PROPOSAL_ACCURACY) {
-            return null;
-        }
-        return new RuleProposal(
-                key,
-                key,
-                pattern,
-                null,
-                outcome.categoryId(),
-                outcome.kind(),
-                key.length() > 255 ? key.substring(0, 255) : key,
-                outcome.support(),
-                matches.size(),
-                allAndAdded.allMatches(),
-                allAndAdded.addedMatches(),
-                correct.size(),
-                incorrect.size(),
-                accuracy,
-                ((double) matches.size()) / context.totalLabeled() * 100.0,
-                context.totalTransactions() == 0 ? 0.0 : ((double) allAndAdded.allMatches()) / context.totalTransactions() * 100.0,
-                context.totalTransactions() == 0 ? 0.0 : ((double) allAndAdded.addedMatches()) / context.totalTransactions() * 100.0,
-                summaries.breakdown(matches),
-                summaries.examples(correct, incorrect, outcome.categoryId(), outcome.kind()));
-    }
-
-    private boolean candidateIsAvailable(ProposalContext context, String key, String pattern, Long categoryId, String kind) {
-        return proposals.candidateIsAvailable(context.activeSignatures(), context.rejectedSignatures(), key, pattern, categoryId, kind);
-    }
-
-    private MatchCounts allAndAddedMatches(String pattern, ProposalContext context) {
-        int allMatches = 0;
-        int addedMatches = 0;
-        for (RuleTransactionRow tx : context.allTxs()) {
-            if (!matcher.proposalMatches(pattern, tx.descriptionNormalized(), tx.descriptionRaw(), tx.merchant())) {
-                continue;
-            }
-            allMatches++;
-            RuleEval eval = rules.evaluate(context.activeRules(), tx.accountId(), tx.description(), tx.amount());
-            if (!eval.matched()) {
-                addedMatches++;
-            }
-        }
-        return new MatchCounts(allMatches, addedMatches);
-    }
-
-    private record ProposalContext(
-            List<RuleTransactionRow> labeledTxs,
-            List<RuleTransactionRow> allTxs,
-            int totalLabeled,
-            int totalTransactions,
-            List<RuleProposalSignature> activeSignatures,
-            List<RuleRecord> activeRules,
-            List<String> rejectedSignatures,
-            int minSupport) {
-    }
-
-    private record MatchCounts(int allMatches, int addedMatches) {
     }
 }
