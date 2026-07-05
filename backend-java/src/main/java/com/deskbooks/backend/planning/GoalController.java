@@ -1,18 +1,14 @@
 package com.deskbooks.backend.planning;
 
 import java.math.BigDecimal;
-import java.sql.Connection;
-import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
 import com.deskbooks.backend.db.SqliteConnectionProvider;
-import com.deskbooks.backend.foundation.ApiException;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
-import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -27,79 +23,47 @@ import tools.jackson.databind.JsonNode;
 @RestController
 @RequestMapping("/api/goals")
 class GoalController {
-    private final SqliteConnectionProvider connections;
+    private final PlanningEndpointRunner endpoint;
     private final GoalStore goals = new GoalStore();
     private final GoalProgressCalculator progressCalculator = new GoalProgressCalculator(goals);
 
     GoalController(SqliteConnectionProvider connections) {
-        this.connections = connections;
+        endpoint = new PlanningEndpointRunner(connections);
     }
 
     @GetMapping("")
     List<GoalResponse> listGoals(@RequestParam(name = "include_archived", defaultValue = "false") boolean includeArchived) {
-        try (Connection connection = connections.open()) {
-            return goals.list(connection, includeArchived);
-        } catch (SQLException exception) {
-            throw databaseError(exception);
-        }
+        return endpoint.run(connection -> goals.list(connection, includeArchived));
     }
 
     @PostMapping("")
     GoalResponse createGoal(@Valid @RequestBody GoalRequest body) {
-        try (Connection connection = connections.open()) {
-            return goals.create(connection, body);
-        } catch (SQLException exception) {
-            throw databaseError(exception);
-        }
+        return endpoint.run(connection -> goals.create(connection, body));
     }
 
     @GetMapping("/{goalId}")
     GoalResponse getGoal(@PathVariable long goalId) {
-        try (Connection connection = connections.open()) {
-            return goals.get(connection, goalId);
-        } catch (SQLException exception) {
-            throw databaseError(exception);
-        }
+        return endpoint.run(connection -> goals.get(connection, goalId));
     }
 
     @PatchMapping("/{goalId}")
     GoalResponse updateGoal(@PathVariable long goalId, @RequestBody JsonNode body) {
-        try (Connection connection = connections.open()) {
-            return goals.update(connection, goalId, body);
-        } catch (SQLException exception) {
-            throw databaseError(exception);
-        }
+        return endpoint.run(connection -> goals.update(connection, goalId, body));
     }
 
     @DeleteMapping("/{goalId}")
     Map<String, String> archiveGoal(@PathVariable long goalId) {
-        try (Connection connection = connections.open()) {
-            return goals.archive(connection, goalId);
-        } catch (SQLException exception) {
-            throw databaseError(exception);
-        }
+        return endpoint.run(connection -> goals.archive(connection, goalId));
     }
 
     @GetMapping("/{goalId}/revisions")
     List<GoalRevisionResponse> revisions(@PathVariable long goalId) {
-        try (Connection connection = connections.open()) {
-            return goals.revisions(connection, goalId);
-        } catch (SQLException exception) {
-            throw databaseError(exception);
-        }
+        return endpoint.run(connection -> goals.revisions(connection, goalId));
     }
 
     @GetMapping("/{goalId}/progress")
     GoalProgressResponse progress(@PathVariable long goalId) {
-        try (Connection connection = connections.open()) {
-            return progressCalculator.progress(connection, goalId);
-        } catch (SQLException exception) {
-            throw databaseError(exception);
-        }
-    }
-
-    private ApiException databaseError(SQLException exception) {
-        return new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, exception.getMessage());
+        return endpoint.run(connection -> progressCalculator.progress(connection, goalId));
     }
 
     record GoalRequest(
