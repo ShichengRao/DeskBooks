@@ -1,10 +1,7 @@
 package com.deskbooks.backend.networth;
 
 import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 
@@ -23,7 +20,7 @@ final class NetWorthSnapshotMutations {
     NetWorthSnapshotResponse create(
             Connection connection,
             NetWorthSnapshotRequest body) throws SQLException {
-        if (snapshotDateExists(connection, body.snapshotDate(), null)) {
+        if (NetWorthSnapshotStore.dateExists(connection, body.snapshotDate(), null)) {
             throw new ApiException(HttpStatus.CONFLICT, "snapshot for this date already exists");
         }
 
@@ -43,7 +40,7 @@ final class NetWorthSnapshotMutations {
             throws SQLException {
         requireSnapshot(connection, snapshotId);
         NetWorthSnapshotPatch patch = balances.patchFromJson(body);
-        if (patch.hasSnapshotDate() && snapshotDateExists(connection, patch.snapshotDate(), snapshotId)) {
+        if (patch.hasSnapshotDate() && NetWorthSnapshotStore.dateExists(connection, patch.snapshotDate(), snapshotId)) {
             throw new ApiException(HttpStatus.CONFLICT, "snapshot for this date already exists");
         }
 
@@ -60,68 +57,25 @@ final class NetWorthSnapshotMutations {
 
     Map<String, String> delete(Connection connection, long snapshotId) throws SQLException {
         requireSnapshot(connection, snapshotId);
-        try (PreparedStatement statement = connection.prepareStatement("DELETE FROM net_worth_snapshots WHERE id = ?")) {
-            statement.setLong(1, snapshotId);
-            statement.executeUpdate();
-        }
+        NetWorthSnapshotStore.delete(connection, snapshotId);
         return Map.of("status", "deleted");
     }
 
     private void applyPatch(Connection connection, long snapshotId, NetWorthSnapshotPatch patch) throws SQLException {
         if (patch.hasSnapshotDate()) {
-            updateSnapshotDate(connection, snapshotId, patch.snapshotDate());
+            NetWorthSnapshotStore.updateDate(connection, snapshotId, patch.snapshotDate());
         }
         if (patch.hasNotes()) {
-            updateSnapshotNotes(connection, snapshotId, patch.notes());
+            NetWorthSnapshotStore.updateNotes(connection, snapshotId, patch.notes());
         }
         if (patch.hasBalances()) {
             balances.replace(connection, snapshotId, patch.balances());
         }
     }
 
-    private void updateSnapshotDate(Connection connection, long snapshotId, LocalDate snapshotDate) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement("""
-                UPDATE net_worth_snapshots SET snapshot_date = ? WHERE id = ?
-                """)) {
-            statement.setString(1, snapshotDate.toString());
-            statement.setLong(2, snapshotId);
-            statement.executeUpdate();
-        }
-    }
-
-    private void updateSnapshotNotes(Connection connection, long snapshotId, String notes) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement("""
-                UPDATE net_worth_snapshots SET notes = ? WHERE id = ?
-                """)) {
-            statement.setString(1, notes);
-            statement.setLong(2, snapshotId);
-            statement.executeUpdate();
-        }
-    }
-
-    private boolean snapshotDateExists(Connection connection, LocalDate snapshotDate, Long excludedSnapshotId)
-            throws SQLException {
-        String excludedClause = excludedSnapshotId == null ? "" : " AND id <> ?";
-        try (PreparedStatement statement = connection.prepareStatement(
-                "SELECT 1 FROM net_worth_snapshots WHERE snapshot_date = ?" + excludedClause)) {
-            statement.setString(1, snapshotDate.toString());
-            if (excludedSnapshotId != null) {
-                statement.setLong(2, excludedSnapshotId);
-            }
-            try (ResultSet rs = statement.executeQuery()) {
-                return rs.next();
-            }
-        }
-    }
-
     private void requireSnapshot(Connection connection, long snapshotId) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement("SELECT 1 FROM net_worth_snapshots WHERE id = ?")) {
-            statement.setLong(1, snapshotId);
-            try (ResultSet rs = statement.executeQuery()) {
-                if (!rs.next()) {
-                    throw new ApiException(HttpStatus.NOT_FOUND, "snapshot not found");
-                }
-            }
+        if (!NetWorthSnapshotStore.exists(connection, snapshotId)) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "snapshot not found");
         }
     }
 
