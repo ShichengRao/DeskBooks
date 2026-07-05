@@ -1,6 +1,5 @@
 package com.deskbooks.backend.networth;
 
-import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.LocalDate;
@@ -10,7 +9,6 @@ import java.util.Map;
 import com.deskbooks.backend.db.SqliteConnectionProvider;
 import com.deskbooks.backend.foundation.ApiException;
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotNull;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -99,50 +97,5 @@ class NetWorthController {
 
     private ApiException databaseError(SQLException exception) {
         return new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, exception.getMessage());
-    }
-
-    record NetWorthSnapshotRequest(
-            @NotNull LocalDate snapshotDate,
-            String notes,
-            List<@Valid AccountBalanceRequest> balances) {
-    }
-
-    record AccountBalanceRequest(
-            @NotNull Long accountId,
-            BigDecimal balance,
-            String notes) {
-    }
-
-    record NetWorthWorkbookImportRequest(
-            @NotNull String path,
-            Map<String, String> accountMap) {
-    }
-
-    record NetWorthWorkbookImportResult(
-            int imported,
-            int skippedExisting,
-            List<String> missingAccounts) {
-    }
-
-    record NetWorthSnapshotResponse(
-            long id,
-            LocalDate snapshotDate,
-            String notes,
-            List<AccountBalanceResponse> balances) {
-    }
-
-    record AccountBalanceResponse(
-            long accountId,
-            String balance,
-            String notes) {
-    }
-
-    record NetWorthSeriesPointResponse(
-            LocalDate snapshotDate,
-            String total,
-            Map<String, String> byCategory,
-            Map<String, String> byAccount,
-            String taxable,
-            String taxAdvantaged) {
     }
 }

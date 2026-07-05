@@ -20,9 +20,9 @@ final class NetWorthSnapshotMutations {
         this.reader = reader;
     }
 
-    NetWorthController.NetWorthSnapshotResponse create(
+    NetWorthSnapshotResponse create(
             Connection connection,
-            NetWorthController.NetWorthSnapshotRequest body) throws SQLException {
+            NetWorthSnapshotRequest body) throws SQLException {
         if (snapshotDateExists(connection, body.snapshotDate(), null)) {
             throw new ApiException(HttpStatus.CONFLICT, "snapshot for this date already exists");
         }
@@ -39,7 +39,7 @@ final class NetWorthSnapshotMutations {
         }
     }
 
-    NetWorthController.NetWorthSnapshotResponse update(Connection connection, long snapshotId, JsonNode body)
+    NetWorthSnapshotResponse update(Connection connection, long snapshotId, JsonNode body)
             throws SQLException {
         requireSnapshot(connection, snapshotId);
         NetWorthSnapshotPatch patch = balances.patchFromJson(body);

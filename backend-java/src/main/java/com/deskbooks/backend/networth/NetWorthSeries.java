@@ -14,12 +14,12 @@ import java.util.Map;
 final class NetWorthSeries {
     private static final String TAX_ADVANTAGED = "tax_advantaged";
 
-    List<NetWorthController.NetWorthSeriesPointResponse> list(
+    List<NetWorthSeriesPointResponse> list(
             Connection connection,
             LocalDate start,
             LocalDate end) throws SQLException {
         NetWorthSeriesQuery query = query(start, end);
-        List<NetWorthController.NetWorthSeriesPointResponse> points = new ArrayList<>();
+        List<NetWorthSeriesPointResponse> points = new ArrayList<>();
         try (PreparedStatement statement = connection.prepareStatement(query.sql())) {
             for (int i = 0; i < query.params().size(); i++) {
                 statement.setString(i + 1, query.params().get(i).toString());
@@ -56,12 +56,12 @@ final class NetWorthSeries {
         return new NetWorthSeriesQuery(sql.toString(), params);
     }
 
-    private NetWorthController.NetWorthSeriesPointResponse point(
+    private NetWorthSeriesPointResponse point(
             Connection connection,
             long snapshotId,
             LocalDate snapshotDate) throws SQLException {
         NetWorthSeriesTotals totals = totals(connection, snapshotId);
-        return new NetWorthController.NetWorthSeriesPointResponse(
+        return new NetWorthSeriesPointResponse(
                 snapshotDate,
                 NetWorthMoney.format(totals.total()),
                 NetWorthMoney.stringify(totals.byCategory()),

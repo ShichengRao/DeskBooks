@@ -27,9 +27,9 @@ final class NetWorthWorkbookImporter {
     private NetWorthWorkbookImporter() {
     }
 
-    static NetWorthController.NetWorthWorkbookImportResult importWorkbook(
+    static NetWorthWorkbookImportResult importWorkbook(
             Connection connection,
-            NetWorthController.NetWorthWorkbookImportRequest body) throws IOException, SQLException {
+            NetWorthWorkbookImportRequest body) throws IOException, SQLException {
         Path path = expandUser(body.path()).toAbsolutePath().normalize();
         if (!Files.isRegularFile(path)) {
             throw new ApiException(HttpStatus.NOT_FOUND, "file not found");
@@ -47,13 +47,13 @@ final class NetWorthWorkbookImporter {
                     body.accountMap(),
                     accountIdsByName(connection));
             if (!mapping.missingAccounts().isEmpty()) {
-                return new NetWorthController.NetWorthWorkbookImportResult(0, 0, mapping.missingAccounts());
+                return new NetWorthWorkbookImportResult(0, 0, mapping.missingAccounts());
             }
             return importMappedSnapshots(connection, path, datesSheet, mapping);
         }
     }
 
-    private static NetWorthController.NetWorthWorkbookImportResult importMappedSnapshots(
+    private static NetWorthWorkbookImportResult importMappedSnapshots(
             Connection connection,
             Path path,
             Sheet datesSheet,
@@ -83,7 +83,7 @@ final class NetWorthWorkbookImporter {
                 imported++;
             }
             connection.commit();
-            return new NetWorthController.NetWorthWorkbookImportResult(imported, skipped, List.of());
+            return new NetWorthWorkbookImportResult(imported, skipped, List.of());
         } catch (SQLException | RuntimeException exception) {
             rollback(connection);
             throw exception;

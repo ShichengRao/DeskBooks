@@ -18,12 +18,12 @@ final class NetWorthBalanceStore {
     void upsert(
             Connection connection,
             long snapshotId,
-            List<NetWorthController.AccountBalanceRequest> balances) throws SQLException {
+            List<AccountBalanceRequest> balances) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("""
                 INSERT INTO account_balances (snapshot_id, account_id, balance, notes)
                 VALUES (?, ?, ?, ?)
                 """)) {
-            for (NetWorthController.AccountBalanceRequest balance : balances) {
+            for (AccountBalanceRequest balance : balances) {
                 statement.setLong(1, snapshotId);
                 statement.setLong(2, balance.accountId());
                 statement.setBigDecimal(3, balance.balance());
@@ -37,7 +37,7 @@ final class NetWorthBalanceStore {
     void replace(
             Connection connection,
             long snapshotId,
-            List<NetWorthController.AccountBalanceRequest> balances) throws SQLException {
+            List<AccountBalanceRequest> balances) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("""
                 DELETE FROM account_balances WHERE snapshot_id = ?
                 """)) {
@@ -60,8 +60,8 @@ final class NetWorthBalanceStore {
                 hasBalances ? balancesFromJson(body.get("balances")) : List.of());
     }
 
-    private List<NetWorthController.AccountBalanceRequest> balancesFromJson(JsonNode balancesNode) {
-        List<NetWorthController.AccountBalanceRequest> balances = new ArrayList<>();
+    private List<AccountBalanceRequest> balancesFromJson(JsonNode balancesNode) {
+        List<AccountBalanceRequest> balances = new ArrayList<>();
         Set<Long> seenAccountIds = new LinkedHashSet<>();
         for (JsonNode node : balancesNode) {
             long accountId = node.get("account_id").asLong();
@@ -73,12 +73,12 @@ final class NetWorthBalanceStore {
         return balances;
     }
 
-    private NetWorthController.AccountBalanceRequest balanceFromJson(JsonNode node, long accountId) {
+    private AccountBalanceRequest balanceFromJson(JsonNode node, long accountId) {
         JsonNode balanceNode = node.get("balance");
         BigDecimal balance = balanceNode == null || balanceNode.isNull() ? null : new BigDecimal(balanceNode.asText());
         JsonNode notesNode = node.get("notes");
         String notes = notesNode == null || notesNode.isNull() ? null : notesNode.asText();
-        return new NetWorthController.AccountBalanceRequest(accountId, balance, notes);
+        return new AccountBalanceRequest(accountId, balance, notes);
     }
 
     private boolean hasNonNull(JsonNode body, String field) {
@@ -92,5 +92,5 @@ record NetWorthSnapshotPatch(
         boolean hasNotes,
         String notes,
         boolean hasBalances,
-        List<NetWorthController.AccountBalanceRequest> balances) {
+        List<AccountBalanceRequest> balances) {
 }
