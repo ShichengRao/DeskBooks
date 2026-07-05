@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -13,6 +13,7 @@ const javaDir = path.join(root, "backend-java");
 const verbose = process.env.PARITY_VERBOSE === "1";
 const waitTimeoutMs = Number(process.env.PARITY_WAIT_TIMEOUT_MS ?? "90000");
 const javaWaitTimeoutMs = Number(process.env.PARITY_JAVA_WAIT_TIMEOUT_MS ?? process.env.PARITY_WAIT_TIMEOUT_MS ?? "240000");
+const javaBuildRetries = Number(process.env.PARITY_JAVA_BUILD_RETRIES ?? "3");
 
 const running = [];
 let tempRoot;
@@ -67,6 +68,37 @@ async function runCommand(name, command, args, options) {
       }
     });
   });
+}
+
+async function runCommandWithRetries(name, command, args, options, attempts) {
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      if (attempt > 1) {
+        log(`${name} retry ${attempt}/${attempts}`);
+      }
+      await runCommand(name, command, args, options);
+      return;
+    } catch (error) {
+      lastError = error;
+      if (attempt < attempts) {
+        log(`${name} failed; retrying in ${attempt * 5}s`);
+        await new Promise((resolve) => setTimeout(resolve, attempt * 5000));
+      }
+    }
+  }
+  throw lastError;
+}
+
+async function javaBootJarPath() {
+  const libsDir = path.join(javaDir, "build", "libs");
+  const jars = (await readdir(libsDir))
+    .filter((name) => name.endsWith(".jar") && !name.endsWith("-plain.jar"))
+    .sort();
+  if (jars.length === 0) {
+    throw new Error(`no boot jar found in ${libsDir}`);
+  }
+  return path.join(libsDir, jars[0]);
 }
 
 async function freePort() {
@@ -195,10 +227,12 @@ async function startJava(port, dataDir) {
   if (process.env.JAVA_GRADLE_USER_HOME) {
     env.GRADLE_USER_HOME = process.env.JAVA_GRADLE_USER_HOME;
   }
-  const launched = spawnLogged("java", process.env.JAVA_GRADLE ?? "gradle", ["bootRun"], {
+  await runCommandWithRetries("java-build", process.env.JAVA_GRADLE ?? "gradle", ["bootJar"], {
     cwd: javaDir,
     env,
-  });
+  }, javaBuildRetries);
+  const jarPath = await javaBootJarPath();
+  const launched = spawnLogged("java", "java", ["-jar", jarPath], { cwd: javaDir, env });
   const server = { name: "java", baseUrl: `http://127.0.0.1:${port}`, ...launched };
   running.push(server);
   await waitForHealth(server, javaWaitTimeoutMs);

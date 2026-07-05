@@ -73,6 +73,7 @@ jobs:
   java-parity-smoke:
     name: Java parity smoke
     runs-on: ubuntu-latest
+    needs: java-backend-tests
 
     steps:
       - uses: actions/checkout@v4
