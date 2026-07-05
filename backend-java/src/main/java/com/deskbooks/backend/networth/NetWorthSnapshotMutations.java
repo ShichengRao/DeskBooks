@@ -4,7 +4,6 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Statement;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -30,7 +29,7 @@ final class NetWorthSnapshotMutations {
 
         try {
             connection.setAutoCommit(false);
-            long snapshotId = insertSnapshot(connection, body.snapshotDate(), body.notes());
+            long snapshotId = NetWorthSnapshotStore.insert(connection, body.snapshotDate(), body.notes());
             balances.upsert(connection, snapshotId, body.balances() == null ? List.of() : body.balances());
             connection.commit();
             return reader.get(connection, snapshotId);
@@ -77,21 +76,6 @@ final class NetWorthSnapshotMutations {
         }
         if (patch.hasBalances()) {
             balances.replace(connection, snapshotId, patch.balances());
-        }
-    }
-
-    private long insertSnapshot(Connection connection, LocalDate snapshotDate, String notes) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement("""
-                INSERT INTO net_worth_snapshots (snapshot_date, notes)
-                VALUES (?, ?)
-                """, Statement.RETURN_GENERATED_KEYS)) {
-            statement.setString(1, snapshotDate.toString());
-            statement.setString(2, notes);
-            statement.executeUpdate();
-            try (ResultSet keys = statement.getGeneratedKeys()) {
-                keys.next();
-                return keys.getLong(1);
-            }
         }
     }
 

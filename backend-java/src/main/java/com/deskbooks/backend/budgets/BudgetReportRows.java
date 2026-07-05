@@ -5,13 +5,14 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 final class BudgetReportRows {
     private final BudgetTargets targets;
+    private final BudgetReportRowAmounts amounts;
 
     BudgetReportRows(BudgetTargets targets) {
         this.targets = targets;
+        this.amounts = new BudgetReportRowAmounts(targets);
     }
 
     List<BudgetReportRowResponse> rows(
@@ -46,17 +47,17 @@ final class BudgetReportRows {
             Map<MonthCategoryKey, BigDecimal> rollupCache,
             LocalDate focusMonth,
             List<LocalDate> rowMonths) {
-        BudgetRowActual actual = actual(category, context, spending, rowMonths);
+        BudgetRowActual actual = amounts.actual(category, context, spending, rowMonths);
         BudgetRowBudget budget = budget(category, defaultByCategory, overrideByMonthCategory, focusMonth);
-        BigDecimal target = targetForRow(
+        BudgetRowTarget targetInfo = amounts.targetInfo(
                 category,
                 context,
                 defaultByCategory,
                 overrideByMonthCategory,
                 rollupCache,
-                rowMonths);
+                rowMonths,
+                actual.amount());
         BudgetRowCategory categoryInfo = categoryInfo(category, context);
-        BudgetRowTarget targetInfo = targetInfo(target, actual.amount());
         return new BudgetReportRowResponse(
                 category.id(),
                 category.name(),
@@ -102,54 +103,6 @@ final class BudgetReportRows {
                 !context.childrenByParent().getOrDefault(category.id(), List.of()).isEmpty());
     }
 
-    private BudgetRowTarget targetInfo(BigDecimal target, BigDecimal actual) {
-        return new BudgetRowTarget(
-                BudgetMoney.formatOrNull(target),
-                target == null ? null : BudgetMoney.format(target.subtract(actual)));
-    }
-
-    private BudgetRowActual actual(
-            CategoryRow category,
-            CategoryContext context,
-            SpendingContext spending,
-            List<LocalDate> rowMonths) {
-        Set<Long> ids = targets.descendants(context, category.id());
-        BigDecimal actual = BigDecimal.ZERO;
-        int transactionCount = 0;
-        for (LocalDate rowMonth : rowMonths) {
-            for (Long id : ids) {
-                MonthCategoryKey key = new MonthCategoryKey(rowMonth, id);
-                actual = actual.add(spending.actualByMonthExact().getOrDefault(key, BigDecimal.ZERO));
-                transactionCount += spending.countByMonthExact().getOrDefault(key, 0);
-            }
-        }
-        return new BudgetRowActual(actual, transactionCount);
-    }
-
-    private BigDecimal targetForRow(
-            CategoryRow category,
-            CategoryContext context,
-            Map<Long, BudgetDefault> defaultByCategory,
-            Map<MonthCategoryKey, BudgetOverride> overrideByMonthCategory,
-            Map<MonthCategoryKey, BigDecimal> rollupCache,
-            List<LocalDate> rowMonths) {
-        List<BigDecimal> rowTargets = new ArrayList<>();
-        for (LocalDate rowMonth : rowMonths) {
-            BigDecimal target = targets.rollupTargetFor(
-                    rowMonth,
-                    category.id(),
-                    context,
-                    defaultByCategory,
-                    overrideByMonthCategory,
-                    rollupCache);
-            if (target != null) {
-                rowTargets.add(target);
-            }
-        }
-        return rowTargets.isEmpty()
-                ? null
-                : rowTargets.stream().reduce(BigDecimal.ZERO, BigDecimal::add);
-    }
 }
 
 record BudgetRowActual(BigDecimal amount, int transactionCount) {

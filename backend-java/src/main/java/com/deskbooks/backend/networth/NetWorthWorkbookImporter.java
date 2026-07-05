@@ -9,7 +9,6 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Statement;
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -75,7 +74,7 @@ final class NetWorthWorkbookImporter {
                     skipped++;
                     continue;
                 }
-                long snapshotId = insertSnapshot(
+                long snapshotId = NetWorthSnapshotStore.insert(
                         connection,
                         snapshotDate,
                         "Imported from %s".formatted(path.getFileName().toString()));
@@ -128,21 +127,6 @@ final class NetWorthWorkbookImporter {
             }
         }
         return out;
-    }
-
-    private static long insertSnapshot(Connection connection, LocalDate snapshotDate, String notes) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement("""
-                INSERT INTO net_worth_snapshots (snapshot_date, notes)
-                VALUES (?, ?)
-                """, Statement.RETURN_GENERATED_KEYS)) {
-            statement.setString(1, snapshotDate.toString());
-            statement.setString(2, notes);
-            statement.executeUpdate();
-            try (ResultSet keys = statement.getGeneratedKeys()) {
-                keys.next();
-                return keys.getLong(1);
-            }
-        }
     }
 
     private static void insertBalance(Connection connection, long snapshotId, long accountId, BigDecimal balance) throws SQLException {
