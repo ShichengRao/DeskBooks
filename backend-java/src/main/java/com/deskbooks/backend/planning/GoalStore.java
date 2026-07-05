@@ -8,7 +8,6 @@ import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.StringJoiner;
 
 import com.deskbooks.backend.foundation.ApiException;
 import org.springframework.http.HttpStatus;
@@ -19,6 +18,7 @@ final class GoalStore {
     private static final String ARCHIVED = "archived";
     private static final String STATUS = "status";
     private final GoalRevisions revisionStore = new GoalRevisions();
+    private final GoalPatchApplier patches = new GoalPatchApplier();
 
     List<GoalController.GoalResponse> list(Connection connection, boolean includeArchived) throws SQLException {
         String sql = """
@@ -75,8 +75,7 @@ final class GoalStore {
 
     GoalController.GoalResponse update(Connection connection, long goalId, JsonNode body) throws SQLException {
         GoalController.GoalResponse before = get(connection, goalId);
-        List<PatchValue> values = patchValues(body);
-        List<String> changed = applyUpdate(connection, goalId, values);
+        List<String> changed = patches.apply(connection, goalId, body);
         GoalController.GoalResponse after = get(connection, goalId);
         if (!changed.isEmpty() && !after.equals(before)) {
             revisionStore.insert(connection, after, revisionStore.updateSummary(body, changed));
@@ -98,45 +97,6 @@ final class GoalStore {
     List<GoalController.GoalRevisionResponse> revisions(Connection connection, long goalId) throws SQLException {
         get(connection, goalId);
         return revisionStore.list(connection, goalId);
-    }
-
-    private List<String> applyUpdate(Connection connection, long goalId, List<PatchValue> values) throws SQLException {
-        List<String> changed = new ArrayList<>();
-        if (values.isEmpty()) {
-            return changed;
-        }
-        StringJoiner assignments = new StringJoiner(", ");
-        for (PatchValue value : values) {
-            assignments.add(value.column() + " = ?");
-            changed.add(value.column());
-        }
-        assignments.add("updated_at = CURRENT_TIMESTAMP");
-        try (PreparedStatement statement = connection.prepareStatement(
-                "UPDATE goals SET " + assignments + " WHERE id = ?")) {
-            int index = 1;
-            for (PatchValue value : values) {
-                statement.setObject(index++, value.value());
-            }
-            statement.setLong(index, goalId);
-            statement.executeUpdate();
-        }
-        return changed;
-    }
-
-    private List<PatchValue> patchValues(JsonNode body) {
-        List<PatchValue> values = new ArrayList<>();
-        PlanningPatchValues.addText(values, body, "title");
-        PlanningPatchValues.addBigDecimal(values, body, "target_amount");
-        PlanningPatchValues.addDate(values, body, "target_date");
-        PlanningPatchValues.addText(values, body, "kind");
-        PlanningPatchValues.addText(values, body, STATUS);
-        if (body.has(LINKED_ACCOUNT_IDS)) {
-            values.add(new PatchValue(LINKED_ACCOUNT_IDS, PlanningJson.longListJson(body.get(LINKED_ACCOUNT_IDS))));
-        }
-        PlanningPatchValues.addText(values, body, "notes_markdown");
-        PlanningPatchValues.addInteger(values, body, "sort_order");
-        PlanningPatchValues.addBoolean(values, body, ARCHIVED);
-        return values;
     }
 
     private GoalController.GoalResponse goalFrom(ResultSet rs) throws SQLException {
