@@ -3,7 +3,7 @@ API_PORT ?= $(or $(BACKEND_PORT),$(if $(filter 5173,$(PORT)),8765,8766))
 JAVA_GRADLE ?= gradle
 JAVA_GRADLE_ENV = $(if $(JAVA_GRADLE_USER_HOME),GRADLE_USER_HOME="$(JAVA_GRADLE_USER_HOME)")
 
-.PHONY: dev dev-java dev-python backend backend-java backend-python frontend open bootstrap install test test-java java-metrics parity-java typecheck build clean reset-db
+.PHONY: dev dev-java dev-python backend backend-java backend-python frontend open bootstrap install install-automation fetch-preview fetch-apply schedule-fetch-preview schedule-fetch-apply unschedule-fetch test test-java java-metrics parity-java typecheck build clean reset-db
 
 dev:
 	./run.sh --port "$(PORT)" --api-port "$(API_PORT)" $(if $(DATA_DIR),--data-dir "$(DATA_DIR)")
@@ -17,6 +17,24 @@ dev-python:
 install:
 	cd backend && uv venv --python 3.11 .venv && uv pip install -e .
 	cd frontend && npm install
+
+install-automation:
+	cd automation && npm install && npx playwright install chromium
+
+fetch-preview:
+	automation/bin/run-scheduled-fetch.sh
+
+fetch-apply:
+	DESKBOOKS_IMPORT_APPLY=1 automation/bin/run-scheduled-fetch.sh
+
+schedule-fetch-preview:
+	automation/bin/install-launchd.sh
+
+schedule-fetch-apply:
+	DESKBOOKS_IMPORT_APPLY=1 automation/bin/install-launchd.sh
+
+unschedule-fetch:
+	automation/bin/uninstall-launchd.sh
 
 bootstrap:
 	cd backend && uv run python -m app.bootstrap
