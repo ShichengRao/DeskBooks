@@ -31,6 +31,10 @@ jobs:
         run: uv run pytest
         working-directory: backend
 
+      - name: Verify frozen Python API contract
+        run: uv run python ../scripts/export-python-openapi.py --check
+        working-directory: backend
+
   frontend-tests:
     name: Frontend tests
     runs-on: ubuntu-latest

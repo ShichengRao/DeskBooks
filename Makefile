@@ -3,7 +3,7 @@ API_PORT ?= $(or $(BACKEND_PORT),$(if $(filter 5173,$(PORT)),8765,8766))
 JAVA_GRADLE ?= gradle
 JAVA_GRADLE_ENV = $(if $(JAVA_GRADLE_USER_HOME),GRADLE_USER_HOME="$(JAVA_GRADLE_USER_HOME)")
 
-.PHONY: dev dev-java dev-python backend backend-java backend-python frontend open bootstrap install install-automation fetch-preview fetch-apply automation-import-java automation-import-python schedule-fetch-preview schedule-fetch-apply unschedule-fetch test test-java java-metrics parity-java typecheck build clean reset-db
+.PHONY: dev dev-java dev-python backend backend-java backend-python frontend open bootstrap install install-automation fetch-preview fetch-apply automation-import-java automation-import-python schedule-fetch-preview schedule-fetch-apply unschedule-fetch test test-java java-metrics parity-java api-contract-python api-contract-check typecheck build clean reset-db
 
 dev:
 	./run.sh --port "$(PORT)" --api-port "$(API_PORT)" $(if $(DATA_DIR),--data-dir "$(DATA_DIR)")
@@ -68,6 +68,12 @@ java-metrics:
 
 parity-java:
 	$(JAVA_GRADLE_ENV) node scripts/parity-smoke.mjs
+
+api-contract-python:
+	cd backend && uv run python ../scripts/export-python-openapi.py
+
+api-contract-check:
+	cd backend && uv run python ../scripts/export-python-openapi.py --check
 
 open:
 	open "http://localhost:$(PORT)"

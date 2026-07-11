@@ -41,12 +41,15 @@ Java verification commands:
 ```bash
 make test-java
 make parity-java
+make api-contract-check
 ```
 
-It starts fresh Python and Java backends on temporary ports/data directories,
-then compares starter profile data, importer metadata, sample CSV previews,
-manual transaction creation, budget reporting, monthly analytics, and Sankey
-analytics.
+The parity command starts fresh Python and Java backends on temporary
+ports/data directories. It compares starter data, CRUD and revision workflows,
+import preview/apply/rollback, profiles and backups, rules, budgets, planning,
+net worth, reconciliation, recurring/monthly/Sankey analytics, and selected
+error responses. The contract check verifies the committed Python OpenAPI
+snapshot under `docs/contracts/`.
 
 The Java backend covers health/admin, profiles, backups, accounts, categories,
 transactions, CSV/Amex workbook imports, net-worth workbook import, rules,
