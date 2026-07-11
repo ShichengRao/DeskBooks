@@ -15,6 +15,7 @@ final class RuleProposalEngine {
     private final RuleEngine rules;
     private final RuleTransactionReader transactions = new RuleTransactionReader();
     private final RuleProposalRegistry proposals = new RuleProposalRegistry();
+    private final RuleProposalKeys proposalKeys = new RuleProposalKeys();
     private final RuleProposalBacktester backtester;
     private final RuleProposalBuilder builder;
 
@@ -74,7 +75,7 @@ final class RuleProposalEngine {
         Map<String, List<RuleTransactionRow>> byKey = new LinkedHashMap<>();
         for (RuleTransactionRow tx : labeledTxs) {
             String key = matcher.proposalKey(tx.merchant(), tx.descriptionNormalized(), tx.descriptionRaw());
-            if (!key.isBlank() && key.split("\\s+").length >= 2) {
+            if (!key.isBlank() && proposalKeys.isSpecificEnough(key)) {
                 byKey.computeIfAbsent(key, ignored -> new ArrayList<>()).add(tx);
             }
         }

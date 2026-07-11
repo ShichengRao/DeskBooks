@@ -2,6 +2,7 @@ package com.deskbooks.backend.rules;
 
 import static org.hamcrest.Matchers.closeTo;
 import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.hasItems;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -175,6 +176,26 @@ class RuleControllerTest {
                 .andExpect(jsonPath("$", hasSize(0)));
     }
 
+    @Test
+    void proposalsIncludeSpecificSingleTokensAndGroupProcessorDescriptions() throws Exception {
+        createAccount("Checking", "bank", "checking");
+        createCategory("Health", "expense");
+        for (int index = 1; index <= 3; index++) {
+            createManualTransaction("2026-06-0" + index, "APPLE.COM/BILL", "Apple.Com/Bill", "-2.99");
+            createManualTransaction(
+                    "2026-06-1" + index,
+                    "CAREPAY CENTRAL CLINIC " + (21000000000000L + index) + " JANE DOE",
+                    "Carepay Central Clinic " + (21000000000000L + index) + " Jane Doe",
+                    "-25.00");
+            createManualTransaction("2026-06-2" + index, "PAYMENT", "Payment", "-10.00");
+        }
+
+        mvc.perform(get("/api/rules/proposals?min_support=3&limit=50"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(2)))
+                .andExpect(jsonPath("$[*].key", hasItems("Apple.Com/Bill", "Carepay")));
+    }
+
     private void createAccount(String name, String category, String type) throws Exception {
         mvc.perform(post("/api/accounts")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -201,6 +222,11 @@ class RuleControllerTest {
     }
 
     private void createManualTransaction(String date, String description, String amount) throws Exception {
+        createManualTransaction(date, description, "METRO COFFEE", amount);
+    }
+
+    private void createManualTransaction(String date, String description, String merchant, String amount)
+            throws Exception {
         mvc.perform(post("/api/transactions")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -209,11 +235,11 @@ class RuleControllerTest {
                                   "date": "%s",
                                   "description_raw": "%s",
                                   "description_normalized": "%s",
-                                  "merchant": "METRO COFFEE",
+                                  "merchant": "%s",
                                   "amount": "%s",
                                   "category_id": 1
                                 }
-                                """.formatted(date, description, description, amount)))
+                                """.formatted(date, description, description, merchant, amount)))
                 .andExpect(status().isOk());
     }
 

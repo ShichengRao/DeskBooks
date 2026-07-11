@@ -18,4 +18,11 @@ class RuleDescriptionGeneralizerTest {
     void patternForEscapesRegexMetacharactersBetweenTokens() {
         assertEquals("A\\.B.*Cafe\\?", generalizer.patternFor("A.B Cafe?"));
     }
+
+    @Test
+    void generalizeCollapsesProcessorDescriptionsWithReferencesAndNames() {
+        assertEquals(
+                "Carepay",
+                generalizer.generalize("Carepay Central Clinic 021000027514801 Jane Doe"));
+    }
 }
