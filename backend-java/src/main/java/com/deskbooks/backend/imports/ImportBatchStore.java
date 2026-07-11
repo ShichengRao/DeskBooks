@@ -39,11 +39,15 @@ final class ImportBatchStore {
     }
 
     ImportBatchResponse apply(Connection connection, ImportApplyRequest body) throws SQLException {
+        return apply(connection, body, null);
+    }
+
+    ImportBatchResponse apply(Connection connection, ImportApplyRequest body, String notes) throws SQLException {
         requireAccount(connection, body.accountId());
         connection.setAutoCommit(false);
         boolean committed = false;
         try {
-            long batchId = metadata.create(connection, body);
+            long batchId = metadata.create(connection, body, notes);
             ImportCounts counts = new ImportBatchApplier(this, transactions).apply(connection, body, batchId);
             ruleEngine.stampRuleFires(connection, counts.ruleFires());
             metadata.updateCounts(connection, batchId, counts);
@@ -53,6 +57,16 @@ final class ImportBatchStore {
         } finally {
             if (!committed) {
                 ImportTransactionScope.rollback(connection);
+            }
+        }
+    }
+
+    boolean hasNotes(Connection connection, String notes) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT 1 FROM import_batches WHERE notes = ? LIMIT 1")) {
+            statement.setString(1, notes);
+            try (ResultSet rs = statement.executeQuery()) {
+                return rs.next();
             }
         }
     }

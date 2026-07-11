@@ -53,8 +53,20 @@ final class ImportEndpointService {
     }
 
     ImportBatchResponse apply(ImportApplyRequest body) {
+        return apply(body, null);
+    }
+
+    ImportBatchResponse apply(ImportApplyRequest body, String notes) {
         try (Connection connection = connections.open()) {
-            return batches.apply(connection, body);
+            return batches.apply(connection, body, notes);
+        } catch (SQLException exception) {
+            throw databaseError(exception);
+        }
+    }
+
+    boolean hasBatchNotes(String notes) {
+        try (Connection connection = connections.open()) {
+            return batches.hasNotes(connection, notes);
         } catch (SQLException exception) {
             throw databaseError(exception);
         }

@@ -3,7 +3,7 @@ API_PORT ?= $(or $(BACKEND_PORT),$(if $(filter 5173,$(PORT)),8765,8766))
 JAVA_GRADLE ?= gradle
 JAVA_GRADLE_ENV = $(if $(JAVA_GRADLE_USER_HOME),GRADLE_USER_HOME="$(JAVA_GRADLE_USER_HOME)")
 
-.PHONY: dev dev-java dev-python backend backend-java backend-python frontend open bootstrap install install-automation fetch-preview fetch-apply schedule-fetch-preview schedule-fetch-apply unschedule-fetch test test-java java-metrics parity-java typecheck build clean reset-db
+.PHONY: dev dev-java dev-python backend backend-java backend-python frontend open bootstrap install install-automation fetch-preview fetch-apply automation-import-java automation-import-python schedule-fetch-preview schedule-fetch-apply unschedule-fetch test test-java java-metrics parity-java typecheck build clean reset-db
 
 dev:
 	./run.sh --port "$(PORT)" --api-port "$(API_PORT)" $(if $(DATA_DIR),--data-dir "$(DATA_DIR)")
@@ -26,6 +26,12 @@ fetch-preview:
 
 fetch-apply:
 	DESKBOOKS_IMPORT_APPLY=1 automation/bin/run-scheduled-fetch.sh
+
+automation-import-java:
+	cd backend-java && $(JAVA_GRADLE_ENV) PFA_SEED_STARTER_DATA="0" $(JAVA_GRADLE) automationImport
+
+automation-import-python:
+	cd backend && uv run python -m app.automation_import
 
 schedule-fetch-preview:
 	automation/bin/install-launchd.sh

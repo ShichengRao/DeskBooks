@@ -11,16 +11,21 @@ import org.springframework.http.HttpStatus;
 
 final class ImportBatchMetadata {
     long create(Connection connection, ImportApplyRequest body) throws SQLException {
+        return create(connection, body, null);
+    }
+
+    long create(Connection connection, ImportApplyRequest body, String notes) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("""
                 INSERT INTO import_batches (
                   source_filename, importer_name, account_id, row_count_total,
-                  row_count_applied, row_count_duplicate, status
-                ) VALUES (?, ?, ?, ?, 0, 0, 'applied')
+                  row_count_applied, row_count_duplicate, status, notes
+                ) VALUES (?, ?, ?, ?, 0, 0, 'applied', ?)
                 """, Statement.RETURN_GENERATED_KEYS)) {
             statement.setString(1, body.sourceFilename());
             statement.setString(2, body.importerName());
             statement.setLong(3, body.accountId());
             statement.setInt(4, body.rows().size());
+            statement.setString(5, notes);
             statement.executeUpdate();
             try (ResultSet keys = statement.getGeneratedKeys()) {
                 keys.next();

@@ -6,9 +6,9 @@ DeskBooks can run a local, non-LLM import pipeline:
    directory.
 2. The fetcher writes a manifest entry with the target DeskBooks account and
    importer name.
-3. `python -m app.automation_import` previews those staged files with the same
-   importer logic used by the UI.
-4. If `--apply` is set, DeskBooks creates a profile backup and applies the
+3. The Java automation-import command previews those staged files with the
+   same importer logic used by the UI.
+4. If apply mode is enabled, DeskBooks creates a profile backup and applies the
    import batch with duplicate skipping.
 
 The default path is fail-closed. Fetchers must return at least one non-empty
@@ -50,11 +50,19 @@ long-lived `manifest.jsonl` history in the staging directory for auditability.
 Preview mode writes `latest-preview.html` and `latest-preview.json` in the
 staging directory.
 
-To process a manifest directly:
+To process the default manifest directly with Java:
 
 ```sh
-cd backend
-uv run python -m app.automation_import
+make automation-import-java
+```
+
+The previous Python command remains available while backend parity is being
+verified:
+
+```sh
+make automation-import-python
+# or run the complete fetch pipeline with Python
+DESKBOOKS_IMPORT_BACKEND=python automation/bin/run-scheduled-fetch.sh
 ```
 
 ## Chase Credit Card
@@ -113,9 +121,21 @@ After a source has passed dry runs, opt into applying imports:
 DESKBOOKS_IMPORT_APPLY=1 automation/bin/run-scheduled-fetch.sh
 ```
 
-Each apply run creates a profile-scoped backup unless `--no-backup` is passed
-to `app.automation_import`. Applied files are tracked by SHA-256 so rerunning
-the same manifest does not create another batch.
+Each apply run creates a profile-scoped backup unless
+`DESKBOOKS_IMPORT_NO_BACKUP=1` is set. Applied files are tracked by SHA-256 in
+both the profile database and `import-state.json`, so rerunning the same
+manifest does not create another batch.
+
+The Java command accepts these environment variables:
+
+- `DESKBOOKS_IMPORT_MANIFEST` selects a manifest file.
+- `DESKBOOKS_IMPORT_STAGING_DIR` sets the allowed staging root.
+- `DESKBOOKS_IMPORT_STATE` selects the idempotency state file.
+- `DESKBOOKS_IMPORT_SOURCE` processes only one named source.
+- `DESKBOOKS_IMPORT_APPLY=1` enables apply mode.
+- `DESKBOOKS_IMPORT_NO_BACKUP=1` skips the pre-import backup.
+- `DESKBOOKS_IMPORT_BACKEND=python` selects the legacy Python command in the
+  scheduled wrapper.
 
 ## macOS Schedule
 

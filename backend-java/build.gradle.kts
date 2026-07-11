@@ -118,6 +118,15 @@ tasks.register<JavaExec>("ckMain") {
             file("build").absolutePath)
 }
 
+tasks.register<org.springframework.boot.gradle.tasks.run.BootRun>("automationImport") {
+    group = "application"
+    description = "Previews or applies staged automated imports with the Java backend."
+    mainClass.set("com.deskbooks.backend.DeskBooksApplication")
+    classpath = sourceSets.main.get().runtimeClasspath
+    args("--spring.main.web-application-type=none", "--deskbooks.command=automation-import")
+    environment("PFA_SEED_STARTER_DATA", "0")
+}
+
 tasks.register("javaMetrics") {
     group = "verification"
     description = "Runs PMD, CPD, JaCoCo, CK, and prints a combined hotspot summary."

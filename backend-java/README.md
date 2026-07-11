@@ -45,6 +45,20 @@ the frontend. Those launch paths seed starter accounts, categories, and the
 welcome journal entry into an empty active profile. Use
 `../run.sh --backend python` only when checking the legacy backend.
 
+## Automated Imports
+
+The non-web automation command previews or applies files produced by the local
+fetch pipeline:
+
+```bash
+cd backend-java
+gradle automationImport
+```
+
+It reads `DESKBOOKS_IMPORT_*` environment variables documented in
+`../docs/AUTOMATED_IMPORTS.md`. Preview mode is the default; set
+`DESKBOOKS_IMPORT_APPLY=1` to apply rows after creating a profile backup.
+
 ## Test
 
 ```bash

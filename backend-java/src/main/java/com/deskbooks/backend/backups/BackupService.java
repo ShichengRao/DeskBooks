@@ -11,22 +11,38 @@ import com.deskbooks.backend.profiles.ProfileInfo;
 import org.springframework.stereotype.Service;
 
 @Service
-class BackupService {
+public class BackupService {
     private final BackupStorage storage;
 
     BackupService(AppPaths appPaths) {
         this.storage = new BackupStorage(appPaths.dataDir());
     }
 
-    List<BackupResponse> listBackups(ProfileInfo profile) {
+    public List<BackupResponse> listBackups(ProfileInfo profile) {
         return storage.list(profile);
     }
 
-    BackupResponse createBackup(ProfileInfo profile) {
+    public BackupResponse createBackup(ProfileInfo profile) {
         return createBackup(profile, null);
     }
 
-    BackupResponse restoreBackup(ProfileInfo profile, String name) throws IOException {
+    public BackupResponse createBackup(ProfileInfo profile, String label) {
+        if (!Files.exists(profile.dbPath())) {
+            throw new IllegalStateException("active database does not exist: " + profile.dbPath());
+        }
+
+        Path destination = storage.destination(profile.slug(), label);
+        try {
+            Files.createDirectories(destination.getParent());
+            Files.copy(profile.dbPath(), destination, StandardCopyOption.REPLACE_EXISTING);
+            storage.assertSqliteOk(destination);
+            return storage.metadata(destination, profile.slug());
+        } catch (IOException exception) {
+            throw new IllegalStateException("could not create backup: " + destination, exception);
+        }
+    }
+
+    public BackupResponse restoreBackup(ProfileInfo profile, String name) throws IOException {
         Path source = storage.resolve(profile, name);
         storage.assertSqliteOk(source);
 
@@ -47,26 +63,11 @@ class BackupService {
         return storage.metadata(source, profile.slug());
     }
 
-    BackupResponse deleteBackup(ProfileInfo profile, String name) throws IOException {
+    public BackupResponse deleteBackup(ProfileInfo profile, String name) throws IOException {
         Path path = storage.resolve(profile, name);
         BackupResponse deleted = storage.metadata(path, profile.slug());
         Files.delete(path);
         return deleted;
     }
 
-    private BackupResponse createBackup(ProfileInfo profile, String label) {
-        if (!Files.exists(profile.dbPath())) {
-            throw new IllegalStateException("active database does not exist: " + profile.dbPath());
-        }
-
-        Path destination = storage.destination(profile.slug(), label);
-        try {
-            Files.createDirectories(destination.getParent());
-            Files.copy(profile.dbPath(), destination, StandardCopyOption.REPLACE_EXISTING);
-            storage.assertSqliteOk(destination);
-            return storage.metadata(destination, profile.slug());
-        } catch (IOException exception) {
-            throw new IllegalStateException("could not create backup: " + destination, exception);
-        }
-    }
 }
