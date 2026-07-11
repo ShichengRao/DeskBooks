@@ -24,6 +24,31 @@ from sqlalchemy.orm import Session
 from . import models
 
 
+_GENERIC_SINGLE_TOKEN_KEYS = {
+    "ach",
+    "authorization",
+    "authorized",
+    "autopay",
+    "bill",
+    "card",
+    "check",
+    "credit",
+    "debit",
+    "deposit",
+    "fee",
+    "fees",
+    "mobile",
+    "online",
+    "payment",
+    "pos",
+    "purchase",
+    "recurring",
+    "transaction",
+    "transfer",
+    "withdrawal",
+}
+
+
 @dataclass
 class RuleEval:
     category_id: int | None = None
@@ -211,6 +236,9 @@ def _generalize_description(value: str) -> str:
     s = (value or "").strip()
     if not s:
         return ""
+    had_long_reference = bool(
+        re.search(r"\b(?:X+X*\d{3,}|[Xx]{2,}\d{3,}|\d{10,})\b", s)
+    )
     # Masked account suffixes and long transfer/reference numbers are almost
     # never useful for a future rule.
     s = re.sub(r"\bX+X*\d{3,}\b", "", s, flags=re.IGNORECASE)
@@ -219,6 +247,14 @@ def _generalize_description(value: str) -> str:
     # Bank-transfer exports often include YYMMDD or YYYYMMDD in the middle of
     # otherwise stable descriptions: "Brokerage Funds 251201 ...".
     s = re.sub(r"\b\d{6,8}\b", "", s)
+    s, stripped_trailing_name = _strip_trailing_person_name(s)
+    processor_key = _processor_style_key(
+        s,
+        had_long_reference=had_long_reference,
+        stripped_trailing_name=stripped_trailing_name,
+    )
+    if processor_key:
+        return processor_key
     # Strip likely person-name tokens from bank descriptions.
     s = re.sub(r"\b[A-Z][a-z]+\s+[A-Z][a-z]+\b", "", s)
     s = re.sub(r"\b[A-Z][a-z]+,?\s*[A-Z][a-z]+\b", "", s)
@@ -237,6 +273,30 @@ def _generalize_description(value: str) -> str:
     ):
         return "Nyct Paygo"
     return s
+
+
+def _strip_trailing_person_name(value: str) -> tuple[str, bool]:
+    cleaned, count = re.subn(r"\s+\b[A-Z][a-z]+,?\s+[A-Z][a-z]+\b\s*$", "", value)
+    return cleaned.strip(), bool(count)
+
+
+def _processor_style_key(
+    value: str,
+    *,
+    had_long_reference: bool,
+    stripped_trailing_name: bool,
+) -> str | None:
+    if not had_long_reference or not stripped_trailing_name:
+        return None
+    tokens = [t for t in re.split(r"\s+", value.strip()) if t]
+    if len(tokens) < 3:
+        return None
+    first = tokens[0].strip()
+    if first.lower() in _GENERIC_SINGLE_TOKEN_KEYS:
+        return None
+    if not re.fullmatch(r"[A-Za-z][A-Za-z0-9&'.-]{3,}", first):
+        return None
+    return first
 
 
 def _proposal_pattern(key: str) -> str:
@@ -469,9 +529,28 @@ def _group_proposal_candidates(
         # Single-token proposals tend to be too broad ("Payment", "Transfer")
         # unless the importer's merchant extraction has already made them
         # specific. Two stable tokens is a useful floor for this local data.
-        if key and len(key.split()) >= 2:
+        if key and _proposal_key_is_specific_enough(key):
             by_key[key].append(tx)
     return by_key
+
+
+def _proposal_key_is_specific_enough(key: str) -> bool:
+    tokens = [t for t in re.split(r"\s+", key.strip()) if t]
+    if len(tokens) >= 2:
+        return True
+    if len(tokens) != 1:
+        return False
+
+    token = tokens[0]
+    if len(token) < 4 or not re.search(r"[A-Za-z]", token):
+        return False
+
+    # Domain/path/card-processor tokens are often precise merchants despite
+    # being a single whitespace token: "Apple.Com/Bill", "Ona.Com", "SQ*Cafe".
+    if re.search(r"[./*@]", token):
+        return True
+
+    return token.lower() not in _GENERIC_SINGLE_TOKEN_KEYS
 
 
 def _majority_outcome(
