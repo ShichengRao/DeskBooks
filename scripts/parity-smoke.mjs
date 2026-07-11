@@ -247,6 +247,14 @@ async function startJava(port, dataDir) {
 }
 
 async function requestJson(server, method, route, body) {
+  const outcome = await requestOutcome(server, method, route, body);
+  if (!outcome.ok) {
+    throw new Error(`${server.name} ${method} ${route} -> ${outcome.status}: ${outcome.text}`);
+  }
+  return outcome.json;
+}
+
+async function requestOutcome(server, method, route, body) {
   const response = await fetch(`${server.baseUrl}${route}`, {
     method,
     headers: body === undefined ? undefined : { "content-type": "application/json" },
@@ -257,15 +265,14 @@ async function requestJson(server, method, route, body) {
   if (text) {
     json = JSON.parse(text);
   }
-  if (!response.ok) {
-    throw new Error(`${server.name} ${method} ${route} -> ${response.status}: ${text}`);
-  }
-  return json;
+  return { ok: response.ok, status: response.status, json, text };
 }
 
 const getJson = (server, route) => requestJson(server, "GET", route);
 const postJson = (server, route, body) => requestJson(server, "POST", route, body);
 const putJson = (server, route, body) => requestJson(server, "PUT", route, body);
+const patchJson = (server, route, body) => requestJson(server, "PATCH", route, body);
+const deleteJson = (server, route) => requestJson(server, "DELETE", route);
 
 function stable(value) {
   if (Array.isArray(value)) {
@@ -357,6 +364,82 @@ function budgetDefaultSummary(row) {
   };
 }
 
+function goalSummary(goal) {
+  return {
+    id: goal.id,
+    title: goal.title,
+    target_amount: goal.target_amount,
+    target_date: goal.target_date,
+    kind: goal.kind,
+    status: goal.status,
+    linked_account_ids: goal.linked_account_ids,
+    notes_markdown: goal.notes_markdown,
+    sort_order: goal.sort_order,
+    archived: goal.archived,
+  };
+}
+
+function goalRevisionSummary(revision) {
+  return {
+    id: revision.id,
+    goal_id: revision.goal_id,
+    snapshot: revision.snapshot,
+    change_summary: revision.change_summary,
+  };
+}
+
+function journalSummary(entry) {
+  return {
+    id: entry.id,
+    entry_date: entry.entry_date,
+    title: entry.title,
+    body_markdown: entry.body_markdown,
+    goal_id: entry.goal_id,
+  };
+}
+
+function journalRevisionSummary(revision) {
+  return {
+    id: revision.id,
+    entry_id: revision.entry_id,
+    entry_date: revision.entry_date,
+    title: revision.title,
+    body_markdown: revision.body_markdown,
+    goal_id: revision.goal_id,
+    change_summary: revision.change_summary,
+  };
+}
+
+function importBatchSummary(batch) {
+  return {
+    id: batch.id,
+    source_filename: batch.source_filename,
+    importer_name: batch.importer_name,
+    account_id: batch.account_id,
+    row_count_total: batch.row_count_total,
+    row_count_applied: batch.row_count_applied,
+    row_count_duplicate: batch.row_count_duplicate,
+    status: batch.status,
+    notes: batch.notes,
+  };
+}
+
+function ruleProposalSummary(proposal) {
+  return {
+    key: proposal.key,
+    match_description_pattern: proposal.match_description_pattern,
+    set_category_id: proposal.set_category_id,
+    set_kind: proposal.set_kind,
+    support: proposal.support,
+    total_user_labeled_matches: proposal.total_user_labeled_matches,
+    all_transaction_matches: proposal.all_transaction_matches,
+    added_transaction_matches: proposal.added_transaction_matches,
+    correct_matches: proposal.correct_matches,
+    incorrect_matches: proposal.incorrect_matches,
+    accuracy: proposal.accuracy,
+  };
+}
+
 function budgetReportSummary(report) {
   const groceries = report.rows.find((row) => row.category_name === "Groceries");
   assert.ok(groceries, "missing Groceries budget row");
@@ -403,7 +486,9 @@ function sankeySummary(response) {
 
 async function compareInitialState(python, java) {
   compare("health", await getJson(python, "/api/health"), await getJson(java, "/api/health"));
-  compare("profiles", await getJson(python, "/api/profiles"), await getJson(java, "/api/profiles"));
+  const pythonProfiles = await getJson(python, "/api/profiles");
+  const javaProfiles = await getJson(java, "/api/profiles");
+  compare("profiles", pythonProfiles, javaProfiles);
   const pythonAccounts = await getJson(python, "/api/accounts");
   const javaAccounts = await getJson(java, "/api/accounts");
   compare("starter accounts", pythonAccounts, javaAccounts);
@@ -416,6 +501,8 @@ async function compareInitialState(python, java) {
     javaAccounts,
     pythonCategories,
     javaCategories,
+    pythonProfiles,
+    javaProfiles,
   };
 }
 
@@ -493,6 +580,319 @@ async function compareMutatingWorkflow(python, java, state) {
   );
 }
 
+async function compareCrudAndPlanning(python, java, state) {
+  const accountBody = {
+    name: "Parity Brokerage",
+    institution: "Parity Bank",
+    account_category: "investment",
+    type: "brokerage",
+    notes: "created by parity",
+    sort_order: 80,
+  };
+  const pythonAccount = await postJson(python, "/api/accounts", accountBody);
+  const javaAccount = await postJson(java, "/api/accounts", accountBody);
+  compare("account create", pythonAccount, javaAccount);
+  compare(
+    "account update",
+    await patchJson(python, `/api/accounts/${pythonAccount.id}`, { institution: "Updated Bank", notes: null }),
+    await patchJson(java, `/api/accounts/${javaAccount.id}`, { institution: "Updated Bank", notes: null }),
+  );
+
+  const categoryBody = {
+    name: "Parity Category",
+    kind: "expense",
+    color: "#123456",
+    sort_order: 81,
+  };
+  const pythonCategory = await postJson(python, "/api/categories", categoryBody);
+  const javaCategory = await postJson(java, "/api/categories", categoryBody);
+  compare("category create", pythonCategory, javaCategory);
+  compare(
+    "category update",
+    await patchJson(python, `/api/categories/${pythonCategory.id}`, { color: "#654321", sort_order: 82 }),
+    await patchJson(java, `/api/categories/${javaCategory.id}`, { color: "#654321", sort_order: 82 }),
+  );
+
+  const pythonChecking = byName(state.pythonAccounts, "Checking");
+  const javaChecking = byName(state.javaAccounts, "Checking");
+  const pythonSnapshot = await postJson(python, "/api/snapshots", {
+    snapshot_date: "2026-06-30",
+    notes: "parity snapshot",
+    balances: [{ account_id: pythonChecking.id, balance: "1250.00", notes: "statement" }],
+  });
+  const javaSnapshot = await postJson(java, "/api/snapshots", {
+    snapshot_date: "2026-06-30",
+    notes: "parity snapshot",
+    balances: [{ account_id: javaChecking.id, balance: "1250.00", notes: "statement" }],
+  });
+  compare("snapshot create", pythonSnapshot, javaSnapshot);
+  compare("snapshot list", await getJson(python, "/api/snapshots"), await getJson(java, "/api/snapshots"));
+  compare("snapshot series", await getJson(python, "/api/snapshots/series"), await getJson(java, "/api/snapshots/series"));
+
+  const pythonGoal = await postJson(python, "/api/goals", {
+    title: "Parity emergency fund",
+    target_amount: "2000.00",
+    target_date: "2027-01-01",
+    kind: "savings",
+    status: "active",
+    linked_account_ids: [pythonChecking.id],
+    notes_markdown: "Initial note",
+    sort_order: 9,
+  });
+  const javaGoal = await postJson(java, "/api/goals", {
+    title: "Parity emergency fund",
+    target_amount: "2000.00",
+    target_date: "2027-01-01",
+    kind: "savings",
+    status: "active",
+    linked_account_ids: [javaChecking.id],
+    notes_markdown: "Initial note",
+    sort_order: 9,
+  });
+  compare("goal create", goalSummary(pythonGoal), goalSummary(javaGoal));
+  compare(
+    "goal update",
+    goalSummary(await patchJson(python, `/api/goals/${pythonGoal.id}`, {
+      title: "Parity reserve fund",
+      notes_markdown: "Updated note",
+      change_summary: "parity edit",
+    })),
+    goalSummary(await patchJson(java, `/api/goals/${javaGoal.id}`, {
+      title: "Parity reserve fund",
+      notes_markdown: "Updated note",
+      change_summary: "parity edit",
+    })),
+  );
+  compare(
+    "goal revisions",
+    (await getJson(python, `/api/goals/${pythonGoal.id}/revisions`)).map(goalRevisionSummary),
+    (await getJson(java, `/api/goals/${javaGoal.id}/revisions`)).map(goalRevisionSummary),
+  );
+  compare(
+    "goal progress",
+    await getJson(python, `/api/goals/${pythonGoal.id}/progress`),
+    await getJson(java, `/api/goals/${javaGoal.id}/progress`),
+  );
+
+  const pythonJournal = await postJson(python, "/api/journal", {
+    entry_date: "2026-07-01",
+    title: "Parity note",
+    body_markdown: "Initial body",
+    goal_id: pythonGoal.id,
+  });
+  const javaJournal = await postJson(java, "/api/journal", {
+    entry_date: "2026-07-01",
+    title: "Parity note",
+    body_markdown: "Initial body",
+    goal_id: javaGoal.id,
+  });
+  compare("journal create", journalSummary(pythonJournal), journalSummary(javaJournal));
+  compare(
+    "journal update",
+    journalSummary(await patchJson(python, `/api/journal/${pythonJournal.id}`, {
+      body_markdown: "Updated body",
+      change_summary: "parity edit",
+    })),
+    journalSummary(await patchJson(java, `/api/journal/${javaJournal.id}`, {
+      body_markdown: "Updated body",
+      change_summary: "parity edit",
+    })),
+  );
+  compare(
+    "journal revisions",
+    (await getJson(python, `/api/journal/${pythonJournal.id}/revisions`)).map(journalRevisionSummary),
+    (await getJson(java, `/api/journal/${javaJournal.id}/revisions`)).map(journalRevisionSummary),
+  );
+
+  compare("journal delete", await deleteJson(python, `/api/journal/${pythonJournal.id}`), await deleteJson(java, `/api/journal/${javaJournal.id}`));
+  compare("goal archive", await deleteJson(python, `/api/goals/${pythonGoal.id}`), await deleteJson(java, `/api/goals/${javaGoal.id}`));
+  compare("snapshot delete", await deleteJson(python, `/api/snapshots/${pythonSnapshot.id}`), await deleteJson(java, `/api/snapshots/${javaSnapshot.id}`));
+  compare("category archive", await deleteJson(python, `/api/categories/${pythonCategory.id}`), await deleteJson(java, `/api/categories/${javaCategory.id}`));
+  compare("account delete", await deleteJson(python, `/api/accounts/${pythonAccount.id}`), await deleteJson(java, `/api/accounts/${javaAccount.id}`));
+}
+
+async function compareImportLifecycle(python, java, state) {
+  const samplePath = path.join(root, "samples", "chase_credit_sample.csv");
+  const pythonAccount = byName(state.pythonAccounts, "Credit Card");
+  const javaAccount = byName(state.javaAccounts, "Credit Card");
+  const pythonPreview = await postJson(python, "/api/imports/preview-path", {
+    path: samplePath,
+    account_id: pythonAccount.id,
+    importer_name: "chase_credit",
+  });
+  const javaPreview = await postJson(java, "/api/imports/preview-path", {
+    path: samplePath,
+    account_id: javaAccount.id,
+    importer_name: "chase_credit",
+  });
+  const pythonBatch = await postJson(python, "/api/imports/apply", {
+    importer_name: pythonPreview.importer_name,
+    account_id: pythonPreview.account_id,
+    source_filename: pythonPreview.source_filename,
+    rows: pythonPreview.rows,
+    skip_duplicates: true,
+  });
+  const javaBatch = await postJson(java, "/api/imports/apply", {
+    importer_name: javaPreview.importer_name,
+    account_id: javaPreview.account_id,
+    source_filename: javaPreview.source_filename,
+    rows: javaPreview.rows,
+    skip_duplicates: true,
+  });
+  compare("import apply", importBatchSummary(pythonBatch), importBatchSummary(javaBatch));
+  compare(
+    "import batch list",
+    (await getJson(python, "/api/imports")).map(importBatchSummary),
+    (await getJson(java, "/api/imports")).map(importBatchSummary),
+  );
+  compare(
+    "import rollback",
+    await postJson(python, `/api/imports/${pythonBatch.id}/rollback`),
+    await postJson(java, `/api/imports/${javaBatch.id}/rollback`),
+  );
+  compare(
+    "rolled back batch list",
+    (await getJson(python, "/api/imports")).map(importBatchSummary),
+    (await getJson(java, "/api/imports")).map(importBatchSummary),
+  );
+}
+
+async function compareAnalyticsRulesAndErrors(python, java, state) {
+  const pythonChecking = byName(state.pythonAccounts, "Checking");
+  const javaChecking = byName(state.javaAccounts, "Checking");
+  const pythonGroceries = byName(state.pythonCategories, "Groceries");
+  const javaGroceries = byName(state.javaCategories, "Groceries");
+  const dates = ["2026-01-05", "2026-02-05", "2026-03-05"];
+  for (const [index, date] of dates.entries()) {
+    const body = {
+      date,
+      description_raw: `PARITY STREAM ${index + 1}`,
+      description_normalized: `PARITY STREAM ${index + 1}`,
+      merchant: "Parity.Stream/One",
+      amount: "-12.00",
+      notes: "recurring parity",
+    };
+    await postJson(python, "/api/transactions", {
+      ...body,
+      account_id: pythonChecking.id,
+      category_id: pythonGroceries.id,
+    });
+    await postJson(java, "/api/transactions", {
+      ...body,
+      account_id: javaChecking.id,
+      category_id: javaGroceries.id,
+    });
+  }
+
+  compare(
+    "recurring analytics",
+    await getJson(python, "/api/analytics/recurring?min_occurrences=3&start=2026-01-01&end=2026-03-31"),
+    await getJson(java, "/api/analytics/recurring?min_occurrences=3&start=2026-01-01&end=2026-03-31"),
+  );
+  compare(
+    "rule proposals",
+    (await getJson(python, "/api/rules/proposals?min_support=3&limit=50"))
+      .map(ruleProposalSummary)
+      .sort((a, b) => a.key.localeCompare(b.key)),
+    (await getJson(java, "/api/rules/proposals?min_support=3&limit=50"))
+      .map(ruleProposalSummary)
+      .sort((a, b) => a.key.localeCompare(b.key)),
+  );
+  compare(
+    "monthly reconciliation",
+    await getJson(python, `/api/analytics/reconcile?account_id=${pythonChecking.id}&year=2026&month=6`),
+    await getJson(java, `/api/analytics/reconcile?account_id=${javaChecking.id}&year=2026&month=6`),
+  );
+  compare(
+    "monthly reconciliation update",
+    await putJson(python, "/api/analytics/reconcile", {
+      account_id: pythonChecking.id,
+      year: 2026,
+      month: 6,
+      statement_total: "-42.00",
+      notes: "parity statement",
+    }),
+    await putJson(java, "/api/analytics/reconcile", {
+      account_id: javaChecking.id,
+      year: 2026,
+      month: 6,
+      statement_total: "-42.00",
+      notes: "parity statement",
+    }),
+  );
+  compare(
+    "split summaries",
+    await getJson(python, "/api/analytics/splits?start=2026-01-01&end=2026-06-30"),
+    await getJson(java, "/api/analytics/splits?start=2026-01-01&end=2026-06-30"),
+  );
+
+  await compareError(python, java, "missing transaction error", "GET", "/api/transactions/999999");
+  await compareError(
+    python,
+    java,
+    "invalid analytics range error",
+    "GET",
+    "/api/analytics/sankey?start=2026-07-10&end=2026-07-01",
+  );
+  await compareError(python, java, "missing category parent error", "POST", "/api/categories", {
+    name: "Invalid parity category",
+    parent_id: 999999,
+    kind: "expense",
+  });
+}
+
+async function compareError(python, java, label, method, route, body) {
+  const pythonOutcome = await requestOutcome(python, method, route, body);
+  const javaOutcome = await requestOutcome(java, method, route, body);
+  compare(label, {
+    status: pythonOutcome.status,
+    detail: pythonOutcome.json?.detail,
+  }, {
+    status: javaOutcome.status,
+    detail: javaOutcome.json?.detail,
+  });
+}
+
+function backupSummary(backup) {
+  return {
+    name: backup.name.replace(/-\d{8}-\d{6}(?:-\d+)?(?=\.db$)/, "-STAMP"),
+    profile_slug: backup.profile_slug,
+  };
+}
+
+async function compareBackupsAndProfiles(python, java, state) {
+  const pythonBackup = await postJson(python, "/api/backups");
+  const javaBackup = await postJson(java, "/api/backups");
+  compare("backup create", backupSummary(pythonBackup), backupSummary(javaBackup));
+  const pythonBackups = await getJson(python, "/api/backups");
+  const javaBackups = await getJson(java, "/api/backups");
+  compare("backup list profile", pythonBackups.profile_slug, javaBackups.profile_slug);
+  compare("backup list", pythonBackups.backups.map(backupSummary), javaBackups.backups.map(backupSummary));
+  compare(
+    "backup delete",
+    backupSummary(await deleteJson(python, `/api/backups/${pythonBackup.name}`)),
+    backupSummary(await deleteJson(java, `/api/backups/${javaBackup.name}`)),
+  );
+
+  const pythonProfiles = await postJson(python, "/api/profiles/duplicate", {
+    name: "Parity Copy",
+    source_slug: state.pythonProfiles.active_slug,
+  });
+  const javaProfiles = await postJson(java, "/api/profiles/duplicate", {
+    name: "Parity Copy",
+    source_slug: state.javaProfiles.active_slug,
+  });
+  compare("profile duplicate", pythonProfiles, javaProfiles);
+  const pythonCopy = byName(pythonProfiles.profiles, "Parity Copy");
+  const javaCopy = byName(javaProfiles.profiles, "Parity Copy");
+  compare(
+    "profile delete",
+    await deleteJson(python, `/api/profiles/${pythonCopy.slug}`),
+    await deleteJson(java, `/api/profiles/${javaCopy.slug}`),
+  );
+  compare("profiles after cleanup", await getJson(python, "/api/profiles"), await getJson(java, "/api/profiles"));
+}
+
 async function cleanup() {
   for (const server of running.reverse()) {
     if (!server.child.killed && !server.child.parityExit) {
@@ -534,6 +934,10 @@ async function main() {
   const state = await compareInitialState(python, java);
   await compareImportPreviews(python, java, state);
   await compareMutatingWorkflow(python, java, state);
+  await compareCrudAndPlanning(python, java, state);
+  await compareImportLifecycle(python, java, state);
+  await compareAnalyticsRulesAndErrors(python, java, state);
+  await compareBackupsAndProfiles(python, java, state);
   log("side-by-side parity smoke passed");
 }
 

@@ -13,12 +13,14 @@ import com.deskbooks.backend.foundation.ApiException;
 import org.springframework.http.HttpStatus;
 
 final class TransactionLookup {
+    static final String NOT_FOUND_DETAIL = "Not Found";
+
     void requireAccount(Connection connection, long accountId) throws SQLException {
         requireExisting(connection, "SELECT 1 FROM accounts WHERE id = ?", accountId, "account not found");
     }
 
     void requireTransaction(Connection connection, long transactionId) throws SQLException {
-        requireExisting(connection, "SELECT 1 FROM transactions WHERE id = ?", transactionId, "transaction not found");
+        requireExisting(connection, "SELECT 1 FROM transactions WHERE id = ?", transactionId, NOT_FOUND_DETAIL);
     }
 
     Set<Long> existingTransactions(Connection connection, List<Long> ids) throws SQLException {
@@ -53,7 +55,7 @@ final class TransactionLookup {
             statement.setLong(1, transactionId);
             try (ResultSet rs = statement.executeQuery()) {
                 if (!rs.next()) {
-                    throw new ApiException(HttpStatus.NOT_FOUND, "transaction not found");
+                    throw new ApiException(HttpStatus.NOT_FOUND, NOT_FOUND_DETAIL);
                 }
                 long pairId = rs.getLong("transfer_pair_id");
                 return rs.wasNull() ? null : pairId;

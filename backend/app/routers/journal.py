@@ -151,6 +151,9 @@ def list_revisions(entry_id: int, db: DbSession):
         db.scalars(
             select(models.JournalEntryRevision)
             .where(models.JournalEntryRevision.entry_id == entry_id)
-            .order_by(models.JournalEntryRevision.changed_at.desc())
+            .order_by(
+                models.JournalEntryRevision.changed_at.desc(),
+                models.JournalEntryRevision.id.desc(),
+            )
         )
     )

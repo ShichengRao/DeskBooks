@@ -80,12 +80,12 @@ class NetWorthControllerTest {
         mvc.perform(get("/api/snapshots/series"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$", hasSize(1)))
-                .andExpect(jsonPath("$[0].total", equalTo("1250.00")))
-                .andExpect(jsonPath("$[0].by_category.bank", equalTo("1000.00")))
-                .andExpect(jsonPath("$[0].by_category.credit", equalTo("-250.00")))
-                .andExpect(jsonPath("$[0].by_account.Card", equalTo("-250.00")))
-                .andExpect(jsonPath("$[0].taxable", equalTo("750.00")))
-                .andExpect(jsonPath("$[0].tax_advantaged", equalTo("500.00")));
+                .andExpect(jsonPath("$[0].total", equalTo(1250)))
+                .andExpect(jsonPath("$[0].by_category.bank", equalTo(1000)))
+                .andExpect(jsonPath("$[0].by_category.credit", equalTo(-250)))
+                .andExpect(jsonPath("$[0].by_account.Card", equalTo(-250)))
+                .andExpect(jsonPath("$[0].taxable", equalTo(750)))
+                .andExpect(jsonPath("$[0].tax_advantaged", equalTo(500)));
 
         mvc.perform(get("/api/analytics/fire/projection?max_years=0"))
                 .andExpect(status().isOk())

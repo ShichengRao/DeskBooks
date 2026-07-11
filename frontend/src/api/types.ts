@@ -228,11 +228,11 @@ export interface NetWorthSnapshot {
 
 export interface NetWorthSeriesPoint {
   snapshot_date: string;
-  total: string;
-  by_category: Record<string, string>;
-  by_account: Record<string, string>;
-  taxable: string;
-  tax_advantaged: string;
+  total: number;
+  by_category: Record<string, number>;
+  by_account: Record<string, number>;
+  taxable: number;
+  tax_advantaged: number;
 }
 
 export type GoalKind = "savings" | "purchase" | "retirement" | "other";
@@ -441,8 +441,8 @@ export interface SankeyResponse {
 export interface RecurringMerchant {
   merchant: string;
   occurrences: number;
-  avg_amount: string;
-  total_amount: string;
+  avg_amount: number;
+  total_amount: number;
   last_seen: string;
   cadence_days_estimate: number | null;
 }

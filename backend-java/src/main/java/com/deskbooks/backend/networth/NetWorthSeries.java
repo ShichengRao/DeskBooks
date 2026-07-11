@@ -63,11 +63,11 @@ final class NetWorthSeries {
         NetWorthSeriesTotals totals = totals(connection, snapshotId);
         return new NetWorthSeriesPointResponse(
                 snapshotDate,
-                NetWorthMoney.format(totals.total()),
-                NetWorthMoney.stringify(totals.byCategory()),
-                NetWorthMoney.stringify(totals.byAccount()),
-                NetWorthMoney.format(totals.taxable()),
-                NetWorthMoney.format(totals.taxAdvantaged()));
+                totals.total(),
+                totals.byCategory(),
+                totals.byAccount(),
+                totals.taxable(),
+                totals.taxAdvantaged());
     }
 
     private NetWorthSeriesTotals totals(Connection connection, long snapshotId) throws SQLException {

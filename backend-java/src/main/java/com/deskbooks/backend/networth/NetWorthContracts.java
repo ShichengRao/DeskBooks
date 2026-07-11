@@ -46,9 +46,9 @@ record AccountBalanceResponse(
 
 record NetWorthSeriesPointResponse(
         LocalDate snapshotDate,
-        String total,
-        Map<String, String> byCategory,
-        Map<String, String> byAccount,
-        String taxable,
-        String taxAdvantaged) {
+        BigDecimal total,
+        Map<String, BigDecimal> byCategory,
+        Map<String, BigDecimal> byAccount,
+        BigDecimal taxable,
+        BigDecimal taxAdvantaged) {
 }
