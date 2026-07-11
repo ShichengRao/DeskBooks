@@ -28,16 +28,17 @@ final class GoalProgressCalculator {
                 return emptyProgress(goal);
             }
             BigDecimal current = currentBalance(connection, latestRs.getLong("id"), goal);
+            BigDecimal target = targetAmount(goal);
             return new GoalController.GoalProgressResponse(
-                    GoalMoney.string(current),
-                    goal.targetAmount(),
-                    percent(current, goal.targetAmount()),
+                    current,
+                    target,
+                    percent(current, target),
                     LocalDate.parse(latestRs.getString("snapshot_date")));
         }
     }
 
     private GoalController.GoalProgressResponse emptyProgress(GoalController.GoalResponse goal) {
-        return new GoalController.GoalProgressResponse(null, goal.targetAmount(), null, null);
+        return new GoalController.GoalProgressResponse(null, targetAmount(goal), null, null);
     }
 
     private BigDecimal currentBalance(
@@ -62,8 +63,11 @@ final class GoalProgressCalculator {
         return current;
     }
 
-    private Double percent(BigDecimal current, String rawTargetAmount) {
-        BigDecimal targetAmount = rawTargetAmount == null ? null : new BigDecimal(rawTargetAmount);
+    private BigDecimal targetAmount(GoalController.GoalResponse goal) {
+        return goal.targetAmount() == null ? null : new BigDecimal(goal.targetAmount());
+    }
+
+    private Double percent(BigDecimal current, BigDecimal targetAmount) {
         if (targetAmount == null || targetAmount.compareTo(BigDecimal.ZERO) == 0) {
             return null;
         }

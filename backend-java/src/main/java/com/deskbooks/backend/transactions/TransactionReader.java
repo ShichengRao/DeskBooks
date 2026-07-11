@@ -33,7 +33,7 @@ final class TransactionReader {
             statement.setLong(1, transactionId);
             try (ResultSet rs = statement.executeQuery()) {
                 if (!rs.next()) {
-                    throw new ApiException(HttpStatus.NOT_FOUND, "transaction not found");
+                    throw new ApiException(HttpStatus.NOT_FOUND, TransactionLookup.NOT_FOUND_DETAIL);
                 }
                 return from(connection, rs);
             }

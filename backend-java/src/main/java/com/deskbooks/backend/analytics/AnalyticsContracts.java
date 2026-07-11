@@ -30,8 +30,8 @@ record MonthlyPointResponse(
 record RecurringMerchantResponse(
         String merchant,
         int occurrences,
-        String avgAmount,
-        String totalAmount,
+        BigDecimal avgAmount,
+        BigDecimal totalAmount,
         LocalDate lastSeen,
         Double cadenceDaysEstimate) {
 }

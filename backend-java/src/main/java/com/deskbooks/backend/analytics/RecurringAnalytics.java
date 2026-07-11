@@ -64,8 +64,8 @@ final class RecurringAnalytics {
                 out.add(new RecurringMerchantResponse(
                         rs.getString("merchant"),
                         rs.getInt("occurrences"),
-                        moneyString(rs.getBigDecimal("avg_amount")),
-                        moneyString(rs.getBigDecimal("total_amount")),
+                        moneyValue(rs.getBigDecimal("avg_amount")),
+                        moneyValue(rs.getBigDecimal("total_amount")),
                         lastSeen,
                         cadenceDays(firstSeen, lastSeen, rs.getInt("occurrences"))));
             }
@@ -88,8 +88,8 @@ final class RecurringAnalytics {
         return spanDays / (double) (occurrences - 1);
     }
 
-    private static String moneyString(BigDecimal value) {
+    private static BigDecimal moneyValue(BigDecimal value) {
         BigDecimal amount = value == null ? BigDecimal.ZERO : value;
-        return amount.setScale(2, RoundingMode.HALF_UP).toPlainString();
+        return amount.setScale(2, RoundingMode.HALF_UP);
     }
 }

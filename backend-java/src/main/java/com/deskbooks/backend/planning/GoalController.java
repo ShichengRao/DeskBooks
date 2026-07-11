@@ -100,6 +100,6 @@ class GoalController {
             String changeSummary) {
     }
 
-    record GoalProgressResponse(String current, String target, Double percent, LocalDate asOf) {
+    record GoalProgressResponse(BigDecimal current, BigDecimal target, Double percent, LocalDate asOf) {
     }
 }

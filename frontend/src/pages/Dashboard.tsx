@@ -300,7 +300,7 @@ function Stat({
 function GoalRow({ goal, fire }: { goal: Goal; fire: FireProjection | undefined }) {
   const progress = useQuery({
     queryKey: ["goal-progress", goal.id],
-    queryFn: () => api.get<{ current: string | null; target: string | null; percent: number | null; as_of?: string }>(`/api/goals/${goal.id}/progress`),
+    queryFn: () => api.get<{ current: number | null; target: number | null; percent: number | null; as_of?: string }>(`/api/goals/${goal.id}/progress`),
   });
   const pct = progress.data?.percent ?? null;
   // Surface the FIRE projection on retirement-kind goals. If the goal has

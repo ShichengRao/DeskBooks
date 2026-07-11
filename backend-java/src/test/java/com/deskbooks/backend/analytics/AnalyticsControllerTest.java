@@ -158,8 +158,8 @@ class AnalyticsControllerTest {
                 .andExpect(jsonPath("$", hasSize(1)))
                 .andExpect(jsonPath("$[0].merchant", equalTo("Gym Co")))
                 .andExpect(jsonPath("$[0].occurrences", equalTo(3)))
-                .andExpect(jsonPath("$[0].avg_amount", equalTo("-50.00")))
-                .andExpect(jsonPath("$[0].total_amount", equalTo("-150.00")))
+                .andExpect(jsonPath("$[0].avg_amount", equalTo(-50.0)))
+                .andExpect(jsonPath("$[0].total_amount", equalTo(-150.0)))
                 .andExpect(jsonPath("$[0].last_seen", equalTo("2026-03-02")))
                 .andExpect(jsonPath("$[0].cadence_days_estimate", equalTo(30.0)));
     }
