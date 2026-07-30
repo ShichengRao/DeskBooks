@@ -28,3 +28,23 @@ export async function readGenericPassword({ service, account }) {
     throw new Error(`could not read macOS Keychain password for service ${service}: ${error.message}`);
   }
 }
+
+export async function writeGenericPassword({ service, account, secret }) {
+  if (!service || !account) {
+    throw new Error("keychain service and account are required");
+  }
+  if (!secret) {
+    throw new Error("refusing to store an empty secret");
+  }
+  // -U updates in place if the item already exists.
+  await execFileAsync("security", [
+    "add-generic-password",
+    "-U",
+    "-s",
+    service,
+    "-a",
+    account,
+    "-w",
+    secret,
+  ]);
+}

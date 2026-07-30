@@ -1,0 +1,38 @@
+{
+  "accounts": [
+    {
+      "accountId": 1,
+      "transactions": [
+        {
+          "id": "txn_001",
+          "date": "2026-07-01",
+          "description": "ACME GROCERY STORE",
+          "amount": "-42.50",
+          "pending": false,
+          "merchant": "Acme Grocery"
+        },
+        {
+          "id": "txn_002",
+          "date": "2026-07-02",
+          "description": "PAYROLL DIRECT DEP",
+          "amount": "2500.00",
+          "pending": false
+        },
+        {
+          "id": "txn_003",
+          "date": "2026-07-03",
+          "description": "PENDING CARD HOLD",
+          "amount": "-10.00",
+          "pending": true
+        }
+      ]
+    }
+  ],
+  "balances": {
+    "asOf": "2026-07-03",
+    "rows": [
+      { "accountId": 1, "balance": "3457.50" },
+      { "accountId": 2, "balance": "1200.00" }
+    ]
+  }
+}
