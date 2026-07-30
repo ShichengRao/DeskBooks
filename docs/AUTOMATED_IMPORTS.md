@@ -19,6 +19,12 @@ The design keeps the privacy boundary sharp:
    creates a profile backup, then applies transactions as an import batch
    (rollback-able from the Import panel) and balances as net-worth
    snapshots.
+4. The **Import page** shows the same staged files ("Staged from
+   connectors"): per-file status for the active profile (new rows, already
+   imported, staged for another profile, unknown account), one-click import
+   per file or **Import all new** — the same backup + duplicate + empty-file
+   contract as the CLI, still fully offline. Only the fetch itself needs the
+   command line.
 
 Additional fail-closed rules: fetchers must return non-empty files, the
 importer refuses files outside the staging directory, and duplicate

@@ -8,7 +8,6 @@ from decimal import Decimal
 import pytest
 
 from app import balance_snapshots
-from app.automation_import import staged_file_profile, validate_entry
 from app.importers.staged_json import parse_staged_transactions_bytes
 from app.models import (
     Account,
@@ -19,6 +18,7 @@ from app.models import (
     SignConvention,
 )
 from app.routers.imports import _preview_from_bytes
+from app.staging import staged_file_profile, validate_entry
 
 
 def _account(db, name: str = "Checking") -> Account:
@@ -302,7 +302,7 @@ def test_validate_entry_defaults_to_statement_and_requires_importer(tmp_path):
     assert (kind, account_id, importer_name) == ("statement", 3, "staged_json")
 
     missing, staging = _entry_for(tmp_path, kind=None, account_id=3)
-    with pytest.raises(SystemExit, match="missing field: importer_name"):
+    with pytest.raises(ValueError, match="missing field: importer_name"):
         validate_entry(missing, staging)
 
 
@@ -312,5 +312,5 @@ def test_validate_entry_balances_needs_no_importer_or_account(tmp_path):
     assert (kind, account_id, importer_name) == ("balances", None, None)
 
     unknown, staging = _entry_for(tmp_path, kind="prices")
-    with pytest.raises(SystemExit, match="unknown kind"):
+    with pytest.raises(ValueError, match="unknown kind"):
         validate_entry(unknown, staging)

@@ -88,6 +88,10 @@ class AccountIn(BaseModel):
     sort_order: int = 0
 
 
+class AccountBulkIn(BaseModel):
+    accounts: list[AccountIn] = Field(min_length=1)
+
+
 class AccountUpdate(BaseModel):
     name: str | None = None
     institution: str | None = None
@@ -586,6 +590,54 @@ class ImportBatchOut(ORMBase):
     row_count_duplicate: int
     status: ImportStatus
     notes: str | None
+
+
+class StagedEntryOut(BaseModel):
+    """One connector-staged file from the staging manifest, as the Import
+    page sees it: what it is, which account it maps to, and whether it can
+    be imported into the active profile right now."""
+
+    sha256: str
+    source: str
+    kind: str  # statement | balances
+    file_name: str
+    path: str
+    account_id: int | None
+    account_name: str | None
+    importer_name: str | None
+    profile: str | None
+    downloaded_at: str | None
+    # Parsed only for importable entries: total rows in the file and how
+    # many are new (non-duplicate statement rows / changed balances).
+    row_count: int | None = None
+    new_count: int | None = None
+    as_of: _date | None = None
+    # new | imported | empty | other_profile | unknown_account |
+    # missing_file | invalid
+    status: str
+    detail: str | None = None
+
+
+class StagedApplyRequest(BaseModel):
+    # Empty means "every entry currently importable" (status == new).
+    sha256s: list[str] = Field(default_factory=list)
+
+
+class StagedApplyOutcome(BaseModel):
+    sha256: str
+    file_name: str
+    # imported | empty | skipped_<status> | error
+    status: str
+    batch_id: int | None = None
+    snapshot_id: int | None = None
+    rows_applied: int | None = None
+    duplicates: int | None = None
+    detail: str | None = None
+
+
+class StagedApplyResult(BaseModel):
+    outcomes: list[StagedApplyOutcome]
+    backup_name: str | None = None
 
 
 # ---------- analytics ----------
