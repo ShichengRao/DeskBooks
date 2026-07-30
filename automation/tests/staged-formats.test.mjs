@@ -7,7 +7,7 @@ import {
   STAGED_BALANCES_FORMAT,
   STAGED_TRANSACTIONS_FORMAT,
 } from "../src/staged-formats.mjs";
-import { normalizePlaidBalances, normalizePlaidTransactions } from "../fetchers/plaid.mjs";
+import { groupMappings, normalizePlaidBalances, normalizePlaidTransactions } from "../fetchers/plaid.mjs";
 
 test("buildStagedTransactions normalizes and validates rows", () => {
   const staged = buildStagedTransactions({
@@ -102,5 +102,38 @@ test("normalizePlaidBalances maps current balances through the account mapping",
   assert.deepEqual(rows, [
     { accountId: 3, balance: "100.25" },
     { accountId: 4, balance: null },
+  ]);
+});
+
+test("normalizePlaidBalances sums provider accounts that share a DeskBooks account", () => {
+  const rows = normalizePlaidBalances({
+    mappings: [
+      { plaidAccountId: "cd_1", deskbooksAccountId: 7 },
+      { plaidAccountId: "cd_2", deskbooksAccountId: 7 },
+      { plaidAccountId: "cd_null", deskbooksAccountId: 7 },
+      { plaidAccountId: "sav", deskbooksAccountId: 6 },
+    ],
+    accountsById: {
+      cd_1: { balances: { current: 1000.1 } },
+      cd_2: { balances: { current: 2000.05 } },
+      cd_null: { balances: { current: null } },
+      sav: { balances: { current: 55.55 } },
+    },
+  });
+  assert.deepEqual(rows, [
+    { accountId: 7, balance: "3000.15" },
+    { accountId: 6, balance: "55.55" },
+  ]);
+});
+
+test("groupMappings folds many provider accounts into one DeskBooks account", () => {
+  const grouped = groupMappings([
+    { plaidAccountId: "a", deskbooksAccountId: 1 },
+    { plaidAccountId: "b", deskbooksAccountId: 2 },
+    { plaidAccountId: "c", deskbooksAccountId: 1 },
+  ]);
+  assert.deepEqual([...grouped.entries()], [
+    [1, ["a", "c"]],
+    [2, ["b"]],
   ]);
 });

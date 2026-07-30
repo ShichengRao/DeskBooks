@@ -254,6 +254,15 @@ def main() -> None:
             )
             print(f"[import] preview report: {report_path}")
 
+            if not preview.rows:
+                # Nothing to import (e.g. a low-activity account with no
+                # transactions in the lookback window) — do not create an
+                # empty batch, but remember the file so re-runs skip it.
+                if args.apply:
+                    applied_sha256[sha256] = {"path": str(file_path), "empty": True}
+                    imported += 1
+                continue
+
             if not args.apply:
                 continue
 

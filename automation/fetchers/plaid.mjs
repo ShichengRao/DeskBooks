@@ -81,17 +81,40 @@ export function normalizePlaidTransactions({ transactions, invertAmounts = false
   });
 }
 
-export function normalizePlaidBalances({ mappings, accountsById }) {
-  const rows = [];
+export function groupMappings(mappings) {
+  // Several provider accounts may roll up into one DeskBooks account
+  // (e.g. nine CDs tracked as a single "Marcus CDs" account).
+  const byDeskbooksId = new Map();
   for (const mapping of mappings) {
-    const account = accountsById[mapping.plaidAccountId];
-    if (!account) {
-      continue;
+    const ids = byDeskbooksId.get(mapping.deskbooksAccountId) ?? [];
+    ids.push(mapping.plaidAccountId);
+    byDeskbooksId.set(mapping.deskbooksAccountId, ids);
+  }
+  return byDeskbooksId;
+}
+
+export function normalizePlaidBalances({ mappings, accountsById }) {
+  // Balances of provider accounts sharing a DeskBooks account are summed
+  // (integer-cent math). A row is emitted as null only when every mapped
+  // provider account reports a null balance.
+  const rows = [];
+  for (const [deskbooksAccountId, plaidIds] of groupMappings(mappings)) {
+    let cents = 0;
+    let seen = 0;
+    for (const plaidId of plaidIds) {
+      const current = accountsById[plaidId]?.balances?.current;
+      if (current == null) {
+        continue;
+      }
+      cents += Math.round(Number(current) * 100);
+      seen += 1;
     }
-    const current = account.balances?.current;
+    if (seen === 0 && plaidIds.every((id) => !accountsById[id])) {
+      continue; // no data for any mapped account this run
+    }
     rows.push({
-      accountId: mapping.deskbooksAccountId,
-      balance: current == null ? null : String(current),
+      accountId: deskbooksAccountId,
+      balance: seen === 0 ? null : (cents / 100).toFixed(2),
     });
   }
   return rows;
@@ -183,10 +206,11 @@ export async function fetch({ source, config, downloadsDir }) {
   }
 
   const entries = [];
-  for (const mapping of mappings) {
-    const accountTxns = transactions.filter((t) => t.account_id === mapping.plaidAccountId);
+  for (const [deskbooksAccountId, plaidIds] of groupMappings(mappings)) {
+    const idSet = new Set(plaidIds);
+    const accountTxns = transactions.filter((t) => idSet.has(t.account_id));
     const staged = buildStagedTransactions({
-      accountId: mapping.deskbooksAccountId,
+      accountId: deskbooksAccountId,
       transactions: normalizePlaidTransactions({
         transactions: accountTxns,
         invertAmounts: source.invertAmounts === true,
@@ -194,13 +218,13 @@ export async function fetch({ source, config, downloadsDir }) {
     });
     const filePath = await writeStagedFile(
       downloadsDir,
-      `${today}-${source.name}-acct${mapping.deskbooksAccountId}-transactions.json`,
+      `${today}-${source.name}-acct${deskbooksAccountId}-transactions.json`,
       staged,
     );
     entries.push({
       path: filePath,
       kind: "statement",
-      accountId: mapping.deskbooksAccountId,
+      accountId: deskbooksAccountId,
       importerName: "staged_json",
     });
   }
