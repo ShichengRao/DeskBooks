@@ -5,6 +5,8 @@ import type { QueryClient } from "@tanstack/react-query";
 // don't stay stale (refetchOnWindowFocus is off).
 export function invalidateTxQueries(qc: QueryClient) {
   qc.invalidateQueries({ queryKey: ["transactions"] });
+  qc.invalidateQueries({ queryKey: ["transactions-count"] });
+  qc.invalidateQueries({ queryKey: ["transactions-count-all"] });
   qc.invalidateQueries({ queryKey: ["monthly"] });
   qc.invalidateQueries({ queryKey: ["sankey"] });
   qc.invalidateQueries({ queryKey: ["recurring"] });
