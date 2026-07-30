@@ -15,7 +15,7 @@ router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 DbSession = Annotated[Session, Depends(get_db)]
 
 
-@router.get("/monthly")
+@router.get("/monthly", response_model=list[schemas.MonthlyPoint])
 def monthly(
     start: date,
     end: date,
@@ -24,7 +24,7 @@ def monthly(
     return a.monthly_breakdown(db, start, end)
 
 
-@router.get("/sankey")
+@router.get("/sankey", response_model=schemas.SankeyResponse)
 def sankey(
     db: DbSession,
     year: int | None = None,
@@ -40,7 +40,7 @@ def sankey(
     return a.yearly_sankey(db, year)
 
 
-@router.get("/recurring")
+@router.get("/recurring", response_model=list[schemas.RecurringMerchant])
 def recurring(
     db: DbSession,
     min_occurrences: int = 3,
