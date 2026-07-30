@@ -78,6 +78,23 @@
         "title": "AccountBalanceOut",
         "type": "object"
       },
+      "AccountBulkIn": {
+        "properties": {
+          "accounts": {
+            "items": {
+              "$ref": "#/components/schemas/AccountIn"
+            },
+            "minItems": 1,
+            "title": "Accounts",
+            "type": "array"
+          }
+        },
+        "required": [
+          "accounts"
+        ],
+        "title": "AccountBulkIn",
+        "type": "object"
+      },
       "AccountCategory": {
         "enum": [
           "bank",
@@ -5206,6 +5223,52 @@
           }
         },
         "summary": "Create Account",
+        "tags": [
+          "accounts"
+        ]
+      }
+    },
+    "/api/accounts/bulk": {
+      "post": {
+        "description": "All-or-nothing create for initial setup (~10 accounts at once).\nName collisions come back as one 422 instead of a partial insert.",
+        "operationId": "create_accounts_bulk_api_accounts_bulk_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountBulkIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AccountOut"
+                  },
+                  "title": "Response Create Accounts Bulk Api Accounts Bulk Post",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Accounts Bulk",
         "tags": [
           "accounts"
         ]

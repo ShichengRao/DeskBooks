@@ -88,6 +88,10 @@ class AccountIn(BaseModel):
     sort_order: int = 0
 
 
+class AccountBulkIn(BaseModel):
+    accounts: list[AccountIn] = Field(min_length=1)
+
+
 class AccountUpdate(BaseModel):
     name: str | None = None
     institution: str | None = None
