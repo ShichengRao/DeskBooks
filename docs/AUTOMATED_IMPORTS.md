@@ -91,7 +91,7 @@ credit-card account:
   "mode": "auto-login",
   "credentialService": "DeskBooks.Chase",
   "username": "your-chase-username",
-  "accountText": "9104",
+  "accountText": "1234",
   "dateRangeDays": 365,
   "activityPreset": "choose a date range",
   "startUrl": "https://secure.chase.com/",
