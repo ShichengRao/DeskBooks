@@ -254,7 +254,13 @@ def _staged_listing(
     """Manifest entries as the Import page shows them, newest fetch first.
 
     Deduped by sha256 and by path (a refetch overwrites the file in place,
-    so only the newest manifest line per file reflects what's on disk)."""
+    so only the newest manifest line per file reflects what's on disk).
+
+    Status is derived from this profile's database and the file contents
+    only — never from the shared import-state file, which any profile's
+    import (CLI or UI) writes to. A file counts as imported here when its
+    batch exists in this database, or when it has nothing left to change
+    (every statement row already present / every balance already equal)."""
     entries = staging.read_manifest(staging_dir / "manifest.jsonl", lenient=True)
     picked: list[dict] = []
     seen_sha: set[str] = set()
@@ -270,7 +276,6 @@ def _staged_listing(
         if len(picked) >= STAGED_LIST_CAP:
             break
 
-    state = staging.load_state(state_path).get("applied_sha256", {})
     account_names = dict(db.execute(select(models.Account.id, models.Account.name)).all())
 
     rows: list[schemas.StagedEntryOut] = []
@@ -309,15 +314,11 @@ def _staged_listing(
         if out.profile is not None and out.profile != active_profile:
             out.status = "other_profile"
             continue
-        applied = state.get(out.sha256)
-        if applied is not None:
-            out.status = "empty" if applied.get("empty") else "imported"
-            continue
-        if staging.existing_batch_for_sha(db, out.sha256) is not None:
-            out.status = "imported"
-            continue
 
         if kind == "statement":
+            if staging.existing_batch_for_sha(db, out.sha256) is not None:
+                out.status = "imported"
+                continue
             if account_id is None or account_id not in account_names:
                 out.status = "unknown_account"
                 out.detail = f"account id {raw_account_id!r} does not exist in this profile"
@@ -335,6 +336,11 @@ def _staged_listing(
                 continue
             out.row_count = len(preview.rows)
             out.new_count = sum(1 for r in preview.rows if not r.is_duplicate)
+            if out.row_count == 0:
+                out.status = "empty"
+            elif out.new_count == 0:
+                out.status = "imported"
+                out.detail = "every row is already in this profile"
         else:
             try:
                 staged = balance_snapshots.parse_staged_balances_bytes(path.read_bytes())
@@ -345,6 +351,11 @@ def _staged_listing(
             out.as_of = staged.as_of
             out.row_count = sum(1 for _, balance in staged.rows if balance is not None)
             out.new_count = plan.updated
+            if out.row_count == 0:
+                out.status = "empty"
+            elif out.new_count == 0:
+                out.status = "imported"
+                out.detail = "balances already match this profile"
     return rows
 
 
@@ -403,6 +414,8 @@ def _apply_staged(
             continue
 
         if row.kind == "statement":
+            # The listing only marks a file "new" when it has fresh rows,
+            # so there is always something to apply here.
             preview = _preview_from_bytes(
                 db,
                 data=data,
@@ -410,13 +423,6 @@ def _apply_staged(
                 account_id=row.account_id,
                 importer_name=row.importer_name,
             )
-            if not preview.rows:
-                # Same contract as the CLI: no empty batches, but remember
-                # the file so it stops showing up as importable.
-                applied_map[sha256] = {"path": row.path, "empty": True}
-                state_dirty = True
-                outcome.status = "empty"
-                continue
             ensure_backup()
             batch = apply(
                 schemas.ImportApplyRequest(
@@ -466,9 +472,9 @@ def _apply_staged(
 @router.post("/staged/apply", response_model=schemas.StagedApplyResult)
 def staged_apply(body: schemas.StagedApplyRequest, db: DbSession):
     """Import staged files by sha256 — or everything importable when the
-    list is empty. Statements become import batches (duplicates skipped,
-    empty files just marked); balances merge into net-worth snapshots. One
-    database backup is taken before the first write, like the CLI."""
+    list is empty. Statements become import batches (duplicates skipped);
+    balances merge into net-worth snapshots. One database backup is taken
+    before the first write, like the CLI."""
     profile = get_active_profile()
     return _apply_staged(
         db,

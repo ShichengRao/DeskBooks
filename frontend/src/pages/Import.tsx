@@ -146,19 +146,37 @@ function StagedImportsPanel({
   // Fully hidden until a connector has staged something — a CSV-only setup
   // never sees this panel.
   if (!entries.length) return null;
-  const ready = entries.filter((entry) => entry.status === "new");
+  // Already-imported and empty files stay off the page: they'd duplicate
+  // the Past imports table. Problems (unknown account, missing file, …)
+  // stay visible so an unimportable file is never silently invisible.
+  const actionable = entries.filter((entry) => entry.status !== "imported" && entry.status !== "empty");
+  const ready = actionable.filter((entry) => entry.status === "new");
+  const doneCount = entries.length - actionable.length;
   const lastFetched = entries
     .map((entry) => entry.downloaded_at)
     .filter(Boolean)
     .sort()
     .at(-1);
+  if (!actionable.length) {
+    return (
+      <div className="card p-4 flex items-baseline justify-between">
+        <div className="text-sm font-medium">Staged from connectors</div>
+        <div className="text-xs text-ink-500">
+          all {doneCount} staged file(s) imported
+          {lastFetched ? ` · last fetch ${dateLabel(lastFetched)}` : ""} · run{" "}
+          <span className="font-mono">make fetch</span> to pull fresh data
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="card p-4">
       <div className="flex items-baseline justify-between mb-3">
         <div className="text-sm font-medium">Staged from connectors</div>
         <div className="text-xs text-ink-500">
           {lastFetched ? `last fetch ${dateLabel(lastFetched)} · ` : ""}
-          {ready.length ? `${ready.length} file(s) ready` : "nothing new — run make fetch to refresh"}
+          {ready.length ? `${ready.length} file(s) ready` : "nothing importable"}
+          {doneCount ? ` · ${doneCount} already imported` : ""}
         </div>
       </div>
       <div className="overflow-x-auto">
@@ -174,7 +192,7 @@ function StagedImportsPanel({
             </tr>
           </thead>
           <tbody className="divide-y divide-ink-100">
-            {entries.map((entry) => (
+            {actionable.map((entry) => (
               <StagedImportRow key={entry.sha256} entry={entry} pending={pending} onImport={onImport} />
             ))}
           </tbody>

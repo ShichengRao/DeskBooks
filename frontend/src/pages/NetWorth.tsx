@@ -169,7 +169,6 @@ export function NetWorth() {
     [accounts.data],
   );
 
-  const latest = snapshots.data?.[0];
   const editingSnapshot = editingSnapId === "new"
     ? null
     : (snapshots.data?.find((snapshot) => snapshot.id === editingSnapId) ?? null);
@@ -215,7 +214,6 @@ export function NetWorth() {
       <SnapshotEditorDialog
         editingSnapId={editingSnapId}
         snapshot={editingSnapshot}
-        latest={latest}
         snapshots={snapshots.data ?? []}
         accounts={accounts.data ?? []}
         accountById={accountById}
@@ -510,6 +508,18 @@ function NetWorthAllocationPanel({
   chartColors: ChartColors;
   onFocus: (value: string | null) => void;
 }) {
+  // Allocations live on a 0–100% scale; extend the floor only as far as
+  // the data actually dips (credit cards at -0.1% used to drag the
+  // auto-domain down to -30%).
+  const pctFloor = Math.min(
+    0,
+    Math.floor(
+      Math.min(
+        0,
+        ...data.flatMap((row) => ACCOUNT_CATEGORY_SERIES.map((s) => Number(row[s.pctKey] ?? 0))),
+      ),
+    ),
+  );
   return (
     <div className="card p-4">
       <div className="mb-2">
@@ -524,7 +534,14 @@ function NetWorthAllocationPanel({
           <LineChart data={data}>
             <CartesianGrid stroke="#eceef2" vertical={false} />
             <XAxis dataKey="date" tickFormatter={(date) => shortDateLabel(date)} tick={{ fontSize: 12 }} stroke="#7a8392" />
-            <YAxis domain={["auto", "auto"]} tickFormatter={(value) => `${Number(value).toFixed(0)}%`} tick={{ fontSize: 12 }} stroke="#7a8392" width={70} />
+            <YAxis
+              domain={[pctFloor, 100]}
+              ticks={[0, 25, 50, 75, 100]}
+              tickFormatter={(value) => `${Number(value).toFixed(0)}%`}
+              tick={{ fontSize: 12 }}
+              stroke="#7a8392"
+              width={70}
+            />
             <Tooltip formatter={(value: number) => `${value.toFixed(1)}%`} labelFormatter={(label) => dateLabel(label as string)} />
             <Legend
               content={(props) => (
@@ -642,7 +659,6 @@ function NetWorthSnapshotRow({
 function SnapshotEditorDialog({
   editingSnapId,
   snapshot,
-  latest,
   snapshots,
   accounts,
   accountById,
@@ -653,7 +669,6 @@ function SnapshotEditorDialog({
 }: {
   editingSnapId: number | "new" | null;
   snapshot: NetWorthSnapshot | null;
-  latest?: NetWorthSnapshot;
   snapshots: NetWorthSnapshot[];
   accounts: Account[];
   accountById: Record<number, Account>;
@@ -667,7 +682,6 @@ function SnapshotEditorDialog({
     <SnapshotEditor
       key={String(editingSnapId)}
       snapshot={snapshot}
-      prefillFrom={editingSnapId === "new" ? latest : undefined}
       snapshots={snapshots}
       accounts={accounts}
       accountById={accountById}
@@ -681,7 +695,6 @@ function SnapshotEditorDialog({
 
 function SnapshotEditor({
   snapshot,
-  prefillFrom,
   snapshots,
   accounts,
   accountById,
@@ -691,7 +704,6 @@ function SnapshotEditor({
   onSaved,
 }: {
   snapshot: NetWorthSnapshot | null;
-  prefillFrom?: NetWorthSnapshot;
   snapshots: NetWorthSnapshot[];
   accounts: Account[];
   accountById: Record<number, Account>;
@@ -703,12 +715,14 @@ function SnapshotEditor({
   const [date, setDate] = useState(snapshot?.snapshot_date ?? new Date().toISOString().slice(0, 10));
   const [notes, setNotes] = useState(snapshot?.notes ?? "");
   const [showDormantAccounts, setShowDormantAccounts] = useState(false);
+  // A new snapshot starts blank on purpose: values arrive either from
+  // "fill from connections" or by hand, so it's always clear where a
+  // number came from. Editing an existing snapshot loads its own values.
   const initialBalances = useMemo(() => {
-    const source = snapshot?.balances ?? prefillFrom?.balances ?? [];
     const m: Record<number, string> = {};
-    for (const b of source) m[b.account_id] = b.balance ?? "";
+    for (const b of snapshot?.balances ?? []) m[b.account_id] = b.balance ?? "";
     return m;
-  }, [snapshot, prefillFrom]);
+  }, [snapshot]);
   const [balances, setBalances] = useState<Record<number, string>>(initialBalances);
 
   // Latest connector-staged balances (refreshed by `make fetch-preview`).

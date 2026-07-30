@@ -7077,7 +7077,7 @@
     },
     "/api/imports/staged/apply": {
       "post": {
-        "description": "Import staged files by sha256 \u2014 or everything importable when the\nlist is empty. Statements become import batches (duplicates skipped,\nempty files just marked); balances merge into net-worth snapshots. One\ndatabase backup is taken before the first write, like the CLI.",
+        "description": "Import staged files by sha256 \u2014 or everything importable when the\nlist is empty. Statements become import batches (duplicates skipped);\nbalances merge into net-worth snapshots. One database backup is taken\nbefore the first write, like the CLI.",
         "operationId": "staged_apply_api_imports_staged_apply_post",
         "requestBody": {
           "content": {
