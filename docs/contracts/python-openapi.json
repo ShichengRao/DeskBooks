@@ -4079,6 +4079,36 @@
         "title": "SignConvention",
         "type": "string"
       },
+      "SnapshotPrefillBalance": {
+        "properties": {
+          "account_id": {
+            "title": "Account Id",
+            "type": "integer"
+          },
+          "as_of": {
+            "format": "date",
+            "title": "As Of",
+            "type": "string"
+          },
+          "balance": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Balance",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "account_id",
+          "balance",
+          "as_of",
+          "source"
+        ],
+        "title": "SnapshotPrefillBalance",
+        "type": "object"
+      },
       "SplitGroupSummary": {
         "properties": {
           "expected_reimbursement": {
@@ -7644,6 +7674,32 @@
           }
         },
         "summary": "Import Workbook",
+        "tags": [
+          "snapshots"
+        ]
+      }
+    },
+    "/api/snapshots/prefill": {
+      "get": {
+        "description": "Latest connector-staged balance per account, for prefilling the\nsnapshot editor. Reads staged files only \u2014 no network, no DB writes.",
+        "operationId": "snapshot_prefill_api_snapshots_prefill_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SnapshotPrefillBalance"
+                  },
+                  "title": "Response Snapshot Prefill Api Snapshots Prefill Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Snapshot Prefill",
         "tags": [
           "snapshots"
         ]

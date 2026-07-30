@@ -179,6 +179,42 @@ def test_balances_apply_skips_null_and_unknown_accounts(db):
     assert db.query(AccountBalance).count() == 0
 
 
+def test_collect_staged_prefill_returns_newest_balance_per_account(tmp_path):
+    staging = tmp_path / "staging"
+    staging.mkdir()
+
+    def stage(name: str, as_of: str, rows: list[dict], source: str) -> str:
+        path = staging / name
+        path.write_text(
+            json.dumps(
+                {"format": "deskbooks.staged-balances/v1", "as_of": as_of, "balances": rows}
+            )
+        )
+        return json.dumps({"kind": "balances", "path": str(path), "source": source})
+
+    older = stage("old.json", "2026-07-01", [{"account_id": 6, "balance": "25088.00"}], "plaid_a")
+    newer = stage(
+        "new.json",
+        "2026-07-30",
+        [{"account_id": 6, "balance": "10088.95"}, {"account_id": 7, "balance": None}],
+        "plaid_b",
+    )
+    missing = json.dumps({"kind": "balances", "path": str(staging / "gone.json"), "source": "x"})
+    statement = json.dumps({"kind": "statement", "path": str(staging / "old.json"), "source": "y"})
+    (staging / "manifest.jsonl").write_text("\n".join([older, newer, missing, statement, "not-json"]) + "\n")
+
+    rows = balance_snapshots.collect_staged_prefill(staging)
+    assert rows == [
+        {
+            "account_id": 6,
+            "balance": Decimal("10088.95"),
+            "as_of": date(2026, 7, 30),
+            "source": "plaid_b",
+        }
+    ]
+    assert balance_snapshots.collect_staged_prefill(tmp_path / "nope") == []
+
+
 def _entry_for(tmp_path, *, kind: str | None, **overrides):
     staged = tmp_path / "staging"
     staged.mkdir(exist_ok=True)

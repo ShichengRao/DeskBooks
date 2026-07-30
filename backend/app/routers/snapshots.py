@@ -10,6 +10,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from .. import analytics, models, schemas
+from ..app_paths import DATA_DIR
+from ..balance_snapshots import collect_staged_prefill
 from .common import DbSession, get_or_404
 
 router = APIRouter(prefix="/api/snapshots", tags=["snapshots"])
@@ -194,6 +196,13 @@ def delete_snapshot(snap_id: int, db: DbSession):
     db.delete(snap)
     db.commit()
     return {"status": "deleted"}
+
+
+@router.get("/prefill", response_model=list[schemas.SnapshotPrefillBalance])
+def snapshot_prefill():
+    """Latest connector-staged balance per account, for prefilling the
+    snapshot editor. Reads staged files only — no network, no DB writes."""
+    return collect_staged_prefill(DATA_DIR / "import-staging")
 
 
 @router.get("/series", response_model=list[schemas.NetWorthSeriesPoint])
