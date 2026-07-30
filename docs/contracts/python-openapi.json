@@ -78,6 +78,23 @@
         "title": "AccountBalanceOut",
         "type": "object"
       },
+      "AccountBulkIn": {
+        "properties": {
+          "accounts": {
+            "items": {
+              "$ref": "#/components/schemas/AccountIn"
+            },
+            "minItems": 1,
+            "title": "Accounts",
+            "type": "array"
+          }
+        },
+        "required": [
+          "accounts"
+        ],
+        "title": "AccountBulkIn",
+        "type": "object"
+      },
       "AccountCategory": {
         "enum": [
           "bank",
@@ -4079,6 +4096,36 @@
         "title": "SignConvention",
         "type": "string"
       },
+      "SnapshotPrefillBalance": {
+        "properties": {
+          "account_id": {
+            "title": "Account Id",
+            "type": "integer"
+          },
+          "as_of": {
+            "format": "date",
+            "title": "As Of",
+            "type": "string"
+          },
+          "balance": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Balance",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "account_id",
+          "balance",
+          "as_of",
+          "source"
+        ],
+        "title": "SnapshotPrefillBalance",
+        "type": "object"
+      },
       "SplitGroupSummary": {
         "properties": {
           "expected_reimbursement": {
@@ -4125,6 +4172,268 @@
           "transaction_count"
         ],
         "title": "SplitGroupSummary",
+        "type": "object"
+      },
+      "StagedApplyOutcome": {
+        "properties": {
+          "batch_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batch Id"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "duplicates": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duplicates"
+          },
+          "file_name": {
+            "title": "File Name",
+            "type": "string"
+          },
+          "rows_applied": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rows Applied"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
+          "snapshot_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snapshot Id"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sha256",
+          "file_name",
+          "status"
+        ],
+        "title": "StagedApplyOutcome",
+        "type": "object"
+      },
+      "StagedApplyRequest": {
+        "properties": {
+          "sha256s": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Sha256S",
+            "type": "array"
+          }
+        },
+        "title": "StagedApplyRequest",
+        "type": "object"
+      },
+      "StagedApplyResult": {
+        "properties": {
+          "backup_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backup Name"
+          },
+          "outcomes": {
+            "items": {
+              "$ref": "#/components/schemas/StagedApplyOutcome"
+            },
+            "title": "Outcomes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "outcomes"
+        ],
+        "title": "StagedApplyResult",
+        "type": "object"
+      },
+      "StagedEntryOut": {
+        "description": "One connector-staged file from the staging manifest, as the Import\npage sees it: what it is, which account it maps to, and whether it can\nbe imported into the active profile right now.",
+        "properties": {
+          "account_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Id"
+          },
+          "account_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Name"
+          },
+          "as_of": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "downloaded_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Downloaded At"
+          },
+          "file_name": {
+            "title": "File Name",
+            "type": "string"
+          },
+          "importer_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Importer Name"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "new_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "New Count"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profile"
+          },
+          "row_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Row Count"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sha256",
+          "source",
+          "kind",
+          "file_name",
+          "path",
+          "account_id",
+          "account_name",
+          "importer_name",
+          "profile",
+          "downloaded_at",
+          "status"
+        ],
+        "title": "StagedEntryOut",
         "type": "object"
       },
       "TagOut": {
@@ -4919,6 +5228,52 @@
         ]
       }
     },
+    "/api/accounts/bulk": {
+      "post": {
+        "description": "All-or-nothing create for initial setup (~10 accounts at once).\nName collisions come back as one 422 instead of a partial insert.",
+        "operationId": "create_accounts_bulk_api_accounts_bulk_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountBulkIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AccountOut"
+                  },
+                  "title": "Response Create Accounts Bulk Api Accounts Bulk Post",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Accounts Bulk",
+        "tags": [
+          "accounts"
+        ]
+      }
+    },
     "/api/accounts/{account_id}": {
       "delete": {
         "operationId": "delete_account_api_accounts__account_id__delete",
@@ -5063,6 +5418,59 @@
           }
         },
         "summary": "Shutdown"
+      }
+    },
+    "/api/analytics/cashflow": {
+      "get": {
+        "operationId": "cashflow_api_analytics_cashflow_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "start",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "Start",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "end",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "End",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SankeyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cashflow",
+        "tags": [
+          "analytics"
+        ]
       }
     },
     "/api/analytics/fire/projection": {
@@ -6641,6 +7049,74 @@
         ]
       }
     },
+    "/api/imports/staged": {
+      "get": {
+        "description": "Connector-staged files from the shared manifest, with per-file\nimport status for the active profile. Reads local files only.",
+        "operationId": "staged_list_api_imports_staged_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/StagedEntryOut"
+                  },
+                  "title": "Response Staged List Api Imports Staged Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Staged List",
+        "tags": [
+          "imports"
+        ]
+      }
+    },
+    "/api/imports/staged/apply": {
+      "post": {
+        "description": "Import staged files by sha256 \u2014 or everything importable when the\nlist is empty. Statements become import batches (duplicates skipped,\nempty files just marked); balances merge into net-worth snapshots. One\ndatabase backup is taken before the first write, like the CLI.",
+        "operationId": "staged_apply_api_imports_staged_apply_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StagedApplyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StagedApplyResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Staged Apply",
+        "tags": [
+          "imports"
+        ]
+      }
+    },
     "/api/imports/{batch_id}/rollback": {
       "post": {
         "operationId": "rollback_api_imports__batch_id__rollback_post",
@@ -7644,6 +8120,32 @@
           }
         },
         "summary": "Import Workbook",
+        "tags": [
+          "snapshots"
+        ]
+      }
+    },
+    "/api/snapshots/prefill": {
+      "get": {
+        "description": "Latest connector-staged balance per account, for prefilling the\nsnapshot editor. Reads staged files only \u2014 no network, no DB writes.\n\nThe staging tree is shared across profiles, so this filters to files\nstamped for the active profile (or unstamped legacy files) and to\naccount ids that actually exist in this profile's database.",
+        "operationId": "snapshot_prefill_api_snapshots_prefill_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SnapshotPrefillBalance"
+                  },
+                  "title": "Response Snapshot Prefill Api Snapshots Prefill Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Snapshot Prefill",
         "tags": [
           "snapshots"
         ]

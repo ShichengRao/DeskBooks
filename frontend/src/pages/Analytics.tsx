@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import Plot from "react-plotly.js";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, Legend } from "recharts";
+import { SankeySvg } from "../components/SankeySvg";
 import { ChartLegend } from "../components/ChartLegend";
 import { ChartColorControls, useChartColors } from "../components/ChartColorControls";
 import { DateRangeControls } from "../components/DateRangeControls";
@@ -11,6 +11,7 @@ import { colorAt } from "../lib/chartColors";
 import { currency, monthLabel, num } from "../lib/fmt";
 
 type ChartColors = ReturnType<typeof useChartColors>;
+type SankeyMode = "wealth" | "cash";
 type MonthlyChartData = {
   data: Record<string, number | string>[];
   cats: string[];
@@ -25,6 +26,7 @@ export function Analytics() {
   const [monthlyEnd, setMonthlyEnd] = useState(`${yearNow}-12-31`);
   const [sankeyStart, setSankeyStart] = useState(`${yearNow}-01-01`);
   const [sankeyEnd, setSankeyEnd] = useState(`${yearNow}-12-31`);
+  const [sankeyMode, setSankeyMode] = useState<SankeyMode>("wealth");
   const [focusedSankey, setFocusedSankey] = useState<string | null>(null);
   const [focusedExpense, setFocusedExpense] = useState<string | null>(null);
   const chartColors = useChartColors();
@@ -39,10 +41,11 @@ export function Analytics() {
     queryFn: () => api.get<{ count: number }>("/api/transactions/count"),
   });
   const sankey = useQuery({
-    queryKey: ["sankey", sankeyStart, sankeyEnd],
+    queryKey: ["sankey", sankeyMode, sankeyStart, sankeyEnd],
     queryFn: () =>
       api.get<SankeyResponse>(
-        "/api/analytics/sankey" + qs({ start: sankeyStart, end: sankeyEnd }),
+        (sankeyMode === "wealth" ? "/api/analytics/sankey" : "/api/analytics/cashflow") +
+          qs({ start: sankeyStart, end: sankeyEnd }),
       ),
     enabled: Boolean(sankeyStart && sankeyEnd),
   });
@@ -128,6 +131,11 @@ export function Analytics() {
       <SankeyPanel
         sankey={sankey.data}
         visibleSankey={visibleSankey}
+        mode={sankeyMode}
+        onMode={(mode) => {
+          setSankeyMode(mode);
+          setFocusedSankey(null);
+        }}
         loading={sankey.isLoading}
         hasAnyTransactions={(transactionCount.data?.count ?? 0) > 0}
         start={sankeyStart}
@@ -196,6 +204,8 @@ function AnalyticsHeader({
 function SankeyPanel({
   sankey,
   visibleSankey,
+  mode,
+  onMode,
   loading,
   hasAnyTransactions,
   start,
@@ -208,6 +218,8 @@ function SankeyPanel({
 }: {
   sankey?: SankeyResponse;
   visibleSankey?: SankeyResponse;
+  mode: SankeyMode;
+  onMode: (mode: SankeyMode) => void;
   loading: boolean;
   hasAnyTransactions: boolean;
   start: string;
@@ -221,7 +233,24 @@ function SankeyPanel({
   return (
     <div className="card p-4">
       <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
-        <div className="text-sm font-medium">Sankey: inflows → outflows ({sankey?.label ?? `${start} to ${end}`})</div>
+        <div className="flex items-center gap-3">
+          <div className="text-sm font-medium">
+            {mode === "wealth" ? "Wealth flow: inflows → outflows" : "Cash flow: in → out"} ({sankey?.label ?? `${start} to ${end}`})
+          </div>
+          <div className="flex rounded-md border border-slate-200 text-xs overflow-hidden">
+            {(["wealth", "cash"] as const).map((value) => (
+              <button
+                key={value}
+                type="button"
+                className={`px-2 py-1 ${mode === value ? "bg-slate-800 text-white" : "hover:bg-slate-100"}`}
+                onClick={() => onMode(value)}
+                title={value === "wealth" ? "Includes growth and account deltas from snapshots" : "Only money that moved; transfers and card payments netted"}
+              >
+                {value === "wealth" ? "Wealth" : "Cash"}
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="flex items-center gap-2 text-xs flex-wrap">
           <DateRangeControls start={start} end={end} onStart={onStart} onEnd={onEnd} />
           <ChartColorControls
@@ -271,39 +300,7 @@ function SankeyChart({
     );
   }
 
-  return (
-    <Plot
-      data={[{
-        type: "sankey",
-        orientation: "h",
-        node: {
-          pad: 14,
-          thickness: 16,
-          line: { color: "#ccc", width: 0.5 },
-          label: data.nodes.map((node) => node.name),
-          color: data.nodes.map((_, index) => colorAt(chartColors.colors, index)),
-        },
-        link: {
-          source: data.links.map((link) => link.source),
-          target: data.links.map((link) => link.target),
-          value: data.links.map((link) => link.value),
-          label: data.links.map((link) => link.label ?? ""),
-          color: data.links.map((link) => `${colorAt(chartColors.colors, link.source)}66`),
-        },
-      } as any]}
-      layout={{ autosize: true, height: 480, margin: { l: 20, r: 20, t: 10, b: 10 }, font: { family: "Inter, system-ui", size: 12 } }}
-      useResizeHandler
-      style={{ width: "100%", height: "480px" }}
-      config={{ displayModeBar: false }}
-      onClick={(event: any) => {
-        const point = event?.points?.[0];
-        const label = typeof point?.label === "string" ? point.label : null;
-        const sourceLabel = typeof point?.source?.label === "string" ? point.source.label : null;
-        const targetLabel = typeof point?.target?.label === "string" ? point.target.label : null;
-        onFocus(label || sourceLabel || targetLabel);
-      }}
-    />
-  );
+  return <SankeySvg data={data} colors={chartColors.colors} onFocus={onFocus} />;
 }
 
 function MonthlyExpensesPanel({

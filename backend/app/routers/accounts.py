@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from fastapi import APIRouter
+from collections import Counter
+
+from fastapi import APIRouter, HTTPException
 from sqlalchemy import select
 
 from .. import models, schemas
@@ -29,6 +31,34 @@ def list_accounts(db: DbSession, include_closed: bool = True):
 def create_account(body: schemas.AccountIn, db: DbSession):
     obj = _new_account(body)
     return add_and_refresh(db, obj)
+
+
+@router.post("/bulk", response_model=list[schemas.AccountOut])
+def create_accounts_bulk(body: schemas.AccountBulkIn, db: DbSession):
+    """All-or-nothing create for initial setup (~10 accounts at once).
+    Name collisions come back as one 422 instead of a partial insert."""
+    names = [account.name.strip() for account in body.accounts]
+    if any(not name for name in names):
+        raise HTTPException(422, "every account needs a name")
+    repeated = sorted(name for name, count in Counter(names).items() if count > 1)
+    if repeated:
+        raise HTTPException(422, f"duplicate name(s) in request: {', '.join(repeated)}")
+    taken = sorted(
+        db.scalars(select(models.Account.name).where(models.Account.name.in_(names)))
+    )
+    if taken:
+        raise HTTPException(422, f"account name(s) already exist: {', '.join(taken)}")
+
+    created = []
+    for account, name in zip(body.accounts, names, strict=True):
+        obj = _new_account(account)
+        obj.name = name
+        db.add(obj)
+        created.append(obj)
+    db.commit()
+    for obj in created:
+        db.refresh(obj)
+    return created
 
 
 @router.get("/{account_id}", response_model=schemas.AccountOut)

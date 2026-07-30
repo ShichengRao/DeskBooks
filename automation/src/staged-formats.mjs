@@ -11,6 +11,12 @@
  * deskbooks.staged-balances/v1 — one file per run:
  *   { "format": "...", "as_of": "2026-07-30", "balances": [
  *       { "account_id": 2, "balance": "1234.56" } ] }
+ *
+ * Both formats accept an optional "profile" (a DeskBooks profile slug).
+ * Account ids are only meaningful within one profile's database, so a
+ * stamped file is refused by the importer and ignored by the snapshot
+ * prefill endpoint when a different profile is active. Unstamped files
+ * keep the old behavior.
  */
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -28,6 +34,16 @@ function assertIsoDate(value, label) {
   return value;
 }
 
+function assertProfile(value) {
+  if (value == null) {
+    return null;
+  }
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error(`profile must be a non-empty string, got: ${value}`);
+  }
+  return value;
+}
+
 function assertAmountString(value, label) {
   if (typeof value === "number") {
     // Refuse floats at the boundary; connectors must format decimals as strings.
@@ -39,12 +55,14 @@ function assertAmountString(value, label) {
   return value;
 }
 
-export function buildStagedTransactions({ accountId, transactions }) {
+export function buildStagedTransactions({ accountId, transactions, profile = null }) {
   if (!Number.isInteger(accountId)) {
     throw new Error("staged transactions need an integer accountId");
   }
+  const stamped = assertProfile(profile);
   return {
     format: STAGED_TRANSACTIONS_FORMAT,
+    ...(stamped ? { profile: stamped } : {}),
     account_id: accountId,
     transactions: transactions.map((txn, index) => ({
       id: txn.id != null ? String(txn.id) : null,
@@ -58,9 +76,11 @@ export function buildStagedTransactions({ accountId, transactions }) {
   };
 }
 
-export function buildStagedBalances({ asOf, rows }) {
+export function buildStagedBalances({ asOf, rows, profile = null }) {
+  const stamped = assertProfile(profile);
   return {
     format: STAGED_BALANCES_FORMAT,
+    ...(stamped ? { profile: stamped } : {}),
     as_of: assertIsoDate(asOf, "as_of"),
     balances: rows.map((row, index) => {
       if (!Number.isInteger(row.accountId)) {
