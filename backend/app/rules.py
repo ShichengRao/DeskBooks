@@ -15,6 +15,7 @@ from __future__ import annotations
 import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass
+from functools import lru_cache
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -231,8 +232,14 @@ def _raw_proposal_text(tx: models.Transaction) -> str:
     return (tx.merchant or tx.description_normalized or tx.description_raw or "").strip()
 
 
+@lru_cache(maxsize=8192)
 def _generalize_description(value: str) -> str:
-    """Collapse volatile transaction refs into reusable merchant-ish keys."""
+    """Collapse volatile transaction refs into reusable merchant-ish keys.
+
+    Cached because proposal generation calls this per candidate-key per
+    transaction (via _proposal_matches), re-running ~a dozen regex passes
+    on the same few thousand distinct descriptions.
+    """
     s = (value or "").strip()
     if not s:
         return ""
