@@ -3,8 +3,9 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
+from typing import Annotated
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from openpyxl import load_workbook
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -12,7 +13,8 @@ from sqlalchemy.orm import selectinload
 from .. import analytics, models, schemas
 from ..app_paths import DATA_DIR
 from ..balance_snapshots import collect_staged_prefill
-from ..profiles import get_active_profile
+from ..db import get_request_profile
+from ..profiles import ProfileInfo
 from .common import DbSession, get_or_404
 
 router = APIRouter(prefix="/api/snapshots", tags=["snapshots"])
@@ -217,16 +219,16 @@ def delete_snapshot(snap_id: int, db: DbSession):
 
 
 @router.get("/prefill", response_model=list[schemas.SnapshotPrefillBalance])
-def snapshot_prefill(db: DbSession):
+def snapshot_prefill(db: DbSession, profile: Annotated[ProfileInfo, Depends(get_request_profile)]):
     """Latest connector-staged balance per account, for prefilling the
     snapshot editor. Reads staged files only — no network, no DB writes.
 
     The staging tree is shared across profiles, so this filters to files
-    stamped for the active profile (or unstamped legacy files) and to
-    account ids that actually exist in this profile's database."""
+    stamped for the requesting tab's profile (or unstamped legacy files)
+    and to account ids that actually exist in that profile's database."""
     return collect_staged_prefill(
         DATA_DIR / "import-staging",
-        active_profile=get_active_profile().slug,
+        active_profile=profile.slug,
         valid_account_ids=set(db.scalars(select(models.Account.id))),
     )
 

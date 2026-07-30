@@ -7051,7 +7051,7 @@
     },
     "/api/imports/staged": {
       "get": {
-        "description": "Connector-staged files from the shared manifest, with per-file\nimport status for the active profile. Reads local files only.",
+        "description": "Connector-staged files from the shared manifest, with per-file\nimport status for the requesting tab's profile. Reads local files only.",
         "operationId": "staged_list_api_imports_staged_get",
         "responses": {
           "200": {
@@ -8127,7 +8127,7 @@
     },
     "/api/snapshots/prefill": {
       "get": {
-        "description": "Latest connector-staged balance per account, for prefilling the\nsnapshot editor. Reads staged files only \u2014 no network, no DB writes.\n\nThe staging tree is shared across profiles, so this filters to files\nstamped for the active profile (or unstamped legacy files) and to\naccount ids that actually exist in this profile's database.",
+        "description": "Latest connector-staged balance per account, for prefilling the\nsnapshot editor. Reads staged files only \u2014 no network, no DB writes.\n\nThe staging tree is shared across profiles, so this filters to files\nstamped for the requesting tab's profile (or unstamped legacy files)\nand to account ids that actually exist in that profile's database.",
         "operationId": "snapshot_prefill_api_snapshots_prefill_get",
         "responses": {
           "200": {
