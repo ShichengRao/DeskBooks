@@ -5,19 +5,22 @@ from collections import Counter
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import backups, balance_snapshots, importers, models, schemas, staging
 from .. import rules as rules_engine
+from ..db import get_request_profile
 from ..importers.amex_xlsx import parse_amex_xlsx_bytes
 from ..importers.staged_json import parse_staged_transactions_bytes
 from ..models import SignConvention
-from ..profiles import ProfileInfo, get_active_profile
+from ..profiles import ProfileInfo
 from .common import DbSession, get_or_404
 
 router = APIRouter(prefix="/api/imports", tags=["imports"])
+
+RequestProfile = Annotated[ProfileInfo, Depends(get_request_profile)]
 
 # Newest entries beyond this stay in manifest.jsonl but off the page; only
 # importable ("new") entries get parsed for row counts, so a long history
@@ -360,14 +363,14 @@ def _staged_listing(
 
 
 @router.get("/staged", response_model=list[schemas.StagedEntryOut])
-def staged_list(db: DbSession):
+def staged_list(db: DbSession, profile: RequestProfile):
     """Connector-staged files from the shared manifest, with per-file
-    import status for the active profile. Reads local files only."""
+    import status for the requesting tab's profile. Reads local files only."""
     return _staged_listing(
         db,
         staging.default_staging_dir(),
         staging.default_state_path(),
-        get_active_profile().slug,
+        profile.slug,
     )
 
 
@@ -470,12 +473,11 @@ def _apply_staged(
 
 
 @router.post("/staged/apply", response_model=schemas.StagedApplyResult)
-def staged_apply(body: schemas.StagedApplyRequest, db: DbSession):
+def staged_apply(body: schemas.StagedApplyRequest, db: DbSession, profile: RequestProfile):
     """Import staged files by sha256 — or everything importable when the
     list is empty. Statements become import batches (duplicates skipped);
     balances merge into net-worth snapshots. One database backup is taken
     before the first write, like the CLI."""
-    profile = get_active_profile()
     return _apply_staged(
         db,
         staging.default_staging_dir(),

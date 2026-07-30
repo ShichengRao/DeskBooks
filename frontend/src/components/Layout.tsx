@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { NavLink, Outlet } from "react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import clsx from "clsx";
-import { api, PROFILE_MISMATCH_EVENT, setExpectedProfile } from "../api/client";
+import { api, getTabProfile, PROFILE_GONE_EVENT, setTabProfile } from "../api/client";
 import { Field } from "./Field";
 import { SidePanel } from "./SidePanel";
 import type { Profile, ProfileList } from "../api/types";
@@ -25,57 +25,69 @@ const tabs: { to: string; label: string; end?: boolean; group?: "view" | "edit" 
 export function Layout() {
   const [profileEditorOpen, setProfileEditorOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
-  // The profile this tab is pinned to. Every API call carries it, and the
-  // backend refuses writes/reads once another tab switches the active
-  // profile — instead of silently serving the other profile's data under
-  // this tab's header.
-  const [tabProfile, setTabProfile] = useState<string | null>(null);
-  const [mismatchProfile, setMismatchProfile] = useState<string | null>(null);
+  // The profile this tab is pinned to (per-tab via sessionStorage). Every
+  // API call carries it and routes to that profile's database, so two
+  // windows can live on two profiles at once. The server's "active"
+  // profile is only the default for fresh windows and the CLI.
+  const [tabProfile, setTabProfileState] = useState<string | null>(() => getTabProfile());
+  const [goneProfile, setGoneProfile] = useState<string | null>(null);
   const profiles = useQuery({
     queryKey: ["profiles"],
     queryFn: () => api.get<ProfileList>("/api/profiles"),
-    // Re-check on focus so returning to this tab notices a switch made
-    // elsewhere even before the next click.
+    // Keep the menu's default marker fresh when returning to this tab.
     refetchOnWindowFocus: "always",
   });
 
   useEffect(() => {
     const active = profiles.data?.active_slug;
-    if (!active) return;
-    if (tabProfile === null) {
-      setTabProfile(active);
-      setExpectedProfile(active);
-    } else if (active !== tabProfile) {
-      setMismatchProfile(active);
-    }
+    if (!active || tabProfile !== null) return;
+    // Fresh window: adopt the app's default profile as this tab's pin.
+    setTabProfile(active);
+    setTabProfileState(active);
   }, [profiles.data, tabProfile]);
 
   useEffect(() => {
-    const onMismatch = (event: Event) => {
-      const detail = (event as CustomEvent).detail as { active_profile?: string };
-      setMismatchProfile(detail?.active_profile ?? "unknown");
+    const onGone = (event: Event) => {
+      const detail = (event as CustomEvent).detail as { expected_profile?: string };
+      setGoneProfile(detail?.expected_profile ?? tabProfile ?? "?");
     };
-    window.addEventListener(PROFILE_MISMATCH_EVENT, onMismatch);
-    return () => window.removeEventListener(PROFILE_MISMATCH_EVENT, onMismatch);
-  }, []);
+    window.addEventListener(PROFILE_GONE_EVENT, onGone);
+    return () => window.removeEventListener(PROFILE_GONE_EVENT, onGone);
+  }, [tabProfile]);
   const switchProfile = useMutation({
+    // Repin this tab, and make the choice the app-wide default for new
+    // windows and the CLI. Other open windows keep their own pins.
     mutationFn: (slug: string) =>
       api.post<ProfileList>("/api/profiles/active", { slug }),
-    onSuccess: () => window.location.reload(),
+    onSuccess: (data, slug) => {
+      setTabProfile(slug);
+      window.location.reload();
+    },
   });
   const createProfile = useMutation({
     mutationFn: (body: { name: string; seed_starter_data: boolean }) =>
       api.post<ProfileList>("/api/profiles", body),
-    onSuccess: () => window.location.reload(),
+    onSuccess: (data) => {
+      // Follow the new profile in this tab only.
+      setTabProfile(data.active_slug);
+      window.location.reload();
+    },
   });
   const duplicateProfile = useMutation({
     mutationFn: (body: { name: string; source_slug: string }) =>
       api.post<ProfileList>("/api/profiles/duplicate", body),
-    onSuccess: () => window.location.reload(),
+    onSuccess: (data) => {
+      setTabProfile(data.active_slug);
+      window.location.reload();
+    },
   });
   const deleteProfile = useMutation({
     mutationFn: (slug: string) => api.del<Profile>(`/api/profiles/${encodeURIComponent(slug)}`),
-    onSuccess: () => window.location.reload(),
+    onSuccess: () => {
+      // The pinned profile is gone; fall back to the app default.
+      setTabProfile(null);
+      window.location.reload();
+    },
   });
 
   const stopApp = async () => {
@@ -93,27 +105,26 @@ export function Layout() {
   };
   const profileName = (slug: string | null) =>
     profiles.data?.profiles.find((p) => p.slug === slug)?.name ?? slug ?? "?";
-  // The header names the profile this TAB is pinned to — when another tab
-  // switches, the banner explains the divergence instead of the header
-  // silently flipping over data that still belongs to the old profile.
-  const activeProfile = profiles.data?.profiles.find(
+  // The header names the profile this WINDOW is pinned to; other windows
+  // may be pinned elsewhere.
+  const currentProfile = profiles.data?.profiles.find(
     (p) => p.slug === (tabProfile ?? profiles.data?.active_slug),
   );
-  const canDeleteProfile = Boolean(profiles.data && profiles.data.profiles.length > 1 && activeProfile);
+  const canDeleteProfile = Boolean(profiles.data && profiles.data.profiles.length > 1 && currentProfile);
   const profileBusy = switchProfile.isPending || createProfile.isPending || duplicateProfile.isPending || deleteProfile.isPending;
   const chooseProfile = (slug: string) => {
     setProfileMenuOpen(false);
-    if (!slug || slug === profiles.data?.active_slug) return;
+    if (!slug || slug === tabProfile) return;
     switchProfile.mutate(slug);
   };
   const removeActiveProfile = () => {
-    if (!activeProfile) return;
+    if (!currentProfile) return;
     const ok = confirm(
-      `Delete profile "${activeProfile.name}" and its local SQLite file? This cannot be undone.`,
+      `Delete profile "${currentProfile.name}" and its local SQLite file? This cannot be undone.`,
     );
     if (!ok) return;
     setProfileMenuOpen(false);
-    deleteProfile.mutate(activeProfile.slug);
+    deleteProfile.mutate(currentProfile.slug);
   };
 
   return (
@@ -130,7 +141,7 @@ export function Layout() {
               onClick={() => setProfileMenuOpen((open) => !open)}
               title="Local profile"
             >
-              <span className="truncate">{activeProfile?.name ?? "Loading"}</span>
+              <span className="truncate">{currentProfile?.name ?? "Loading"}</span>
               <span aria-hidden>v</span>
             </button>
             {profileMenuOpen && (
@@ -142,13 +153,20 @@ export function Layout() {
                       key={profile.slug}
                       className={clsx(
                         "flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-xs hover:bg-ink-50",
-                        profile.is_active ? "font-medium text-brand-700" : "text-ink-700",
+                        profile.slug === tabProfile ? "font-medium text-brand-700" : "text-ink-700",
                       )}
                       onClick={() => chooseProfile(profile.slug)}
                       disabled={profileBusy}
                     >
                       <span className="truncate">{profile.name}</span>
-                      {profile.is_active && <span className="text-brand-600">Active</span>}
+                      <span className="flex items-center gap-2">
+                        {profile.slug === tabProfile && <span className="text-brand-600">this window</span>}
+                        {profile.is_active && (
+                          <span className="text-ink-400" title="New windows and the fetch CLI open on this profile">
+                            default
+                          </span>
+                        )}
+                      </span>
                     </button>
                   ))}
                 </div>
@@ -211,23 +229,21 @@ export function Layout() {
           </button>
         </div>
       </header>
-      {mismatchProfile && (
+      {goneProfile && (
         <div className="flex items-center gap-3 border-b border-bad-500/30 bg-bad-500/10 px-6 py-2 text-sm text-bad-700">
           <span className="flex-1">
-            This tab is on <strong>{profileName(tabProfile)}</strong>, but the app's active profile
-            changed to <strong>{profileName(mismatchProfile)}</strong> (switched in another tab or
-            window). Requests from this tab are paused so nothing lands in the wrong profile.
+            This window was on <strong>{profileName(goneProfile)}</strong>, but that profile no
+            longer exists (deleted in another window?).
           </span>
-          <button type="button" className="btn text-xs" onClick={() => window.location.reload()}>
-            Follow to {profileName(mismatchProfile)}
-          </button>
           <button
             type="button"
             className="btn text-xs"
-            disabled={!tabProfile || profileBusy}
-            onClick={() => tabProfile && switchProfile.mutate(tabProfile)}
+            onClick={() => {
+              setTabProfile(null);
+              window.location.reload();
+            }}
           >
-            Switch back to {profileName(tabProfile)}
+            Switch to the default profile
           </button>
         </div>
       )}

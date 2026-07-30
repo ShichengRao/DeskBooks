@@ -4,13 +4,20 @@ from collections.abc import Generator
 from pathlib import Path
 from threading import RLock
 
+from fastapi import HTTPException, Request
 from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 
+# Every tab states which profile it's on (the layout sets this header on
+# all API calls). Requests route to that profile's database, so two
+# windows can live on two profiles at once; the registry's "active"
+# profile is only the default — for tabs that haven't loaded yet, for
+# curl, and for the automation CLI.
+PROFILE_HEADER = "X-DeskBooks-Profile"
+
 _lock = RLock()
-_engine: Engine | None = None
-_engine_path: Path | None = None
-_session_factory: sessionmaker[Session] | None = None
+_engines: dict[Path, Engine] = {}
+_factories: dict[Path, sessionmaker[Session]] = {}
 
 
 def _enable_sqlite_pragmas(dbapi_connection, _):
@@ -27,15 +34,15 @@ def _active_db_path() -> Path:
     return get_active_profile().db_path
 
 
-def get_engine() -> Engine:
-    global _engine, _engine_path, _session_factory
-    db_path = _active_db_path()
-    db_path.parent.mkdir(parents=True, exist_ok=True)
+def engine_for(db_path: Path) -> Engine:
+    """One cached engine per database file; tables ensured on first use."""
+    from . import models  # noqa: F401  ensure models are imported
+
     with _lock:
-        if _engine is not None and _engine_path == db_path:
-            return _engine
-        if _engine is not None:
-            _engine.dispose()
+        engine = _engines.get(db_path)
+        if engine is not None:
+            return engine
+        db_path.parent.mkdir(parents=True, exist_ok=True)
         engine = create_engine(
             f"sqlite:///{db_path}",
             echo=False,
@@ -43,9 +50,11 @@ def get_engine() -> Engine:
             connect_args={"check_same_thread": False},
         )
         event.listen(engine, "connect", _enable_sqlite_pragmas)
-        _engine = engine
-        _engine_path = db_path
-        _session_factory = sessionmaker(
+        # create_all stays inside the lock so a second request can't grab
+        # the engine before its tables exist.
+        models.Base.metadata.create_all(bind=engine)
+        _engines[db_path] = engine
+        _factories[db_path] = sessionmaker(
             bind=engine,
             autoflush=False,
             autocommit=False,
@@ -54,25 +63,54 @@ def get_engine() -> Engine:
         return engine
 
 
-def reset_engine() -> None:
-    global _engine, _engine_path, _session_factory
+def get_engine() -> Engine:
+    return engine_for(_active_db_path())
+
+
+def reset_engine(db_path: Path | None = None) -> None:
+    """Dispose one profile's engine (after a restore replaced its file), or
+    every engine when no path is given."""
     with _lock:
-        if _engine is not None:
-            _engine.dispose()
-        _engine = None
-        _engine_path = None
-        _session_factory = None
+        paths = [db_path] if db_path is not None else list(_engines)
+        for path in paths:
+            engine = _engines.pop(path, None)
+            _factories.pop(path, None)
+            if engine is not None:
+                engine.dispose()
 
 
 def SessionLocal() -> Session:
-    global _session_factory
-    get_engine()
-    assert _session_factory is not None
-    return _session_factory()
+    """Session on the active profile — the CLI and startup path."""
+    db_path = _active_db_path()
+    engine_for(db_path)
+    return _factories[db_path]()
 
 
-def get_db() -> Generator[Session, None, None]:
-    db = SessionLocal()
+def get_request_profile(request: Request):
+    """The profile a request belongs to: the tab's header claim when
+    present (404 if that profile no longer exists), else the active one."""
+    from .profiles import get_active_profile, list_profiles
+
+    slug = request.headers.get(PROFILE_HEADER)
+    if not slug:
+        return get_active_profile()
+    for profile in list_profiles():
+        if profile.slug == slug:
+            return profile
+    raise HTTPException(
+        404,
+        {
+            "code": "profile_unknown",
+            "detail": f"profile '{slug}' no longer exists (deleted in another tab?)",
+            "expected_profile": slug,
+        },
+    )
+
+
+def get_db(request: Request) -> Generator[Session, None, None]:
+    profile = get_request_profile(request)
+    engine_for(profile.db_path)
+    db = _factories[profile.db_path]()
     try:
         yield db
     finally:
@@ -80,6 +118,4 @@ def get_db() -> Generator[Session, None, None]:
 
 
 def init_db() -> None:
-    from . import models  # noqa: F401  ensure models are imported
-
-    models.Base.metadata.create_all(bind=get_engine())
+    get_engine()

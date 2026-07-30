@@ -2,36 +2,63 @@
 
 const BASE = "";
 
-// Cross-tab safety: the active profile is server-side state, so another
-// tab switching profiles would silently redirect this tab's reads and
-// writes. Every request states the profile this tab believes it's on
-// (set by the layout once profiles load); the backend answers 409 when
-// that's no longer the active profile, and we surface that as an event
-// the layout turns into a blocking banner.
-let expectedProfile: string | null = null;
+// Each browser tab is pinned to one profile and says so on every request
+// (X-DeskBooks-Profile); the backend routes the request to that profile's
+// database. Two windows can therefore live on two profiles at once. The
+// pin survives reloads via sessionStorage — which is per-tab, so a new
+// window starts on the app's default profile instead of inheriting this
+// one's. Read synchronously at import time so even the first queries of a
+// reload carry the right profile.
+const TAB_PROFILE_KEY = "deskbooks.tab-profile";
 
-export function setExpectedProfile(slug: string | null) {
-  expectedProfile = slug;
+function readStoredProfile(): string | null {
+  try {
+    return window.sessionStorage.getItem(TAB_PROFILE_KEY);
+  } catch {
+    return null;
+  }
 }
 
-export const PROFILE_MISMATCH_EVENT = "deskbooks:profile-mismatch";
+let tabProfile: string | null = readStoredProfile();
+
+export function getTabProfile(): string | null {
+  return tabProfile;
+}
+
+export function setTabProfile(slug: string | null) {
+  tabProfile = slug;
+  try {
+    if (slug === null) window.sessionStorage.removeItem(TAB_PROFILE_KEY);
+    else window.sessionStorage.setItem(TAB_PROFILE_KEY, slug);
+  } catch {
+    // sessionStorage unavailable — the pin just won't survive reloads.
+  }
+}
+
+// Fired when the backend reports this tab's profile no longer exists
+// (deleted in another tab); the layout turns it into a banner.
+export const PROFILE_GONE_EVENT = "deskbooks:profile-gone";
 
 function guardHeaders(): Record<string, string> {
-  return expectedProfile ? { "X-DeskBooks-Profile": expectedProfile } : {};
+  return tabProfile ? { "X-DeskBooks-Profile": tabProfile } : {};
 }
 
 async function fail(res: Response): Promise<never> {
   const text = await res.text();
-  if (res.status === 409) {
+  if (res.status === 404) {
     let payload: unknown;
     try {
       payload = JSON.parse(text);
     } catch {
       payload = null;
     }
-    if (payload && typeof payload === "object" && (payload as { code?: string }).code === "profile_mismatch") {
-      window.dispatchEvent(new CustomEvent(PROFILE_MISMATCH_EVENT, { detail: payload }));
-      throw new Error((payload as { detail?: string }).detail ?? "active profile changed in another tab");
+    const detail =
+      payload && typeof payload === "object"
+        ? (payload as { detail?: { code?: string; detail?: string } }).detail
+        : null;
+    if (detail && typeof detail === "object" && detail.code === "profile_unknown") {
+      window.dispatchEvent(new CustomEvent(PROFILE_GONE_EVENT, { detail }));
+      throw new Error(detail.detail ?? "this tab's profile no longer exists");
     }
   }
   throw new Error(`${res.status} ${res.statusText}: ${text}`);
