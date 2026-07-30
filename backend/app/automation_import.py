@@ -8,11 +8,13 @@ from typing import Any
 
 from sqlalchemy import select
 
-from . import backups, models, schemas
+from . import backups, balance_snapshots, models, schemas
 from .app_paths import DATA_DIR
 from .db import SessionLocal, init_db
 from .profiles import get_active_profile
 from .routers import imports as import_router
+
+ENTRY_KINDS = {"statement", "balances"}
 
 
 def default_staging_dir() -> Path:
@@ -128,19 +130,32 @@ def require_staged_file(file_path: Path, staging_dir: Path) -> Path:
     return resolved
 
 
-def validate_entry(entry: dict[str, Any], staging_dir: Path) -> tuple[Path, int, str, str]:
+def validate_entry(
+    entry: dict[str, Any], staging_dir: Path
+) -> tuple[str, Path, int | None, str | None, str]:
+    kind = str(entry.get("kind") or "statement")
+    if kind not in ENTRY_KINDS:
+        raise SystemExit(f"manifest entry has unknown kind: {kind}")
     try:
         file_path = require_staged_file(Path(str(entry["path"])), staging_dir)
+        sha256 = str(entry["sha256"])
+    except KeyError as exc:
+        raise SystemExit(f"manifest entry missing field: {exc.args[0]}") from exc
+    if not sha256:
+        raise SystemExit("manifest entry has empty sha256")
+
+    if kind == "balances":
+        # Balances files carry per-row account ids; no importer involved.
+        return kind, file_path, None, None, sha256
+
+    try:
         account_id = int(entry["account_id"])
         importer_name = str(entry["importer_name"])
-        sha256 = str(entry["sha256"])
     except KeyError as exc:
         raise SystemExit(f"manifest entry missing field: {exc.args[0]}") from exc
     if not importer_name:
         raise SystemExit("manifest entry has empty importer_name")
-    if not sha256:
-        raise SystemExit("manifest entry has empty sha256")
-    return file_path, account_id, importer_name, sha256
+    return kind, file_path, account_id, importer_name, sha256
 
 
 def existing_batch_for_sha(db, sha256: str) -> models.ImportBatch | None:
@@ -175,13 +190,47 @@ def main() -> None:
 
     with SessionLocal() as db:
         for entry in entries:
-            file_path, account_id, importer_name, sha256 = validate_entry(entry, args.staging_dir)
+            kind, file_path, account_id, importer_name, sha256 = validate_entry(
+                entry, args.staging_dir
+            )
             if sha256 in seen_sha256:
                 print(f"[import] skip duplicate manifest entry: {file_path.name}")
                 continue
             seen_sha256.add(sha256)
             if sha256 in applied_sha256 or existing_batch_for_sha(db, sha256):
                 print(f"[import] skip already applied: {file_path.name}")
+                continue
+
+            if kind == "balances":
+                try:
+                    staged = balance_snapshots.parse_staged_balances_bytes(file_path.read_bytes())
+                except ValueError as exc:
+                    raise SystemExit(f"{file_path.name}: {exc}") from exc
+                plan = balance_snapshots.plan_staged_balances(db, staged)
+                print(
+                    "[import] balances preview "
+                    f"{file_path.name}: as_of={staged.as_of} update={plan.updated} "
+                    f"unchanged={plan.unchanged} skipped_null={plan.skipped_null} "
+                    f"unknown_accounts={plan.unknown_account_ids or 'none'}"
+                )
+                if not args.apply:
+                    continue
+                if not did_backup and not args.no_backup:
+                    backup = backups.create_backup(get_active_profile(), label="pre-auto-import")
+                    print(f"[import] backup created: {backup['name']}")
+                    did_backup = True
+                result = balance_snapshots.apply_staged_balances(db, staged)
+                applied_sha256[sha256] = {
+                    "snapshot_id": result.snapshot_id,
+                    "path": str(file_path),
+                    "as_of": staged.as_of.isoformat(),
+                }
+                imported += 1
+                print(
+                    "[import] applied balances "
+                    f"snapshot={result.snapshot_id} updated={result.updated} "
+                    f"unchanged={result.unchanged}"
+                )
                 continue
 
             preview = import_router._preview_from_bytes(

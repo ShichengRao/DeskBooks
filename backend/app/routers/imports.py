@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from .. import importers, models, schemas
 from .. import rules as rules_engine
 from ..importers.amex_xlsx import parse_amex_xlsx_bytes
+from ..importers.staged_json import parse_staged_transactions_bytes
 from ..models import SignConvention
 from .common import DbSession, get_or_404
 
@@ -63,9 +64,17 @@ def _preview_from_bytes(
     if not account:
         raise HTTPException(404, "account not found")
     is_xlsx = filename.lower().endswith(".xlsx")
-    raw = "" if is_xlsx else data.decode("utf-8", errors="replace")
-    matched = [] if is_xlsx else importers.sniff(raw)
-    if importer_name in {"amex", "amex_xlsx"} and is_xlsx:
+    is_staged_json = filename.lower().endswith(".json") or importer_name == "staged_json"
+    raw = "" if (is_xlsx or is_staged_json) else data.decode("utf-8", errors="replace")
+    matched = [] if (is_xlsx or is_staged_json) else importers.sniff(raw)
+    if is_staged_json:
+        try:
+            rows = parse_staged_transactions_bytes(data)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        chosen_name = "staged_json"
+        sniff_notes = ["matched importers: staged_json"]
+    elif importer_name in {"amex", "amex_xlsx"} and is_xlsx:
         rows = parse_amex_xlsx_bytes(data)
         chosen_name = "amex"
         sniff_notes = ["matched importers: amex"]

@@ -6,9 +6,7 @@
   "type": "module",
   "scripts": {
     "fetch": "node src/run-fetchers.mjs",
-    "check": "node --check src/run-fetchers.mjs && node --check src/fetcher-api.mjs && node --check src/keychain.mjs && node --check fetchers/example-static-csv.mjs && node --check fetchers/chase-credit.mjs"
-  },
-  "dependencies": {
-    "playwright": "^1.45.0"
+    "test": "node --test tests/*.test.mjs",
+    "check": "node --check src/run-fetchers.mjs && node --check src/fetcher-api.mjs && node --check src/connector-http.mjs && node --check src/staged-formats.mjs && node --check fetchers/example-json-connector.mjs && node --check fetchers/plaid.mjs && node --check bin/plaid-link-setup.mjs && node --check bin/list-plaid-accounts.mjs"
   }
 }

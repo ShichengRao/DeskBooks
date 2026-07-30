@@ -1,32 +1,25 @@
 {
-  "headless": false,
   "stagingDir": "~/Library/Application Support/DeskBooks/import-staging",
-  "browserProfileDir": "~/Library/Application Support/DeskBooks/browser-profiles/default",
   "sources": [
     {
-      "name": "chase_credit_manual",
+      "name": "plaid_mybank",
       "enabled": false,
-      "browser": true,
-      "module": "./fetchers/chase-credit.mjs",
-      "accountId": 3,
-      "importerName": "chase_credit",
-      "mode": "manual",
-      "credentialService": "DeskBooks.Chase",
-      "username": "your-chase-username",
-      "dateRangeDays": 365,
-      "activityPreset": "choose a date range",
-      "startUrl": "https://secure.chase.com/",
-      "allowedHostSuffixes": ["chase.com"],
-      "downloadTimeoutMs": 600000
+      "module": "./fetchers/plaid.mjs",
+      "environment": "sandbox",
+      "clientIdPath": "~/.config/deskbooks/plaid/client-id",
+      "secretPath": "~/.config/deskbooks/plaid/secret",
+      "accessTokenPath": "~/.config/deskbooks/plaid/access-token-mybank",
+      "lookbackDays": 90,
+      "invertAmounts": false,
+      "accounts": [
+        { "plaidAccountId": "acc_example", "deskbooksAccountId": 1 }
+      ]
     },
     {
-      "name": "example_chase_sample",
+      "name": "example_json_connector",
       "enabled": false,
-      "browser": false,
-      "module": "./fetchers/example-static-csv.mjs",
-      "accountId": 1,
-      "importerName": "chase_credit",
-      "inputPath": "../samples/chase_credit_sample.csv"
+      "module": "./fetchers/example-json-connector.mjs",
+      "fixturePath": "./tests/fixtures/example-bundle.json"
     }
   ]
 }

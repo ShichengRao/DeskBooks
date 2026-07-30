@@ -174,9 +174,12 @@ database.
 
 ## Privacy
 
-The app is local-only and has no telemetry. Routine use does not require
-internet access after dependencies are installed, unless you click an account
-URL you saved in the app. See `PRIVACY.md` and `SECURITY.md`.
+The core app is local-only and has no telemetry; with no connectors enabled,
+routine use does not require internet access after dependencies are
+installed. Optional, off-by-default connectors under `automation/` can fetch
+transactions and balances from institutions you configure — data flows only
+between your machine and hosts you pin, with credentials in private local
+files. See `PRIVACY.md`, `SECURITY.md`, and `docs/AUTOMATED_IMPORTS.md`.
 
 
 ## Maintenance

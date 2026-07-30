@@ -55,3 +55,24 @@ jobs:
       - name: Run frontend tests
         run: npm test
         working-directory: frontend
+
+  automation-tests:
+    name: Automation tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # No npm ci: the automation tests and syntax checks use only node
+      # built-ins, and the network guard must hold with zero dependencies.
+      - name: Run automation syntax checks
+        run: npm run check
+        working-directory: automation
+
+      - name: Run automation tests (incl. network guard)
+        run: npm test
+        working-directory: automation

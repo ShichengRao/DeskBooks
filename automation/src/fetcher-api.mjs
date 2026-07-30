@@ -1,9 +1,6 @@
 import { createHash } from "node:crypto";
-import { mkdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, stat } from "node:fs/promises";
 import path from "node:path";
-
-const FORBIDDEN_ACTION_RE =
-  /\b(pay|payment|transfer|wire|bill pay|zelle|send money|ach|trade|buy|sell|redeem|withdraw|deposit check|external account|profile|settings|password|security|open account|close account)\b/i;
 
 export function expandHome(rawPath) {
   if (!rawPath || typeof rawPath !== "string") {
@@ -39,64 +36,6 @@ export async function fileSha256(filePath) {
   return hash.digest("hex");
 }
 
-export function assertSafeAction(label) {
-  const text = String(label ?? "");
-  if (FORBIDDEN_ACTION_RE.test(text)) {
-    throw new Error(`refusing forbidden financial-site action: ${text}`);
-  }
-}
-
-export function assertAllowedUrl(urlLike, source) {
-  const allowedHosts = source.allowedHosts ?? [];
-  const allowedHostSuffixes = source.allowedHostSuffixes ?? [];
-  if (!allowedHosts.length && !allowedHostSuffixes.length) {
-    return;
-  }
-  const url = new URL(urlLike);
-  const host = url.hostname.toLowerCase();
-  const exactAllowed = allowedHosts.map((h) => String(h).toLowerCase()).includes(host);
-  const suffixAllowed = allowedHostSuffixes
-    .map((h) => String(h).toLowerCase().replace(/^\./, ""))
-    .some((suffix) => host === suffix || host.endsWith(`.${suffix}`));
-  if (!exactAllowed && !suffixAllowed) {
-    throw new Error(`refusing URL outside allowedHosts: ${url.hostname}`);
-  }
-}
-
-export async function gotoAllowed(page, url, source, options = {}) {
-  assertAllowedUrl(url, source);
-  await page.goto(url, { waitUntil: "domcontentloaded", ...options });
-  assertAllowedUrl(page.url(), source);
-}
-
-async function exactlyOne(locator, label) {
-  const count = await locator.count();
-  if (count !== 1) {
-    throw new Error(`expected exactly one ${label}, found ${count}`);
-  }
-  return locator.first();
-}
-
-export async function clickByRole(page, role, name, source, options = {}) {
-  assertSafeAction(name);
-  const locator = await exactlyOne(page.getByRole(role, { name }), `${role} named ${name}`);
-  await locator.click(options);
-  assertAllowedUrl(page.url(), source);
-}
-
-export async function downloadByRole(page, role, name, source, destinationDir, filenameHint) {
-  assertSafeAction(name);
-  await ensureDir(destinationDir);
-  const locator = await exactlyOne(page.getByRole(role, { name }), `${role} named ${name}`);
-  const [download] = await Promise.all([page.waitForEvent("download"), locator.click()]);
-  assertAllowedUrl(page.url(), source);
-  const suggested = download.suggestedFilename() || filenameHint || "download.csv";
-  const destination = path.join(destinationDir, safeFilename(suggested));
-  await download.saveAs(destination);
-  await assertNonEmptyFile(destination);
-  return destination;
-}
-
 export async function assertNonEmptyFile(filePath) {
   const info = await stat(filePath);
   if (!info.isFile() || info.size <= 0) {
@@ -107,14 +46,4 @@ export async function assertNonEmptyFile(filePath) {
 export function safeFilename(name) {
   const cleaned = String(name).replace(/[^a-zA-Z0-9._-]+/g, "_").replace(/^_+|_+$/g, "");
   return cleaned || "download.csv";
-}
-
-export async function savePageDiagnostics(page, destinationDir, label) {
-  await ensureDir(destinationDir);
-  const prefix = `${new Date().toISOString().replace(/[:.]/g, "-")}-${safeFilename(label)}`;
-  const screenshotPath = path.join(destinationDir, `${prefix}.png`);
-  const htmlPath = path.join(destinationDir, `${prefix}.html`);
-  await page.screenshot({ path: screenshotPath, fullPage: true }).catch(() => {});
-  await writeFile(htmlPath, await page.content(), "utf8").catch(() => {});
-  return { screenshotPath, htmlPath };
 }

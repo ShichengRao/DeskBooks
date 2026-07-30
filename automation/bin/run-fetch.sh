@@ -3,17 +3,24 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 LOCAL_ENV="${DESKBOOKS_ENV_FILE:-$ROOT/.env.local}"
+# .env.local provides defaults (so automation points at the same data
+# directory as ./run.sh), but explicitly-set environment always wins —
+# sourcing must never clobber a caller's PFA_DATA_DIR.
+_PRESET_PFA_DATA_DIR="${PFA_DATA_DIR:-}"
 if [[ -f "$LOCAL_ENV" ]]; then
-  # Keep automation pointed at the same profile/data directory as ./run.sh.
   # shellcheck disable=SC1090
   source "$LOCAL_ENV"
+fi
+if [[ -n "$_PRESET_PFA_DATA_DIR" ]]; then
+  export PFA_DATA_DIR="$_PRESET_PFA_DATA_DIR"
 fi
 
 CONFIG="${DESKBOOKS_FETCH_CONFIG:-$ROOT/automation/config.local.json}"
 DEFAULT_STAGING_DIR="${PFA_DATA_DIR:-$HOME/Library/Application Support/DeskBooks}/import-staging"
 
 cd "$ROOT/automation"
-npm run fetch -- --config "$CONFIG"
+# No npm install needed: the connector layer has zero dependencies.
+node src/run-fetchers.mjs --config "$CONFIG"
 
 IMPORT_ARGS=()
 if [[ -n "${DESKBOOKS_IMPORT_MANIFEST:-}" ]]; then
@@ -29,4 +36,6 @@ if [[ "${DESKBOOKS_IMPORT_APPLY:-0}" == "1" ]]; then
 fi
 
 cd "$ROOT/backend"
-uv run python -m app.automation_import "${IMPORT_ARGS[@]}"
+# ${arr[@]+...} guard: macOS ships bash 3.2, where expanding an empty array
+# under `set -u` is a fatal "unbound variable" error.
+uv run python -m app.automation_import ${IMPORT_ARGS[@]+"${IMPORT_ARGS[@]}"}

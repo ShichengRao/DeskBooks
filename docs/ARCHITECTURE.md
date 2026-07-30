@@ -361,7 +361,13 @@ The diagram is computed server-side; the frontend only renders the response.
 
 - Hosted web service or commercial SaaS
 - Multi-user auth; profiles are local database selectors, not accounts
-- Cloud sync, Plaid, brokerage APIs, or automatic balance fetching
+- Cloud sync or any hosted storage of user data
 - Mobile app
-- Notifications / scheduled jobs
 - Native macOS wrapper, though the app can be packaged later
+
+Optional, off-by-default connectors under `automation/` can fetch
+transactions and balances from institutions the user configures (see
+`docs/AUTOMATED_IMPORTS.md`). The backend itself stays offline by
+design — `tests/test_no_external_network.py` enforces that it cannot
+import network libraries; all fetching lives in the Node automation
+layer and enters the app as staged local files.

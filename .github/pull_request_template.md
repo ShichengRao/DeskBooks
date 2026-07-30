@@ -29,6 +29,7 @@ For importer PRs, include:
 
 - [ ] I used only synthetic test/sample data.
 - [ ] I did not include real account numbers, balances, merchants, names, addresses, or other personal details.
+- [ ] This change does not add or expand outbound network access. (If it does, list the new hosts, the opt-in path, and update `PRIVACY.md` + the automation network-guard test.)
 
 ## Testing
 

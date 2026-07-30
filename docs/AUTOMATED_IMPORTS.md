@@ -1,184 +1,194 @@
-# Automated Imports
+# Optional Connectors & Automated Imports
 
-DeskBooks can run a local, non-LLM import pipeline:
+DeskBooks is strictly local by default. This document covers the optional,
+off-by-default connector pipeline that removes friction when you want it:
+fetching transactions and account balances from institutions you configure.
 
-1. A deterministic Playwright fetcher downloads account exports into a staging
-   directory.
-2. The fetcher writes a manifest entry with the target DeskBooks account and
-   importer name.
-3. `python -m app.automation_import` previews those staged files with the same
-   importer logic used by the UI.
-4. If `--apply` is set, DeskBooks creates a profile backup and applies the
-   import batch with duplicate skipping.
+The design keeps the privacy boundary sharp:
 
-The default path is fail-closed. Fetchers must return at least one non-empty
-file, guarded browser helpers refuse dangerous financial-site actions by label,
-and the importer refuses files outside the staging directory.
+1. **Only the Node automation layer touches the network.** The backend cannot
+   even import HTTP libraries (`backend/tests/test_no_external_network.py`),
+   and `automation/tests/network-guard.test.mjs` enforces that only
+   `automation/src/connector-http.mjs` may open connections — HTTPS GET/POST
+   of JSON against an explicit host allowlist, nothing else. Connectors are
+   API/file based; there is no browser automation.
+2. Connectors write **staged files** into a local staging directory and
+   append entries to a manifest.
+3. `python -m app.automation_import` (fully offline) previews those staged
+   files with the same importer logic as the UI. With `--apply` it first
+   creates a profile backup, then applies transactions as an import batch
+   (rollback-able from the Import panel) and balances as net-worth
+   snapshots.
 
-## Setup
+Additional fail-closed rules: fetchers must return non-empty files, the
+importer refuses files outside the staging directory, and duplicate
+detection plus sha256 idempotency make re-runs safe. One failing connector
+does not abort the run — other sources still stage and import, and the run
+exits nonzero so the failure is visible.
 
-Run these commands from the repository root.
-The scheduled wrapper sources `.env.local`, so `PFA_DATA_DIR` matches the
-profile directory used by `./run.sh`.
+The connector layer has **zero npm dependencies**; nothing needs installing.
 
-Install the automation dependencies once:
+## Staged file formats
 
-```sh
-make install-automation
+Connectors normalize provider data into two JSON formats
+(`automation/src/staged-formats.mjs` builds them; the backend parses them):
+
+```jsonc
+// deskbooks.staged-transactions/v1 — one file per DeskBooks account
+{
+  "format": "deskbooks.staged-transactions/v1",
+  "account_id": 3,
+  "transactions": [
+    { "id": "txn_x", "date": "2026-07-01", "description": "COFFEE",
+      "amount": "-4.50", "pending": false, "post_date": null,
+      "merchant": null }
+  ]
+}
 ```
 
-Create a local config:
+Amounts are decimal **strings**, outflow-negative. Rows with
+`"pending": true` are staged for visibility but skipped at import time
+(pending rows can change date and amount when they post). The full provider
+row is preserved on each imported transaction (`Transaction.raw`), including
+the provider transaction id.
+
+```jsonc
+// deskbooks.staged-balances/v1 — one file per run
+{
+  "format": "deskbooks.staged-balances/v1",
+  "as_of": "2026-07-30",
+  "balances": [ { "account_id": 2, "balance": "1234.56" } ]
+}
+```
+
+Balances become a net-worth snapshot dated `as_of`: created if missing,
+merged if a snapshot for that date already exists (only changed values are
+written, so re-applying is a no-op). Null balances are skipped — in
+DeskBooks a NULL balance means "account did not exist yet", and a connector
+must never assert that implicitly. Unknown account ids are reported and
+skipped.
+
+## Manifest
+
+Each staged file gets one JSONL entry in `manifest.jsonl` (append-only
+history) and `latest-manifest.jsonl` (this run only):
+
+```json
+{ "source": "plaid_mybank", "kind": "statement", "account_id": 3,
+  "importer_name": "staged_json", "path": "/…/2026-07-30-….json",
+  "sha256": "…", "downloaded_at": "2026-07-30T09:00:00.000Z" }
+```
+
+`kind` is `statement` (CSV/XLSX/staged-JSON transactions) or `balances`
+(`account_id`/`importer_name` are null — balance files carry per-row account
+ids). Entries without `kind` are treated as statements, so old manifests
+keep working.
+
+## Setup
 
 ```sh
 cp automation/config.example.json automation/config.local.json
 ```
 
-Edit `automation/config.local.json` and enable one source at a time. The sample
-source copies a synthetic CSV from `samples/`; real institutions should get
-one dedicated fetcher module per institution.
+`config.local.json` is gitignored. Top-level keys: `stagingDir` (defaults to
+`$PFA_DATA_DIR/import-staging`, falling back to the OS data dir — the fetch
+and import halves always agree) and `sources[]`. Per-source keys: `name`,
+`module`, `enabled`, plus whatever the fetcher documents.
 
-## Dry Run
+## Plaid setup (free Trial plan)
 
-Fetch files and preview imports without changing the profile database:
+Plaid's Trial plan (teams created on/after 2026-04-15) is free and supports
+up to 10 production Items — one Item is one bank login — including the big
+OAuth institutions. Every user brings their own Plaid keys: nothing shared
+ships in this repo, so one person's usage can never bill another's account.
+Trust note: with this connector your bank data flows through Plaid (the
+aggregator you signed up with), between Plaid and your machine only.
 
-```sh
-automation/bin/run-scheduled-fetch.sh
-```
+The live API path follows Plaid's documented contract but has not been
+exercised against a real Item yet — run your first fetches with
+`"environment": "sandbox"` and preview-only (no apply), and check the
+preview output before trusting it. Sign convention is normalized
+automatically (Plaid reports outflows as positive; DeskBooks stores them
+negative); `"invertAmounts": true` exists only for institutions that
+misreport against Plaid's own convention.
 
-The scheduled wrapper previews the latest fetch run by default. It also keeps a
-long-lived `manifest.jsonl` history in the staging directory for auditability.
-Preview mode writes `latest-preview.html` and `latest-preview.json` in the
-staging directory.
+1. Create a team at <https://dashboard.plaid.com/> and copy your
+   `client_id` and the sandbox (later production) `secret` into private
+   files:
 
-To process a manifest directly:
+   ```sh
+   mkdir -p ~/.config/deskbooks/plaid && chmod 700 ~/.config/deskbooks/plaid
+   printf '%s' 'your-client-id' > ~/.config/deskbooks/plaid/client-id
+   printf '%s' 'your-secret'    > ~/.config/deskbooks/plaid/secret
+   chmod 600 ~/.config/deskbooks/plaid/*
+   ```
 
-```sh
-cd backend
-uv run python -m app.automation_import
-```
+2. Link a bank from the CLI (Hosted Link — the script prints a URL you
+   complete in your browser, then writes the access token):
 
-## Chase Credit Card
+   ```sh
+   cd automation
+   node bin/plaid-link-setup.mjs \
+     --client-id ~/.config/deskbooks/plaid/client-id \
+     --secret ~/.config/deskbooks/plaid/secret \
+     --env sandbox \
+     --out ~/.config/deskbooks/plaid/access-token-mybank
+   ```
 
-The built-in Chase fetcher starts in manual-download capture mode. It opens a
-dedicated Playwright browser profile, lets you log in and use Chase's own CSV
-download flow, then stages the downloaded file for DeskBooks. The script does
-not click Chase controls.
+   Sandbox tip: pick any institution and log in with `user_good` /
+   `pass_good`.
 
-Set `"mode": "auto"` to let the fetcher click the account activity/download
-controls using an already-authenticated remembered Chase browser session.
-Set `"mode": "auto-login"` to let it retrieve your Chase password from macOS
-Keychain and type it into Chase's login iframe. It will not enter 2FA codes; if
-Chase shows a verification challenge, the run fails closed and writes
-diagnostics in the source download directory.
+3. Discover account ids and map them to DeskBooks accounts:
 
-Store the Chase password in macOS Keychain:
+   ```sh
+   node bin/list-plaid-accounts.mjs \
+     --client-id ~/.config/deskbooks/plaid/client-id \
+     --secret ~/.config/deskbooks/plaid/secret \
+     --env sandbox \
+     --access-token ~/.config/deskbooks/plaid/access-token-mybank
+   ```
 
-```sh
-automation/bin/store-keychain-password.sh DeskBooks.Chase your-chase-username
-```
+4. Enable the `plaid_mybank` source in `config.local.json` (see
+   `config.example.json`) and fill in `environment`, the three credential
+   paths, and the `accounts` mapping
+   (`plaidAccountId` → `deskbooksAccountId`). One source per Item; add
+   more sources for more banks.
 
-Your local config should look like this, with `accountId` set to the DeskBooks
-credit-card account:
+Each run stages one transactions file per mapped account plus one balances
+file, so runs keep both your transactions and your net-worth series current.
 
-```json
-{
-  "name": "chase_credit_manual",
-  "enabled": true,
-  "browser": true,
-  "module": "./fetchers/chase-credit.mjs",
-  "accountId": 8,
-  "importerName": "chase_credit",
-  "mode": "auto-login",
-  "credentialService": "DeskBooks.Chase",
-  "username": "your-chase-username",
-  "accountText": "1234",
-  "dateRangeDays": 365,
-  "activityPreset": "choose a date range",
-  "startUrl": "https://secure.chase.com/",
-  "allowedHostSuffixes": ["chase.com"],
-  "downloadTimeoutMs": 600000
-}
-```
-
-Run `make fetch-preview`, log in to Chase in the opened browser, download the
-credit-card activity CSV, and confirm that DeskBooks previews the rows. Once
-that works reliably, keep using preview mode until you are comfortable enabling
-`make fetch-apply`.
-
-## Auto Apply
-
-After a source has passed dry runs, opt into applying imports:
+## Running
 
 ```sh
-DESKBOOKS_IMPORT_APPLY=1 automation/bin/run-scheduled-fetch.sh
+make fetch-preview   # fetch + stage + preview (writes nothing to the DB)
+make fetch-apply     # fetch + stage + backup + apply
 ```
 
-Each apply run creates a profile-scoped backup unless `--no-backup` is passed
-to `app.automation_import`. Applied files are tracked by SHA-256 so rerunning
-the same manifest does not create another batch.
+Under the hood `automation/bin/run-fetch.sh` runs the fetchers and then
+`uv run python -m app.automation_import` with `--manifest` pointed at the
+latest run. Useful importer flags: `--manifest`, `--staging-dir`, `--state`,
+`--source`, `--apply`, `--no-backup`.
 
-## macOS Schedule
+There is no built-in scheduler; run the make targets when you want fresh
+data, or wire `make fetch-apply` into cron/launchd yourself if you want it
+periodic.
 
-Install a weekly Monday 09:00 preview job:
+## Verifying the automation layer
 
 ```sh
-make schedule-fetch-preview
+make test-automation   # node --test: runner, formats, connectors, network guard
+cd automation && npm run check
 ```
 
-Install the same schedule with auto-apply enabled:
+The network guard rejects any module outside `connector-http.mjs` that
+imports HTTP/socket libraries. It cannot see dynamic `import(expr)` or the
+global `fetch()` — the PR template's outbound-network checkbox covers what
+static analysis cannot.
 
-```sh
-make schedule-fetch-apply
-```
+## Data hygiene
 
-Customize the schedule with launchd's weekday numbers, where Sunday is `0` and
-Monday is `1`:
-
-```sh
-DESKBOOKS_FETCH_WEEKDAY=1 DESKBOOKS_FETCH_HOUR=9 DESKBOOKS_FETCH_MINUTE=0 make schedule-fetch-preview
-```
-
-Run monthly on a day of the month:
-
-```sh
-DESKBOOKS_FETCH_DAY=7 DESKBOOKS_FETCH_HOUR=9 DESKBOOKS_FETCH_MINUTE=0 make schedule-fetch-apply
-```
-
-Remove the scheduled job:
-
-```sh
-make unschedule-fetch
-```
-
-Logs are written to `~/Library/Logs/DeskBooks/fetch.out.log` and
-`~/Library/Logs/DeskBooks/fetch.err.log`.
-If you change `stagingDir` away from the default DeskBooks data directory,
-set `DESKBOOKS_IMPORT_MANIFEST` and `DESKBOOKS_IMPORT_STAGING_DIR` in the
-scheduled job as well.
-
-## Writing A Fetcher
-
-Copy `automation/fetchers/template-playwright-fetcher.mjs` and customize it for
-one institution. Keep these rules:
-
-- Let the user log in and handle 2FA in the persistent Playwright profile.
-- Set `allowedHosts` in config for the institution.
-- Use the guarded helpers from `src/fetcher-api.mjs`.
-- Match export controls exactly. If the expected control is absent or appears
-  more than once, fail instead of guessing.
-- Never click payment, transfer, trading, profile, settings, password, or
-  security controls.
-
-Example source shape:
-
-```json
-{
-  "name": "my_bank_checking",
-  "enabled": true,
-  "module": "./fetchers/my-bank-checking.mjs",
-  "accountId": 1,
-  "importerName": "wells_fargo_checking",
-  "startUrl": "https://example.com/accounts/activity",
-  "allowedHosts": ["example.com"]
-}
-```
+- Staged downloads, manifests, and previews live under
+  `<data dir>/import-staging/` with `0600` permissions where possible;
+  treat the whole tree as sensitive financial data.
+- Connector credentials are files you manage (`chmod 600`), outside the
+  repo, referenced by path from the untracked `config.local.json`.
