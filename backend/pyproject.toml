@@ -9,7 +9,6 @@ dependencies = [
     "uvicorn[standard]>=0.30",
     "sqlalchemy>=2.0",
     "pydantic>=2.7",
-    "pandas>=2.2",
     "python-multipart>=0.0.9",
     "python-dateutil>=2.9",
     "openpyxl>=3.1",
