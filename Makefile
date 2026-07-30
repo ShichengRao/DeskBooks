@@ -1,7 +1,7 @@
 PORT ?= $(or $(FRONTEND_PORT),5173)
 API_PORT ?= $(or $(BACKEND_PORT),$(if $(filter 5173,$(PORT)),8765,8766))
 
-.PHONY: dev backend frontend open bootstrap install install-automation fetch-preview fetch-apply schedule-fetch-preview schedule-fetch-apply unschedule-fetch test api-contract-python api-contract-check typecheck build clean reset-db
+.PHONY: dev backend frontend open bootstrap install install-automation fetch-preview fetch-apply schedule-fetch-preview schedule-fetch-apply unschedule-fetch test test-automation api-contract-python api-contract-check typecheck build clean reset-db
 
 dev:
 	./run.sh --port "$(PORT)" --api-port "$(API_PORT)" $(if $(DATA_DIR),--data-dir "$(DATA_DIR)")
@@ -33,6 +33,9 @@ bootstrap:
 
 test:
 	cd backend && uv run pytest
+
+test-automation:
+	cd automation && npm test
 
 api-contract-python:
 	cd backend && uv run python ../scripts/export-python-openapi.py

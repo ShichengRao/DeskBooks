@@ -25,5 +25,7 @@ version.
 - No field-level undo for transaction edits; rollback exists only for whole
   import batches.
 - Local SQLite data is plaintext. Use OS disk encryption for sensitive data.
-- Snapshots are manual; there is no Plaid, brokerage, or bank integration.
+- Bank/balance fetching exists only as optional local connectors under
+  `automation/` (see `docs/AUTOMATED_IMPORTS.md`); the Teller connector has
+  not yet been exercised against a live enrollment.
 - Dates are date-only. Importers discard time-of-day data when present.

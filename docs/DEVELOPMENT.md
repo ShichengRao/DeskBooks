@@ -14,6 +14,7 @@ make open             # open the frontend URL if servers are already running
 make reset-db         # wipe repo-local dev app state and rebuild starter data
 make typecheck        # TypeScript on the frontend
 make build            # production build of frontend
+make test-automation  # node --test over the automation connector layer
 make clean            # nuke venv and node_modules
 ```
 
@@ -107,4 +108,5 @@ make reset-db
 ## Related Docs
 
 - `docs/ARCHITECTURE.md`
+- `docs/AUTOMATED_IMPORTS.md`
 - `docs/TODO.md`
