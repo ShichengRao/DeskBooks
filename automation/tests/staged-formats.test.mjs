@@ -58,7 +58,8 @@ test("normalizePlaidTransactions flips Plaid's outflow-positive sign convention"
     transactions: [
       {
         transaction_id: "txn_a",
-        date: "2026-07-01",
+        date: "2026-07-03",
+        authorized_date: "2026-07-01",
         name: "COFFEE SHOP",
         amount: 12.34,
         pending: false,
@@ -71,6 +72,9 @@ test("normalizePlaidTransactions flips Plaid's outflow-positive sign convention"
   });
   assert.equal(rows[0].amount, "-12.34"); // Plaid positive outflow -> DeskBooks negative
   assert.equal(rows[0].merchant, "Coffee Co");
+  assert.equal(rows[0].date, "2026-07-01"); // authorized (transaction) date wins
+  assert.equal(rows[0].post_date, "2026-07-03"); // Plaid's date field is the posted date
+  assert.equal(rows[1].post_date, null); // no authorized_date -> no post_date claim
   assert.equal(rows[1].amount, "2500"); // Plaid negative inflow -> DeskBooks positive
   assert.equal(rows[1].merchant, null);
   assert.equal(rows[2].pending, true);

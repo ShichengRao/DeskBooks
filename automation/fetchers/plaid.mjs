@@ -70,12 +70,18 @@ export function normalizePlaidTransactions({ transactions, invertAmounts = false
     if (invertAmounts) {
       amount = amount.startsWith("-") ? amount.slice(1) : `-${amount}`;
     }
+    // Plaid's `date` is the posted date; `authorized_date` is when the
+    // transaction actually happened. The app's convention (and the CSV
+    // importers') is transaction date in `date`, posted date in
+    // `post_date` — card transactions typically post 1–3 days late, so
+    // getting this wrong shifts every card row.
     return {
       id: txn.transaction_id,
-      date: txn.date,
+      date: txn.authorized_date ?? txn.date,
       description: txn.name ?? "",
       amount,
       pending: txn.pending === true,
+      post_date: txn.authorized_date ? txn.date : null,
       merchant: txn.merchant_name ?? null,
     };
   });
