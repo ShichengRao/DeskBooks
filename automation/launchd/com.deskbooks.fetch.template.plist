@@ -30,8 +30,8 @@
   </dict>
 
   <key>StandardOutPath</key>
-  <string>/tmp/deskbooks-fetch.out.log</string>
+  <string>/Users/YOUR-USER/Library/Logs/DeskBooks/fetch.out.log</string>
   <key>StandardErrorPath</key>
-  <string>/tmp/deskbooks-fetch.err.log</string>
+  <string>/Users/YOUR-USER/Library/Logs/DeskBooks/fetch.err.log</string>
 </dict>
 </plist>

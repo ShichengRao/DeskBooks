@@ -50,7 +50,10 @@ export function assertAllowedUrl(urlLike, source) {
   const allowedHosts = source.allowedHosts ?? [];
   const allowedHostSuffixes = source.allowedHostSuffixes ?? [];
   if (!allowedHosts.length && !allowedHostSuffixes.length) {
-    return;
+    // Fail closed: an absent (or typo'd) allowlist must never mean "anywhere".
+    throw new Error(
+      `no allowedHosts/allowedHostSuffixes configured for ${source.name ?? "source"}; refusing ${urlLike}`,
+    );
   }
   const url = new URL(urlLike);
   const host = url.hostname.toLowerCase();
@@ -109,12 +112,19 @@ export function safeFilename(name) {
   return cleaned || "download.csv";
 }
 
-export async function savePageDiagnostics(page, destinationDir, label) {
+export async function savePageDiagnostics(page, destinationDir, label, { enabled = false } = {}) {
+  // Opt-in only: a full screenshot + HTML dump of a logged-in bank page is
+  // sensitive material and should never be captured by default.
+  if (!enabled) {
+    return null;
+  }
   await ensureDir(destinationDir);
   const prefix = `${new Date().toISOString().replace(/[:.]/g, "-")}-${safeFilename(label)}`;
   const screenshotPath = path.join(destinationDir, `${prefix}.png`);
   const htmlPath = path.join(destinationDir, `${prefix}.html`);
   await page.screenshot({ path: screenshotPath, fullPage: true }).catch(() => {});
-  await writeFile(htmlPath, await page.content(), "utf8").catch(() => {});
+  await writeFile(htmlPath, await page.content(), { encoding: "utf8", mode: 0o600 }).catch(() => {});
+  const { chmod } = await import("node:fs/promises");
+  await chmod(screenshotPath, 0o600).catch(() => {});
   return { screenshotPath, htmlPath };
 }

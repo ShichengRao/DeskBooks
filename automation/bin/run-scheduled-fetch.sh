@@ -29,4 +29,6 @@ if [[ "${DESKBOOKS_IMPORT_APPLY:-0}" == "1" ]]; then
 fi
 
 cd "$ROOT/backend"
-uv run python -m app.automation_import "${IMPORT_ARGS[@]}"
+# ${arr[@]+...} guard: macOS ships bash 3.2, where expanding an empty array
+# under `set -u` is a fatal "unbound variable" error.
+uv run python -m app.automation_import ${IMPORT_ARGS[@]+"${IMPORT_ARGS[@]}"}

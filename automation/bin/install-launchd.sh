@@ -14,6 +14,19 @@ PATH_VALUE="${PATH:-/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sb
 
 mkdir -p "$HOME/Library/LaunchAgents" "$LOG_DIR"
 
+# Optional overrides documented in docs/AUTOMATED_IMPORTS.md: when set at
+# install time they are baked into the job's environment, so the scheduled
+# run resolves the same manifest/staging/env paths as the shell you tested in.
+EXTRA_ENV_XML=""
+for VAR in DESKBOOKS_IMPORT_MANIFEST DESKBOOKS_IMPORT_STAGING_DIR DESKBOOKS_ENV_FILE PFA_DATA_DIR; do
+  VALUE="${!VAR:-}"
+  if [[ -n "$VALUE" ]]; then
+    EXTRA_ENV_XML+="    <key>${VAR}</key>
+    <string>${VALUE}</string>
+"
+  fi
+done
+
 if [[ -n "$DAY" ]]; then
   CALENDAR_XML="    <key>Day</key>
     <integer>${DAY}</integer>
@@ -54,7 +67,7 @@ cat > "$PLIST" <<EOF
     <string>${ROOT}/automation/config.local.json</string>
     <key>DESKBOOKS_IMPORT_APPLY</key>
     <string>${APPLY}</string>
-  </dict>
+${EXTRA_ENV_XML}  </dict>
 
   <key>StartCalendarInterval</key>
   <dict>
