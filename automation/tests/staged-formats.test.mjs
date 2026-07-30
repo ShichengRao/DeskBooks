@@ -7,7 +7,7 @@ import {
   STAGED_BALANCES_FORMAT,
   STAGED_TRANSACTIONS_FORMAT,
 } from "../src/staged-formats.mjs";
-import { normalizeTellerBalances, normalizeTellerTransactions } from "../fetchers/teller.mjs";
+import { normalizePlaidBalances, normalizePlaidTransactions } from "../fetchers/plaid.mjs";
 
 test("buildStagedTransactions normalizes and validates rows", () => {
   const staged = buildStagedTransactions({
@@ -53,48 +53,50 @@ test("buildStagedBalances validates rows and keeps explicit nulls", () => {
   assert.throws(() => buildStagedBalances({ asOf: "soon", rows: [] }), /ISO date/);
 });
 
-test("normalizeTellerTransactions maps fields and flags pending", () => {
-  const rows = normalizeTellerTransactions({
+test("normalizePlaidTransactions flips Plaid's outflow-positive sign convention", () => {
+  const rows = normalizePlaidTransactions({
     transactions: [
       {
-        id: "txn_a",
+        transaction_id: "txn_a",
         date: "2026-07-01",
-        description: "CARD PAYMENT",
-        amount: "-12.34",
-        status: "posted",
-        details: { counterparty: { name: "Coffee Co" } },
+        name: "COFFEE SHOP",
+        amount: 12.34,
+        pending: false,
+        merchant_name: "Coffee Co",
       },
-      { id: "txn_b", date: "2026-07-02", description: "HOLD", amount: "-5.00", status: "pending" },
+      { transaction_id: "txn_b", date: "2026-07-02", name: "PAYROLL", amount: -2500, pending: false },
+      { transaction_id: "txn_c", date: "2026-07-03", name: "HOLD", amount: 5, pending: true },
+      { transaction_id: "txn_d", date: "2026-07-04", name: "ZERO", amount: 0, pending: false },
     ],
   });
+  assert.equal(rows[0].amount, "-12.34"); // Plaid positive outflow -> DeskBooks negative
   assert.equal(rows[0].merchant, "Coffee Co");
-  assert.equal(rows[0].pending, false);
-  assert.equal(rows[1].pending, true);
+  assert.equal(rows[1].amount, "2500"); // Plaid negative inflow -> DeskBooks positive
   assert.equal(rows[1].merchant, null);
+  assert.equal(rows[2].pending, true);
+  assert.equal(rows[3].amount, "0.00");
 });
 
-test("normalizeTellerTransactions can invert provider sign conventions", () => {
-  const rows = normalizeTellerTransactions({
+test("normalizePlaidTransactions supports the invertAmounts escape hatch", () => {
+  const rows = normalizePlaidTransactions({
     transactions: [
-      { id: "a", date: "2026-07-01", description: "X", amount: "12.34", status: "posted" },
-      { id: "b", date: "2026-07-01", description: "Y", amount: "-1.00", status: "posted" },
+      { transaction_id: "a", date: "2026-07-01", name: "X", amount: 12.34, pending: false },
     ],
     invertAmounts: true,
   });
-  assert.equal(rows[0].amount, "-12.34");
-  assert.equal(rows[1].amount, "1.00");
+  assert.equal(rows[0].amount, "12.34");
 });
 
-test("normalizeTellerBalances maps ledger balances through the account mapping", () => {
-  const rows = normalizeTellerBalances({
+test("normalizePlaidBalances maps current balances through the account mapping", () => {
+  const rows = normalizePlaidBalances({
     mappings: [
-      { tellerAccountId: "acc_1", deskbooksAccountId: 3 },
-      { tellerAccountId: "acc_2", deskbooksAccountId: 4 },
-      { tellerAccountId: "acc_missing", deskbooksAccountId: 5 },
+      { plaidAccountId: "acc_1", deskbooksAccountId: 3 },
+      { plaidAccountId: "acc_2", deskbooksAccountId: 4 },
+      { plaidAccountId: "acc_missing", deskbooksAccountId: 5 },
     ],
-    balancesByTellerId: {
-      acc_1: { ledger: "100.25", available: "90.00" },
-      acc_2: { ledger: null },
+    accountsById: {
+      acc_1: { balances: { current: 100.25, available: 90 } },
+      acc_2: { balances: { current: null } },
     },
   });
   assert.deepEqual(rows, [

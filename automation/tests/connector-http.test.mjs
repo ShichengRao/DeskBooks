@@ -13,11 +13,11 @@ test("refuses requests without an allowlist", async () => {
 
 test("refuses non-HTTPS URLs and hosts outside the allowlist", async () => {
   await assert.rejects(
-    httpsGetJson("http://api.teller.io/accounts", { allowedHosts: ["api.teller.io"] }),
+    httpsGetJson("http://production.plaid.com/accounts/get", { allowedHosts: ["production.plaid.com"] }),
     /refusing non-HTTPS URL/,
   );
   await assert.rejects(
-    httpsGetJson("https://evil.example.com/accounts", { allowedHosts: ["api.teller.io"] }),
+    httpsGetJson("https://evil.example.com/accounts", { allowedHosts: ["production.plaid.com"] }),
     /outside allowedHosts: evil.example.com/,
   );
 });

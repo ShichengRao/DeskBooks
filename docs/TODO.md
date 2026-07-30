@@ -26,6 +26,6 @@ version.
   import batches.
 - Local SQLite data is plaintext. Use OS disk encryption for sensitive data.
 - Bank/balance fetching exists only as optional local connectors under
-  `automation/` (see `docs/AUTOMATED_IMPORTS.md`); the Teller connector has
-  not yet been exercised against a live enrollment.
+  `automation/` (see `docs/AUTOMATED_IMPORTS.md`); the Plaid connector has
+  not yet been exercised against a live Item (sandbox first).
 - Dates are date-only. Importers discard time-of-day data when present.

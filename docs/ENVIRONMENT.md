@@ -23,7 +23,7 @@ This document tracks local configuration, credentials, and environment variables
 
 ## Credentials
 
-- Connector credentials are private files you manage (`chmod 600`), outside the repo, referenced by path from `automation/config.local.json`. For Teller: `certPath`, `keyPath`, and `tokenPath` (see `docs/AUTOMATED_IMPORTS.md`). Nothing secret belongs in config files or the repo.
+- Connector credentials are private files you manage (`chmod 600`), outside the repo, referenced by path from `automation/config.local.json`. For Plaid: `clientIdPath`, `secretPath`, and `accessTokenPath` (see `docs/AUTOMATED_IMPORTS.md`). Nothing secret belongs in config files or the repo.
 
 ## Secret-Like Local Paths
 

@@ -2,7 +2,7 @@
  * The only module in automation/ allowed to open network connections
  * (enforced by tests/network-guard.test.mjs). Every request must name an
  * explicit host allowlist — there is no permissive default — and only
- * HTTPS GETs of JSON are supported, which is all a read-only bank
+ * HTTPS GET/POST of JSON are supported, which is all a read-only bank
  * connector needs.
  */
 import https from "node:https";
@@ -23,23 +23,25 @@ function assertAllowedRequestUrl(url, allowedHosts) {
   }
 }
 
-export async function httpsGetJson(
+function requestJson(
+  method,
   urlLike,
-  { allowedHosts, headers = {}, cert, key, timeoutMs = 30_000 } = {},
+  { allowedHosts, headers = {}, body = null, cert, key, timeoutMs = 30_000 } = {},
 ) {
   const url = new URL(urlLike);
   assertAllowedRequestUrl(url, allowedHosts);
 
+  const payload = body == null ? null : Buffer.from(JSON.stringify(body), "utf8");
+  const requestHeaders = { accept: "application/json", ...headers };
+  if (payload) {
+    requestHeaders["content-type"] = "application/json";
+    requestHeaders["content-length"] = payload.length;
+  }
+
   return new Promise((resolve, reject) => {
     const request = https.request(
       url,
-      {
-        method: "GET",
-        headers: { accept: "application/json", ...headers },
-        cert,
-        key,
-        timeout: timeoutMs,
-      },
+      { method, headers: requestHeaders, cert, key, timeout: timeoutMs },
       (response) => {
         const chunks = [];
         let size = 0;
@@ -52,17 +54,17 @@ export async function httpsGetJson(
           chunks.push(chunk);
         });
         response.on("end", () => {
-          const body = Buffer.concat(chunks).toString("utf8");
+          const text = Buffer.concat(chunks).toString("utf8");
           if (response.statusCode < 200 || response.statusCode >= 300) {
             reject(
               new Error(
-                `connector-http: ${url.hostname}${url.pathname} returned ${response.statusCode}: ${body.slice(0, 300)}`,
+                `connector-http: ${url.hostname}${url.pathname} returned ${response.statusCode}: ${text.slice(0, 300)}`,
               ),
             );
             return;
           }
           try {
-            resolve(JSON.parse(body));
+            resolve(JSON.parse(text));
           } catch (error) {
             reject(new Error(`connector-http: invalid JSON from ${url.hostname}: ${error.message}`));
           }
@@ -71,8 +73,19 @@ export async function httpsGetJson(
     );
     request.on("timeout", () => request.destroy(new Error(`connector-http: timeout after ${timeoutMs}ms`)));
     request.on("error", reject);
+    if (payload) {
+      request.write(payload);
+    }
     request.end();
   });
+}
+
+export async function httpsGetJson(urlLike, options = {}) {
+  return requestJson("GET", urlLike, options);
+}
+
+export async function httpsPostJson(urlLike, body, options = {}) {
+  return requestJson("POST", urlLike, { ...options, body });
 }
 
 export function basicAuthHeader(username, password = "") {

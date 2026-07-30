@@ -86,7 +86,7 @@ def test_preview_from_bytes_routes_json_files_to_staged_importer(db):
     preview = _preview_from_bytes(
         db,
         data=json.dumps(payload).encode(),
-        filename="2026-07-03-teller-acct1-transactions.json",
+        filename="2026-07-03-plaid-acct1-transactions.json",
         account_id=account.id,
         importer_name="staged_json",
     )

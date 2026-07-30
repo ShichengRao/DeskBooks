@@ -17,8 +17,8 @@ can fetch transactions and balances from institutions you choose, on a
 schedule you configure. When you enable one:
 
 - Data flows only between your machine and the hosts you pin for that
-  connector (for example `api.teller.io`). A connector with no host allowlist
-  refuses to run.
+  connector (for example `sandbox.plaid.com` / `production.plaid.com`). A
+  connector with no host allowlist refuses to run.
 - Credentials and tokens live in private files you control (chmod 600),
   outside the repo, referenced by path from an untracked local config.
 - Fetched files land in a local staging directory and enter the app through

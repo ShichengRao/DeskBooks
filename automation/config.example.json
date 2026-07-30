@@ -2,16 +2,17 @@
   "stagingDir": "~/Library/Application Support/DeskBooks/import-staging",
   "sources": [
     {
-      "name": "teller",
+      "name": "plaid_mybank",
       "enabled": false,
-      "module": "./fetchers/teller.mjs",
-      "certPath": "~/.config/deskbooks/teller/certificate.pem",
-      "keyPath": "~/.config/deskbooks/teller/private_key.pem",
-      "tokenPath": "~/.config/deskbooks/teller/access-token",
+      "module": "./fetchers/plaid.mjs",
+      "environment": "sandbox",
+      "clientIdPath": "~/.config/deskbooks/plaid/client-id",
+      "secretPath": "~/.config/deskbooks/plaid/secret",
+      "accessTokenPath": "~/.config/deskbooks/plaid/access-token-mybank",
       "lookbackDays": 90,
       "invertAmounts": false,
       "accounts": [
-        { "tellerAccountId": "acc_example", "deskbooksAccountId": 1 }
+        { "plaidAccountId": "acc_example", "deskbooksAccountId": 1 }
       ]
     },
     {

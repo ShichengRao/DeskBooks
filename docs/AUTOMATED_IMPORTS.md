@@ -9,8 +9,8 @@ The design keeps the privacy boundary sharp:
 1. **Only the Node automation layer touches the network.** The backend cannot
    even import HTTP libraries (`backend/tests/test_no_external_network.py`),
    and `automation/tests/network-guard.test.mjs` enforces that only
-   `automation/src/connector-http.mjs` may open connections — HTTPS GETs of
-   JSON against an explicit host allowlist, nothing else. Connectors are
+   `automation/src/connector-http.mjs` may open connections — HTTPS GET/POST
+   of JSON against an explicit host allowlist, nothing else. Connectors are
    API/file based; there is no browser automation.
 2. Connectors write **staged files** into a local staging directory and
    append entries to a manifest.
@@ -74,7 +74,7 @@ Each staged file gets one JSONL entry in `manifest.jsonl` (append-only
 history) and `latest-manifest.jsonl` (this run only):
 
 ```json
-{ "source": "teller", "kind": "statement", "account_id": 3,
+{ "source": "plaid_mybank", "kind": "statement", "account_id": 3,
   "importer_name": "staged_json", "path": "/…/2026-07-30-….json",
   "sha256": "…", "downloaded_at": "2026-07-30T09:00:00.000Z" }
 ```
@@ -95,39 +95,64 @@ cp automation/config.example.json automation/config.local.json
 and import halves always agree) and `sources[]`. Per-source keys: `name`,
 `module`, `enabled`, plus whatever the fetcher documents.
 
-## Teller setup (free, API-based)
+## Plaid setup (free Trial plan)
 
-Teller's developer tier is free for up to 100 bank connections. The live
-API path follows their documented contract but has not been exercised
-against a real enrollment yet — run your first fetches with a **sandbox**
-token and preview-only (no apply), and check the preview output before
-trusting it. If a provider reports amounts with the opposite sign, set
-`"invertAmounts": true` on the source.
+Plaid's Trial plan (teams created on/after 2026-04-15) is free and supports
+up to 10 production Items — one Item is one bank login — including the big
+OAuth institutions. Every user brings their own Plaid keys: nothing shared
+ships in this repo, so one person's usage can never bill another's account.
+Trust note: with this connector your bank data flows through Plaid (the
+aggregator you signed up with), between Plaid and your machine only.
 
-1. Sign up at <https://teller.io/> and download your mTLS certificate pair.
-2. Enroll your bank via Teller Connect to get an access token.
-3. Put all three in a private directory:
+The live API path follows Plaid's documented contract but has not been
+exercised against a real Item yet — run your first fetches with
+`"environment": "sandbox"` and preview-only (no apply), and check the
+preview output before trusting it. Sign convention is normalized
+automatically (Plaid reports outflows as positive; DeskBooks stores them
+negative); `"invertAmounts": true` exists only for institutions that
+misreport against Plaid's own convention.
+
+1. Create a team at <https://dashboard.plaid.com/> and copy your
+   `client_id` and the sandbox (later production) `secret` into private
+   files:
 
    ```sh
-   mkdir -p ~/.config/deskbooks/teller && chmod 700 ~/.config/deskbooks/teller
-   # certificate.pem and private_key.pem from Teller, then:
-   printf '%s' 'token_...' > ~/.config/deskbooks/teller/access-token
-   chmod 600 ~/.config/deskbooks/teller/*
+   mkdir -p ~/.config/deskbooks/plaid && chmod 700 ~/.config/deskbooks/plaid
+   printf '%s' 'your-client-id' > ~/.config/deskbooks/plaid/client-id
+   printf '%s' 'your-secret'    > ~/.config/deskbooks/plaid/secret
+   chmod 600 ~/.config/deskbooks/plaid/*
    ```
 
-4. Discover account ids and map them to DeskBooks accounts:
+2. Link a bank from the CLI (Hosted Link — the script prints a URL you
+   complete in your browser, then writes the access token):
 
    ```sh
    cd automation
-   node bin/list-teller-accounts.mjs \
-     --cert ~/.config/deskbooks/teller/certificate.pem \
-     --key ~/.config/deskbooks/teller/private_key.pem \
-     --token ~/.config/deskbooks/teller/access-token
+   node bin/plaid-link-setup.mjs \
+     --client-id ~/.config/deskbooks/plaid/client-id \
+     --secret ~/.config/deskbooks/plaid/secret \
+     --env sandbox \
+     --out ~/.config/deskbooks/plaid/access-token-mybank
    ```
 
-5. Enable the `teller` source in `config.local.json` (see
-   `config.example.json`) and fill in `certPath`, `keyPath`, `tokenPath`,
-   and the `accounts` mapping (`tellerAccountId` → `deskbooksAccountId`).
+   Sandbox tip: pick any institution and log in with `user_good` /
+   `pass_good`.
+
+3. Discover account ids and map them to DeskBooks accounts:
+
+   ```sh
+   node bin/list-plaid-accounts.mjs \
+     --client-id ~/.config/deskbooks/plaid/client-id \
+     --secret ~/.config/deskbooks/plaid/secret \
+     --env sandbox \
+     --access-token ~/.config/deskbooks/plaid/access-token-mybank
+   ```
+
+4. Enable the `plaid_mybank` source in `config.local.json` (see
+   `config.example.json`) and fill in `environment`, the three credential
+   paths, and the `accounts` mapping
+   (`plaidAccountId` → `deskbooksAccountId`). One source per Item; add
+   more sources for more banks.
 
 Each run stages one transactions file per mapped account plus one balances
 file, so runs keep both your transactions and your net-worth series current.
