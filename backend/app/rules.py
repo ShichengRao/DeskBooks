@@ -15,15 +15,14 @@ from __future__ import annotations
 import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass
-from functools import lru_cache
 from datetime import UTC, datetime
 from decimal import Decimal
+from functools import lru_cache
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from . import models
-
 
 _GENERIC_SINGLE_TOKEN_KEYS = {
     "ach",

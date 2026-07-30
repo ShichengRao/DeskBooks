@@ -3,7 +3,8 @@
 # shadows the imported type once Pydantic re-resolves hints via
 # get_type_hints (which sees the class attribute set by the default value).
 # Aliasing the import sidesteps the shadow without renaming any JSON field.
-from datetime import date as _date, datetime
+from datetime import date as _date
+from datetime import datetime
 from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -414,11 +415,15 @@ class NetWorthWorkbookImportResult(BaseModel):
 
 class NetWorthSeriesPoint(BaseModel):
     snapshot_date: _date
-    total: Decimal
-    by_category: dict[str, Decimal]
-    by_account: dict[str, Decimal]
-    taxable: Decimal
-    tax_advantaged: Decimal
+    # float, not Decimal — this route has always emitted JSON numbers
+    # (jsonable_encoder floats Decimals when no response_model is set), and
+    # the frontend charts consume numbers. Decimal fields would serialize as
+    # strings and change the wire format.
+    total: float
+    by_category: dict[str, float]
+    by_account: dict[str, float]
+    taxable: float
+    tax_advantaged: float
 
 
 # ---------- goals & journal ----------
@@ -762,13 +767,3 @@ class RecurringMerchant(BaseModel):
     total_amount: float
     last_seen: _date
     cadence_days_estimate: float | None
-
-
-class NetWorthSeriesPoint(BaseModel):
-    snapshot_date: _date
-    # float for the same wire-format reason as MonthlyPoint.
-    total: float
-    by_category: dict[str, float]
-    by_account: dict[str, float]
-    taxable: float
-    tax_advantaged: float
