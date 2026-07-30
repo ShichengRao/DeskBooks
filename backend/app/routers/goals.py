@@ -95,7 +95,7 @@ def list_revisions(goal_id: int, db: DbSession):
         db.scalars(
             select(models.GoalRevision)
             .where(models.GoalRevision.goal_id == goal_id)
-            .order_by(models.GoalRevision.changed_at.desc())
+            .order_by(models.GoalRevision.changed_at.desc(), models.GoalRevision.id.desc())
         )
     )
 

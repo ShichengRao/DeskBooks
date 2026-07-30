@@ -16,7 +16,6 @@ from .models import (
     SignConvention,
 )
 
-
 STARTER_ACCOUNTS = [
     {
         "name": "Checking",

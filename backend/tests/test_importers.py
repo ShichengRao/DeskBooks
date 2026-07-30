@@ -5,8 +5,7 @@ from decimal import Decimal
 from io import BytesIO
 
 import openpyxl
-from sqlalchemy import create_engine, select
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import select
 
 from app import importers as importer_registry
 from app import schemas
@@ -30,7 +29,6 @@ from app.models import (
     Account,
     AccountCategory,
     AccountType,
-    Base,
     NetWorthSnapshot,
     SignConvention,
     TransactionKind,
@@ -297,11 +295,7 @@ def test_contribution_history_importer_skips_metadata_rows():
     assert rows[0].suggested_kind == TransactionKind.donation
 
 
-def test_net_worth_workbook_import_uses_user_supplied_account_map(tmp_path):
-    engine = create_engine("sqlite:///:memory:", future=True)
-    Base.metadata.create_all(engine)
-    Session = sessionmaker(bind=engine, future=True)
-    db = Session()
+def test_net_worth_workbook_import_uses_user_supplied_account_map(db, tmp_path):
     db.add(
         Account(
             name="Checking",

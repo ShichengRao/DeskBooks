@@ -3,15 +3,11 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-
 from app.budgets import budget_report
 from app.models import (
     Account,
     AccountCategory,
     AccountType,
-    Base,
     BudgetDefault,
     BudgetOverride,
     Category,
@@ -21,7 +17,6 @@ from app.models import (
     TransactionKind,
     TransactionSplit,
 )
-
 
 FOCUS_MONTH_TOTALS = {
     date(2026, 6, 1): {
@@ -72,13 +67,6 @@ RANGE_ROW_TOTALS = {
         "delta": Decimal("30.00"),
     },
 }
-
-
-def _session():
-    engine = create_engine("sqlite:///:memory:", future=True)
-    Base.metadata.create_all(engine)
-    Session = sessionmaker(bind=engine, future=True)
-    return Session()
 
 
 def _checking_account(db) -> Account:
@@ -167,28 +155,24 @@ def _assert_named_values(rows: dict, expectations: dict) -> None:
         _assert_values(rows[name], expected)
 
 
-def test_budget_report_applies_defaults_and_monthly_overrides_to_actual_spending():
-    db = _session()
-    try:
-        _seed_budget_report_case(db)
+def test_budget_report_applies_defaults_and_monthly_overrides_to_actual_spending(db):
+    _seed_budget_report_case(db)
 
-        result = budget_report(db, date(2026, 6, 24), date(2026, 7, 20), date(2026, 7, 1))
-        rows = {row["category_name"]: row for row in result["rows"]}
-        months = {row["month"]: row for row in result["months"]}
+    result = budget_report(db, date(2026, 6, 24), date(2026, 7, 20), date(2026, 7, 1))
+    rows = {row["category_name"]: row for row in result["rows"]}
+    months = {row["month"]: row for row in result["months"]}
 
-        assert result["start"] == date(2026, 6, 1)
-        assert result["end"] == date(2026, 7, 1)
-        assert result["focus_month"] == date(2026, 7, 1)
-        _assert_named_values(months, FOCUS_MONTH_TOTALS)
-        _assert_values(result, FOCUS_REPORT_TOTALS)
-        assert rows["Groceries"]["target_amount"] is None
-        _assert_named_values(rows, FOCUS_ROW_TOTALS)
+    assert result["start"] == date(2026, 6, 1)
+    assert result["end"] == date(2026, 7, 1)
+    assert result["focus_month"] == date(2026, 7, 1)
+    _assert_named_values(months, FOCUS_MONTH_TOTALS)
+    _assert_values(result, FOCUS_REPORT_TOTALS)
+    assert rows["Groceries"]["target_amount"] is None
+    _assert_named_values(rows, FOCUS_ROW_TOTALS)
 
-        range_result = budget_report(db, date(2026, 6, 24), date(2026, 7, 20))
-        range_rows = {row["category_name"]: row for row in range_result["rows"]}
+    range_result = budget_report(db, date(2026, 6, 24), date(2026, 7, 20))
+    range_rows = {row["category_name"]: row for row in range_result["rows"]}
 
-        assert range_result["focus_month"] is None
-        _assert_named_values(range_rows, RANGE_ROW_TOTALS)
-        _assert_values(range_result, FOCUS_REPORT_TOTALS)
-    finally:
-        db.close()
+    assert range_result["focus_month"] is None
+    _assert_named_values(range_rows, RANGE_ROW_TOTALS)
+    _assert_values(range_result, FOCUS_REPORT_TOTALS)

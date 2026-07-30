@@ -196,7 +196,7 @@ def delete_snapshot(snap_id: int, db: DbSession):
     return {"status": "deleted"}
 
 
-@router.get("/series")
+@router.get("/series", response_model=list[schemas.NetWorthSeriesPoint])
 def snapshot_series(
     db: DbSession,
     start: date | None = None,

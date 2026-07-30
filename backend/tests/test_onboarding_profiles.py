@@ -3,45 +3,37 @@ from __future__ import annotations
 import json
 import sqlite3
 
-from sqlalchemy import create_engine, select
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import select
 
 from app import profiles
-from app.models import Account, Base, Category
+from app.models import Account, Category
 from app.onboarding import seed_starter_data
 
 
-def test_starter_onboarding_uses_generic_accounts_and_categories():
-    engine = create_engine("sqlite:///:memory:", future=True)
-    Base.metadata.create_all(engine)
-    Session = sessionmaker(bind=engine, future=True)
-    db = Session()
-    try:
-        result = seed_starter_data(db)
-        account_names = {a.name for a in db.scalars(select(Account)).all()}
-        category_names = {c.name for c in db.scalars(select(Category)).all()}
+def test_starter_onboarding_uses_generic_accounts_and_categories(db):
+    result = seed_starter_data(db)
+    account_names = {a.name for a in db.scalars(select(Account)).all()}
+    category_names = {c.name for c in db.scalars(select(Category)).all()}
 
-        assert result["accounts_added"] == 3
-        assert {"Checking", "Savings", "Credit Card"}.issubset(account_names)
-        assert {"Housing", "Food", "Income", "Credit Card Payment"}.issubset(
-            category_names
-        )
-        assert account_names == {"Checking", "Savings", "Credit Card"}
-        assert category_names.issuperset(
-            {
-                "Housing",
-                "Rent",
-                "Utilities",
-                "Food",
-                "Groceries",
-                "Restaurants",
-                "Income",
-                "Paycheck",
-                "Other Income",
-            }
-        )
-    finally:
-        db.close()
+    assert result["accounts_added"] == 3
+    assert {"Checking", "Savings", "Credit Card"}.issubset(account_names)
+    assert {"Housing", "Food", "Income", "Credit Card Payment"}.issubset(
+        category_names
+    )
+    assert account_names == {"Checking", "Savings", "Credit Card"}
+    assert category_names.issuperset(
+        {
+            "Housing",
+            "Rent",
+            "Utilities",
+            "Food",
+            "Groceries",
+            "Restaurants",
+            "Income",
+            "Paycheck",
+            "Other Income",
+        }
+    )
 
 
 def test_profiles_map_to_separate_sqlite_files(tmp_path, monkeypatch):

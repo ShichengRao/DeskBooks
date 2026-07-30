@@ -10,6 +10,7 @@ exports tend to fall into a few recurring shapes:
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from decimal import Decimal
 
 from ..models import TransactionKind
@@ -40,6 +41,11 @@ def _signed_amount(cls: type[CsvImporter], row: dict, key: str) -> Decimal | Non
     return _clean_amount(amount) if amount is not None else None
 
 
+def _inverted_signed_amount(cls: type[CsvImporter], row: dict, key: str) -> Decimal | None:
+    amount = _signed_amount(cls, row, key)
+    return -amount if amount is not None else None
+
+
 def _debit_credit_amount(
     cls: type[CsvImporter],
     row: dict,
@@ -54,6 +60,10 @@ def _debit_credit_amount(
     if credit is not None and credit != 0:
         return abs(_clean_amount(credit))
     return Decimal("0.00")
+
+
+def _joined_description(row: dict, *keys: str) -> str:
+    return " ".join(part for part in (row_value(row, key) for key in keys) if part)
 
 
 def _suggest_kind(
@@ -111,6 +121,38 @@ def _draft(
     )
 
 
+def _parse_rows(
+    cls: type[CsvImporter],
+    csv_text: str,
+    *,
+    date_key: str,
+    amount: Callable[[dict], Decimal | None],
+    description: Callable[[dict], str],
+    post_date_key: str | None = None,
+    credit_card: bool = False,
+    extra: Callable[[dict], str] | None = None,
+) -> list[ImportDraftRow]:
+    """Shared parse loop. Importers differ only in how a row yields the
+    amount / description / kind-hint text, never in the loop itself."""
+    _, rows = _read_dictrows(csv_text)
+    out: list[ImportDraftRow] = []
+    for i, row in enumerate(rows):
+        item = _draft(
+            cls=cls,
+            row_index=i,
+            row=row,
+            date_key=date_key,
+            amount=amount(row),
+            description=description(row),
+            post_date_key=post_date_key,
+            credit_card=credit_card,
+            extra=extra(row) if extra is not None else "",
+        )
+        if item:
+            out.append(item)
+    return out
+
+
 @register
 class ChaseBankImporter(CsvImporter):
     """Chase checking/savings CSV.
@@ -128,23 +170,14 @@ class ChaseBankImporter(CsvImporter):
 
     @classmethod
     def parse(cls, csv_text: str) -> list[ImportDraftRow]:
-        _, rows = _read_dictrows(csv_text)
-        out: list[ImportDraftRow] = []
-        for i, row in enumerate(rows):
-            amount = _signed_amount(cls, row, "AMOUNT")
-            raw_desc = row_value(row, "DESCRIPTION")
-            item = _draft(
-                cls=cls,
-                row_index=i,
-                row=row,
-                date_key="POSTING DATE",
-                amount=amount,
-                description=raw_desc,
-                extra=f"{row_value(row, 'DETAILS')} {row_value(row, 'TYPE')}",
-            )
-            if item:
-                out.append(item)
-        return out
+        return _parse_rows(
+            cls,
+            csv_text,
+            date_key="POSTING DATE",
+            amount=lambda row: _signed_amount(cls, row, "AMOUNT"),
+            description=lambda row: row_value(row, "DESCRIPTION"),
+            extra=lambda row: f"{row_value(row, 'DETAILS')} {row_value(row, 'TYPE')}",
+        )
 
 
 @register
@@ -168,21 +201,13 @@ class RunningBalanceBankImporter(CsvImporter):
 
     @classmethod
     def parse(cls, csv_text: str) -> list[ImportDraftRow]:
-        _, rows = _read_dictrows(csv_text)
-        out: list[ImportDraftRow] = []
-        for i, row in enumerate(rows):
-            amount = _signed_amount(cls, row, "AMOUNT")
-            item = _draft(
-                cls=cls,
-                row_index=i,
-                row=row,
-                date_key="DATE",
-                amount=amount,
-                description=row_value(row, "DESCRIPTION"),
-            )
-            if item:
-                out.append(item)
-        return out
+        return _parse_rows(
+            cls,
+            csv_text,
+            date_key="DATE",
+            amount=lambda row: _signed_amount(cls, row, "AMOUNT"),
+            description=lambda row: row_value(row, "DESCRIPTION"),
+        )
 
 
 @register
@@ -202,23 +227,15 @@ class PncBankImporter(CsvImporter):
 
     @classmethod
     def parse(cls, csv_text: str) -> list[ImportDraftRow]:
-        _, rows = _read_dictrows(csv_text)
-        out: list[ImportDraftRow] = []
-        for i, row in enumerate(rows):
-            amount = _debit_credit_amount(
+        return _parse_rows(
+            cls,
+            csv_text,
+            date_key="DATE",
+            amount=lambda row: _debit_credit_amount(
                 cls, row, debit_key="WITHDRAWALS", credit_key="DEPOSITS"
-            )
-            item = _draft(
-                cls=cls,
-                row_index=i,
-                row=row,
-                date_key="DATE",
-                amount=amount,
-                description=row_value(row, "DESCRIPTION"),
-            )
-            if item:
-                out.append(item)
-        return out
+            ),
+            description=lambda row: row_value(row, "DESCRIPTION"),
+        )
 
 
 @register
@@ -240,21 +257,13 @@ class DebitCreditBankImporter(CsvImporter):
 
     @classmethod
     def parse(cls, csv_text: str) -> list[ImportDraftRow]:
-        _, rows = _read_dictrows(csv_text)
-        out: list[ImportDraftRow] = []
-        for i, row in enumerate(rows):
-            amount = _debit_credit_amount(cls, row)
-            item = _draft(
-                cls=cls,
-                row_index=i,
-                row=row,
-                date_key="DATE",
-                amount=amount,
-                description=row_value(row, "DESCRIPTION"),
-            )
-            if item:
-                out.append(item)
-        return out
+        return _parse_rows(
+            cls,
+            csv_text,
+            date_key="DATE",
+            amount=lambda row: _debit_credit_amount(cls, row),
+            description=lambda row: row_value(row, "DESCRIPTION"),
+        )
 
 
 @register
@@ -274,31 +283,14 @@ class UsBankImporter(CsvImporter):
 
     @classmethod
     def parse(cls, csv_text: str) -> list[ImportDraftRow]:
-        _, rows = _read_dictrows(csv_text)
-        out: list[ImportDraftRow] = []
-        for i, row in enumerate(rows):
-            amount = _signed_amount(cls, row, "AMOUNT")
-            description = " ".join(
-                part
-                for part in [
-                    row_value(row, "NAME"),
-                    row_value(row, "TRANSACTION"),
-                    row_value(row, "MEMO"),
-                ]
-                if part
-            )
-            item = _draft(
-                cls=cls,
-                row_index=i,
-                row=row,
-                date_key="DATE",
-                amount=amount,
-                description=description,
-                extra=row_value(row, "TRANSACTION"),
-            )
-            if item:
-                out.append(item)
-        return out
+        return _parse_rows(
+            cls,
+            csv_text,
+            date_key="DATE",
+            amount=lambda row: _signed_amount(cls, row, "AMOUNT"),
+            description=lambda row: _joined_description(row, "NAME", "TRANSACTION", "MEMO"),
+            extra=lambda row: row_value(row, "TRANSACTION"),
+        )
 
 
 @register
@@ -318,27 +310,14 @@ class MarcusMorganStanleyBankImporter(CsvImporter):
 
     @classmethod
     def parse(cls, csv_text: str) -> list[ImportDraftRow]:
-        _, rows = _read_dictrows(csv_text)
-        out: list[ImportDraftRow] = []
-        for i, row in enumerate(rows):
-            amount = _signed_amount(cls, row, "AMOUNT")
-            description = " ".join(
-                part
-                for part in [row_value(row, "ACTIVITY"), row_value(row, "DESCRIPTION")]
-                if part
-            )
-            item = _draft(
-                cls=cls,
-                row_index=i,
-                row=row,
-                date_key="DATE",
-                amount=amount,
-                description=description,
-                extra=row_value(row, "ACTIVITY"),
-            )
-            if item:
-                out.append(item)
-        return out
+        return _parse_rows(
+            cls,
+            csv_text,
+            date_key="DATE",
+            amount=lambda row: _signed_amount(cls, row, "AMOUNT"),
+            description=lambda row: _joined_description(row, "ACTIVITY", "DESCRIPTION"),
+            extra=lambda row: row_value(row, "ACTIVITY"),
+        )
 
 
 @register
@@ -367,24 +346,16 @@ class CapitalOneCreditImporter(CsvImporter):
 
     @classmethod
     def parse(cls, csv_text: str) -> list[ImportDraftRow]:
-        _, rows = _read_dictrows(csv_text)
-        out: list[ImportDraftRow] = []
-        for i, row in enumerate(rows):
-            amount = _debit_credit_amount(cls, row)
-            item = _draft(
-                cls=cls,
-                row_index=i,
-                row=row,
-                date_key="TRANSACTION DATE",
-                post_date_key="POSTED DATE",
-                amount=amount,
-                description=row_value(row, "DESCRIPTION"),
-                credit_card=True,
-                extra=row_value(row, "CATEGORY"),
-            )
-            if item:
-                out.append(item)
-        return out
+        return _parse_rows(
+            cls,
+            csv_text,
+            date_key="TRANSACTION DATE",
+            post_date_key="POSTED DATE",
+            amount=lambda row: _debit_credit_amount(cls, row),
+            description=lambda row: row_value(row, "DESCRIPTION"),
+            credit_card=True,
+            extra=lambda row: row_value(row, "CATEGORY"),
+        )
 
 
 @register
@@ -404,23 +375,15 @@ class CitiCreditImporter(CsvImporter):
 
     @classmethod
     def parse(cls, csv_text: str) -> list[ImportDraftRow]:
-        _, rows = _read_dictrows(csv_text)
-        out: list[ImportDraftRow] = []
-        for i, row in enumerate(rows):
-            amount = _debit_credit_amount(cls, row)
-            item = _draft(
-                cls=cls,
-                row_index=i,
-                row=row,
-                date_key="DATE",
-                amount=amount,
-                description=row_value(row, "DESCRIPTION"),
-                credit_card=True,
-                extra=row_value(row, "STATUS"),
-            )
-            if item:
-                out.append(item)
-        return out
+        return _parse_rows(
+            cls,
+            csv_text,
+            date_key="DATE",
+            amount=lambda row: _debit_credit_amount(cls, row),
+            description=lambda row: row_value(row, "DESCRIPTION"),
+            credit_card=True,
+            extra=lambda row: row_value(row, "STATUS"),
+        )
 
 
 @register
@@ -440,23 +403,13 @@ class DiscoverCreditImporter(CsvImporter):
 
     @classmethod
     def parse(cls, csv_text: str) -> list[ImportDraftRow]:
-        _, rows = _read_dictrows(csv_text)
-        out: list[ImportDraftRow] = []
-        for i, row in enumerate(rows):
-            amount = _signed_amount(cls, row, "AMOUNT")
-            if amount is not None:
-                amount = -amount
-            item = _draft(
-                cls=cls,
-                row_index=i,
-                row=row,
-                date_key="TRANS. DATE",
-                post_date_key="POST DATE",
-                amount=amount,
-                description=row_value(row, "DESCRIPTION"),
-                credit_card=True,
-                extra=row_value(row, "CATEGORY"),
-            )
-            if item:
-                out.append(item)
-        return out
+        return _parse_rows(
+            cls,
+            csv_text,
+            date_key="TRANS. DATE",
+            post_date_key="POST DATE",
+            amount=lambda row: _inverted_signed_amount(cls, row, "AMOUNT"),
+            description=lambda row: row_value(row, "DESCRIPTION"),
+            credit_card=True,
+            extra=lambda row: row_value(row, "CATEGORY"),
+        )

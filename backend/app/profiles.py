@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import json
 import os
-from pathlib import Path
 import re
 import sqlite3
+from dataclasses import dataclass
+from pathlib import Path
 
 from .app_paths import DATA_DIR
 
@@ -65,8 +65,8 @@ def _read_registry() -> dict:
     try:
         with REGISTRY_PATH.open("r", encoding="utf-8") as f:
             registry = json.load(f)
-    except (json.JSONDecodeError, OSError):
-        raise RuntimeError(f"profile registry is invalid: {REGISTRY_PATH}")
+    except (json.JSONDecodeError, OSError) as exc:
+        raise RuntimeError(f"profile registry is invalid: {REGISTRY_PATH}") from exc
     if not registry.get("profiles"):
         raise RuntimeError(f"profile registry has no profiles: {REGISTRY_PATH}")
     return registry

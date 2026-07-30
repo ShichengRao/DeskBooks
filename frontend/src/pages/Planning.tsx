@@ -29,7 +29,7 @@ import { compactCurrency, currency, dateLabel, num } from "../lib/fmt";
 
 const GOAL_KINDS: GoalKind[] = ["savings", "purchase", "retirement", "other"];
 type GoalForm = Partial<Goal> & { change_summary?: string };
-type GoalProgress = { current: string | null; target: string | null; percent: number | null; as_of?: string };
+type GoalProgress = { current: number | null; target: number | null; percent: number | null; as_of?: string };
 type JournalImportPreview = {
   source_filename: string;
   drafts: JournalImportDraft[];

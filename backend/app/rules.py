@@ -17,12 +17,12 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
+from functools import lru_cache
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from . import models
-
 
 _GENERIC_SINGLE_TOKEN_KEYS = {
     "ach",
@@ -231,8 +231,14 @@ def _raw_proposal_text(tx: models.Transaction) -> str:
     return (tx.merchant or tx.description_normalized or tx.description_raw or "").strip()
 
 
+@lru_cache(maxsize=8192)
 def _generalize_description(value: str) -> str:
-    """Collapse volatile transaction refs into reusable merchant-ish keys."""
+    """Collapse volatile transaction refs into reusable merchant-ish keys.
+
+    Cached because proposal generation calls this per candidate-key per
+    transaction (via _proposal_matches), re-running ~a dozen regex passes
+    on the same few thousand distinct descriptions.
+    """
     s = (value or "").strip()
     if not s:
         return ""
