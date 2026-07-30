@@ -164,6 +164,25 @@ def existing_batch_for_sha(db, sha256: str) -> models.ImportBatch | None:
     ).first()
 
 
+def staged_file_profile(entry: dict[str, Any], file_path: Path) -> str | None:
+    """Profile slug a staged file is meant for, or None for legacy files.
+
+    The manifest entry carries the stamp the runner wrote; fall back to the
+    file payload for files staged by hand or by an older runner. Unreadable
+    files return None here — the format parsers report those properly."""
+    stamp = entry.get("profile")
+    if isinstance(stamp, str) and stamp.strip():
+        return stamp
+    try:
+        payload = json.loads(file_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    file_stamp = payload.get("profile") if isinstance(payload, dict) else None
+    if isinstance(file_stamp, str) and file_stamp.strip():
+        return file_stamp
+    return None
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Preview or apply staged DeskBooks imports.")
     parser.add_argument("--manifest", type=Path, default=default_staging_dir() / "manifest.jsonl")
@@ -187,12 +206,22 @@ def main() -> None:
     did_backup = False
     imported = 0
     seen_sha256: set[str] = set()
+    active_slug = get_active_profile().slug
 
     with SessionLocal() as db:
         for entry in entries:
             kind, file_path, account_id, importer_name, sha256 = validate_entry(
                 entry, args.staging_dir
             )
+            stamp = staged_file_profile(entry, file_path)
+            if stamp is not None and stamp != active_slug:
+                # Not recorded in state: the file stays pending until its
+                # profile is the active one.
+                print(
+                    f"[import] skip {file_path.name}: staged for profile "
+                    f"'{stamp}' but '{active_slug}' is active"
+                )
+                continue
             if sha256 in seen_sha256:
                 print(f"[import] skip duplicate manifest entry: {file_path.name}")
                 continue

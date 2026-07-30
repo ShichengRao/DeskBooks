@@ -45,6 +45,7 @@ export async function fetch({ downloadsDir }) {
 
   const configPath = await writeConfig(dir, {
     stagingDir,
+    profile: "personal",
     sources: [
       {
         name: "json_connector",
@@ -58,6 +59,7 @@ export async function fetch({ downloadsDir }) {
         module: goodCsv,
         accountId: 7,
         importerName: "running_balance_bank",
+        profile: "scratch",
       },
     ],
   });
@@ -81,10 +83,19 @@ export async function fetch({ downloadsDir }) {
   assert.equal(balancesPayload.format, "deskbooks.staged-balances/v1");
   assert.equal(balancesPayload.balances.length, 2);
 
+  // Config-level profile stamps manifest entries and staged payloads; a
+  // source-level profile overrides it.
+  assert.equal(statementJson.profile, "personal");
+  assert.equal(balances.profile, "personal");
+  assert.equal(balancesPayload.profile, "personal");
+  const statementPayload = JSON.parse(await readFile(statementJson.path, "utf8"));
+  assert.equal(statementPayload.profile, "personal");
+
   const csvEntry = entries.find((e) => e.source === "csvish");
   assert.equal(csvEntry.kind, "statement");
   assert.equal(csvEntry.account_id, 7);
   assert.equal(csvEntry.importer_name, "running_balance_bank");
+  assert.equal(csvEntry.profile, "scratch");
 
   const latest = await readJsonl(path.join(stagingDir, "latest-manifest.jsonl"));
   assert.equal(latest.length, 3);
