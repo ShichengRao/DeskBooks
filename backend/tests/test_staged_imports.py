@@ -131,13 +131,27 @@ def test_staged_listing_reports_status_per_entry(db, tmp_path):
         importer_name=None,
     )
     gone = dict(fresh, path=str(staging_dir / "gone.json"), sha256="0" * 64)
-    # content tweaked so its sha differs from fresh.json
-    already_payload = _transactions_payload(account.id)
-    already_payload["transactions"][0]["id"] = "txn_seen"
-    already = _stage(staging_dir, "already.json", already_payload, account_id=account.id, importer_name="staged_json")
-    staging.save_state(state_path, {"applied_sha256": {already["sha256"]: {"empty": True}}})
+    hollow = _stage(
+        staging_dir,
+        "hollow.json",
+        _transactions_payload(account.id, rows=0),
+        account_id=account.id,
+        importer_name="staged_json",
+    )
+    # every row of this one already exists in the profile (the seeded txn)
+    dup_payload = _transactions_payload(account.id, rows=1)
+    dup_payload["transactions"][0]["id"] = "txn_dup"
+    duplicated = _stage(staging_dir, "duplicated.json", dup_payload, account_id=account.id, importer_name="staged_json")
 
-    _write_manifest(staging_dir, [fresh, other, orphan, balances, gone, already])
+    # The shared state file says fresh.json was imported (by some other
+    # profile). This profile's database has no such batch, so the listing
+    # must NOT believe it.
+    staging.save_state(
+        state_path,
+        {"applied_sha256": {fresh["sha256"]: {"batch_id": 999, "path": fresh["path"]}}},
+    )
+
+    _write_manifest(staging_dir, [fresh, other, orphan, balances, gone, hollow, duplicated])
 
     rows = {r.file_name: r for r in _staged_listing(db, staging_dir, state_path, ACTIVE)}
     assert rows["fresh.json"].status == "new"
@@ -151,9 +165,11 @@ def test_staged_listing_reports_status_per_entry(db, tmp_path):
     # the unknown account id in the balances file is simply not applyable
     assert (rows["balances.json"].row_count, rows["balances.json"].new_count) == (2, 1)
     assert rows["gone.json"].status == "missing_file"
-    assert rows["already.json"].status == "empty"
+    assert rows["hollow.json"].status == "empty"
+    assert rows["duplicated.json"].status == "imported"
+    assert "already in this profile" in rows["duplicated.json"].detail
     # newest-first ordering: manifest order reversed
-    assert [r.file_name for r in _staged_listing(db, staging_dir, state_path, ACTIVE)][0] == "already.json"
+    assert [r.file_name for r in _staged_listing(db, staging_dir, state_path, ACTIVE)][0] == "duplicated.json"
 
 
 def test_apply_staged_imports_statements_and_balances_once(db, tmp_path):
@@ -191,11 +207,12 @@ def test_apply_staged_imports_statements_and_balances_once(db, tmp_path):
 
     result = _apply_staged(db, staging_dir, state_path, ACTIVE, [])
     outcomes = {o.file_name: o for o in result.outcomes}
+    # the 0-row file is never a target: the listing already calls it empty
+    assert set(outcomes) == {"statement.json", "balances.json"}
     assert outcomes["statement.json"].status == "imported"
     assert outcomes["statement.json"].rows_applied == 2
     assert outcomes["balances.json"].status == "imported"
     assert outcomes["balances.json"].rows_applied == 1
-    assert outcomes["empty.json"].status == "empty"
     assert result.backup_name is None  # no profile_info given, no backup
 
     batch = db.query(ImportBatch).one()  # the empty file created no batch
@@ -207,9 +224,11 @@ def test_apply_staged_imports_statements_and_balances_once(db, tmp_path):
     state = staging.load_state(state_path)["applied_sha256"]
     assert state[statement["sha256"]]["batch_id"] == batch.id
     assert state[balances["sha256"]]["snapshot_id"] == snapshot.id
-    assert state[empty["sha256"]] == {"path": empty["path"], "empty": True}
+    assert empty["sha256"] not in state
 
-    # everything now reports imported/empty and a re-apply skips it all
+    # everything now reports imported/empty and a re-apply skips it all —
+    # imported via this profile's batch (statement) and via the balances
+    # matching the snapshot, not via the shared state file
     statuses = {r.file_name: r.status for r in _staged_listing(db, staging_dir, state_path, ACTIVE)}
     assert statuses == {"statement.json": "imported", "balances.json": "imported", "empty.json": "empty"}
     again = _apply_staged(db, staging_dir, state_path, ACTIVE, [statement["sha256"]])
