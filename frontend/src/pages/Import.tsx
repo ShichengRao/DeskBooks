@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
-import { invalidateTxQueries } from "../api/invalidate";
-import type { Account, ImportBatch, ImportPreview } from "../api/types";
+import { invalidateSnapshotQueries, invalidateTxQueries } from "../api/invalidate";
+import type { Account, ImportBatch, ImportPreview, StagedApplyResult, StagedEntry } from "../api/types";
 import { currency, dateLabel } from "../lib/fmt";
 import clsx from "clsx";
 
@@ -10,6 +10,23 @@ export function Import() {
   const qc = useQueryClient();
   const accounts = useQuery({ queryKey: ["accounts"], queryFn: () => api.get<Account[]>("/api/accounts") });
   const batches = useQuery({ queryKey: ["batches"], queryFn: () => api.get<ImportBatch[]>("/api/imports") });
+  const staged = useQuery({
+    queryKey: ["staged-imports"],
+    queryFn: () => api.get<StagedEntry[]>("/api/imports/staged"),
+  });
+  const [stagedResult, setStagedResult] = useState<StagedApplyResult | null>(null);
+
+  const stagedApplyMut = useMutation({
+    mutationFn: (sha256s: string[]) =>
+      api.post<StagedApplyResult>("/api/imports/staged/apply", { sha256s }),
+    onSuccess: (result) => {
+      setStagedResult(result);
+      qc.invalidateQueries({ queryKey: ["staged-imports"] });
+      qc.invalidateQueries({ queryKey: ["batches"] });
+      invalidateTxQueries(qc);
+      invalidateSnapshotQueries(qc); // balances files merge into snapshots
+    },
+  });
 
   const [file, setFile] = useState<File | null>(null);
   const [localPath, setLocalPath] = useState("");
@@ -64,6 +81,13 @@ export function Import() {
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold tracking-tight">Import</h1>
+      <StagedImportsPanel
+        entries={staged.data ?? []}
+        result={stagedResult}
+        pending={stagedApplyMut.isPending}
+        error={stagedApplyMut.isError ? String((stagedApplyMut.error as Error).message) : null}
+        onImport={(sha256s) => stagedApplyMut.mutate(sha256s)}
+      />
       <ImportUploadPanel
         accounts={accounts.data ?? []}
         accountId={accountId}
@@ -92,6 +116,148 @@ export function Import() {
         accounts={accounts.data ?? []}
         onRollback={(id) => rollbackMut.mutate(id)}
       />
+    </div>
+  );
+}
+
+const STAGED_STATUS_LABEL: Record<StagedEntry["status"], string> = {
+  new: "ready",
+  imported: "imported",
+  empty: "no rows",
+  other_profile: "other profile",
+  unknown_account: "unknown account",
+  missing_file: "file missing",
+  invalid: "invalid",
+};
+
+function StagedImportsPanel({
+  entries,
+  result,
+  pending,
+  error,
+  onImport,
+}: {
+  entries: StagedEntry[];
+  result: StagedApplyResult | null;
+  pending: boolean;
+  error: string | null;
+  onImport: (sha256s: string[]) => void;
+}) {
+  // Fully hidden until a connector has staged something — a CSV-only setup
+  // never sees this panel.
+  if (!entries.length) return null;
+  const ready = entries.filter((entry) => entry.status === "new");
+  const lastFetched = entries
+    .map((entry) => entry.downloaded_at)
+    .filter(Boolean)
+    .sort()
+    .at(-1);
+  return (
+    <div className="card p-4">
+      <div className="flex items-baseline justify-between mb-3">
+        <div className="text-sm font-medium">Staged from connectors</div>
+        <div className="text-xs text-ink-500">
+          {lastFetched ? `last fetch ${dateLabel(lastFetched)} · ` : ""}
+          {ready.length ? `${ready.length} file(s) ready` : "nothing new — run make fetch to refresh"}
+        </div>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-ink-50">
+            <tr>
+              <th className="px-3 py-2 text-left">File</th>
+              <th className="px-3 py-2 text-left">Source</th>
+              <th className="px-3 py-2 text-left">Account</th>
+              <th className="px-3 py-2 text-right">Rows</th>
+              <th className="px-3 py-2 text-left">Status</th>
+              <th className="px-3 py-2"></th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-ink-100">
+            {entries.map((entry) => (
+              <StagedImportRow key={entry.sha256} entry={entry} pending={pending} onImport={onImport} />
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="mt-3 flex items-center gap-2">
+        <button
+          className="btn-primary"
+          disabled={!ready.length || pending}
+          onClick={() => onImport([])}
+        >
+          Import all new ({ready.length})
+        </button>
+        {error && <span className="text-sm text-bad-600">{error}</span>}
+      </div>
+      {result && <StagedApplySummary result={result} />}
+    </div>
+  );
+}
+
+function StagedImportRow({
+  entry,
+  pending,
+  onImport,
+}: {
+  entry: StagedEntry;
+  pending: boolean;
+  onImport: (sha256s: string[]) => void;
+}) {
+  const problem = ["unknown_account", "missing_file", "invalid"].includes(entry.status);
+  const rows =
+    entry.row_count == null
+      ? "—"
+      : entry.kind === "balances"
+        ? `${entry.new_count} changed / ${entry.row_count}`
+        : `${entry.new_count} new / ${entry.row_count}`;
+  return (
+    <tr className={clsx("table-row-hover", entry.status !== "new" && "opacity-60")}>
+      <td className="px-3 py-1.5 font-mono text-xs" title={entry.path}>
+        {entry.file_name}
+      </td>
+      <td className="px-3 py-1.5">{entry.source}</td>
+      <td className="px-3 py-1.5">
+        {entry.kind === "balances"
+          ? `balances${entry.as_of ? ` · as of ${entry.as_of}` : ""}`
+          : (entry.account_name ?? (entry.account_id != null ? `#${entry.account_id}` : "—"))}
+      </td>
+      <td className="px-3 py-1.5 text-right tabular">{rows}</td>
+      <td
+        className={clsx("px-3 py-1.5", entry.status === "new" && "text-good-600 font-medium", problem && "text-bad-600")}
+        title={entry.detail ?? (entry.status === "other_profile" && entry.profile ? `staged for profile "${entry.profile}"` : undefined)}
+      >
+        {STAGED_STATUS_LABEL[entry.status] ?? entry.status}
+      </td>
+      <td className="px-3 py-1.5 text-right">
+        {entry.status === "new" && (
+          <button className="btn-ghost text-xs" disabled={pending} onClick={() => onImport([entry.sha256])}>
+            Import
+          </button>
+        )}
+      </td>
+    </tr>
+  );
+}
+
+function StagedApplySummary({ result }: { result: StagedApplyResult }) {
+  const imported = result.outcomes.filter((o) => o.status === "imported");
+  const rows = imported.reduce((sum, o) => sum + (o.rows_applied ?? 0), 0);
+  const dups = imported.reduce((sum, o) => sum + (o.duplicates ?? 0), 0);
+  const rest = result.outcomes.filter((o) => o.status !== "imported");
+  return (
+    <div className="mt-2 text-xs text-ink-600 space-y-0.5">
+      <div>
+        Imported {imported.length} file(s) · {rows.toLocaleString()} rows applied
+        {dups ? ` · ${dups.toLocaleString()} duplicates skipped` : ""}
+        {result.backup_name ? ` · backup ${result.backup_name}` : ""}
+      </div>
+      {rest.map((o) => (
+        <div key={o.sha256}>
+          {o.file_name}: {o.status.replace(/_/g, " ")}
+          {o.detail ? ` — ${o.detail}` : ""}
+        </div>
+      ))}
     </div>
   );
 }
