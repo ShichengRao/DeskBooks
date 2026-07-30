@@ -72,6 +72,42 @@ export function SankeySvg({
     data.nodes.forEach((_, i) => columns[depth[i]].push(i));
     for (const column of columns) column.sort((a, b) => value[b] - value[a]);
 
+    // Reduce ribbon crossings: reorder each column by the flow-weighted
+    // mean position of its neighbors (barycenter heuristic), sweeping
+    // forward then backward a few times. Value order above is the initial
+    // state and the tiebreak, so layouts stay deterministic.
+    const inLinks: { other: number; v: number }[][] = data.nodes.map(() => []);
+    const outLinks: { other: number; v: number }[][] = data.nodes.map(() => []);
+    for (const link of data.links) {
+      outLinks[link.source].push({ other: link.target, v: link.value });
+      inLinks[link.target].push({ other: link.source, v: link.value });
+    }
+    const order = new Array(n).fill(0);
+    const reindex = () => {
+      for (const column of columns) column.forEach((node, i) => (order[node] = i));
+    };
+    const barycenter = (node: number, neighbors: { other: number; v: number }[]) => {
+      let weight = 0;
+      let sum = 0;
+      for (const { other, v } of neighbors) {
+        weight += v;
+        sum += v * order[other];
+      }
+      return weight > 0 ? sum / weight : order[node];
+    };
+    for (let sweep = 0; sweep < 4; sweep += 1) {
+      reindex();
+      const forward = sweep % 2 === 0;
+      const range = forward ? columns.slice(1) : columns.slice(0, -1).reverse();
+      for (const column of range) {
+        const score = new Map(
+          column.map((node) => [node, barycenter(node, forward ? inLinks[node] : outLinks[node])]),
+        );
+        column.sort((a, b) => score.get(a)! - score.get(b)! || order[a] - order[b]);
+        column.forEach((node, i) => (order[node] = i));
+      }
+    }
+
     const plotTop = 8;
     const plotH = height - plotTop - 8;
     const scale = Math.min(
@@ -81,9 +117,20 @@ export function SankeySvg({
       }),
     );
 
-    const plotW = width - 2 * (LABEL_W + PAD_X);
+    // Size the label gutters to the longest label on each side so nothing
+    // clips at the edges (LABEL_W is only the floor).
+    const gutterFor = (indices: number[]) =>
+      Math.min(
+        240,
+        Math.max(LABEL_W, ...indices.map((i) => `${data.nodes[i].name} $${fmt(value[i])}`.length * 6.8 + 10)),
+      );
+    const leftGutter = gutterFor(data.nodes.map((_, i) => i).filter((i) => depth[i] === 0));
+    const rightGutter = gutterFor(
+      data.nodes.map((_, i) => i).filter((i) => depth[i] === maxDepth || outflow[i] === 0),
+    );
+    const plotW = width - (leftGutter + PAD_X) - (rightGutter + PAD_X);
     const colX = (d: number) =>
-      LABEL_W + PAD_X + (maxDepth === 0 ? 0 : (plotW - NODE_W) * (d / maxDepth));
+      leftGutter + PAD_X + (maxDepth === 0 ? 0 : (plotW - NODE_W) * (d / maxDepth));
 
     const nodes: LaidNode[] = new Array(n);
     for (let d = 0; d <= maxDepth; d += 1) {
@@ -108,20 +155,146 @@ export function SankeySvg({
       }
     }
 
-    // Ribbon anchor offsets stack flush down each node face.
-    const outY = nodes.map((node) => node.y);
-    const inY = nodes.map((node) => node.y);
-    const ribbons = data.links.map((link) => {
-      const s = nodes[link.source];
-      const t = nodes[link.target];
-      const h = link.value * scale;
-      const y0 = outY[link.source];
-      const y1 = inY[link.target];
-      outY[link.source] += h;
-      inY[link.target] += h;
-      return { link, s, t, h, y0, y1 };
+    // Ribbon anchors stack flush down each node face in the counterpart's
+    // vertical order, so a node's fan of ribbons never crosses itself.
+    const outIdx: number[][] = data.nodes.map(() => []);
+    const inIdx: number[][] = data.nodes.map(() => []);
+    data.links.forEach((link, i) => {
+      outIdx[link.source].push(i);
+      inIdx[link.target].push(i);
     });
-    return { nodes, ribbons, maxDepth };
+    const byCounterpart = (side: "source" | "target") => (a: number, b: number) => {
+      const na = nodes[data.links[a][side]];
+      const nb = nodes[data.links[b][side]];
+      return na.y - nb.y || na.x - nb.x;
+    };
+    const y0s = new Array(data.links.length).fill(0);
+    const y1s = new Array(data.links.length).fill(0);
+    nodes.forEach((node, i) => {
+      let y = node.y;
+      for (const li of [...outIdx[i]].sort(byCounterpart("target"))) {
+        y0s[li] = y;
+        y += data.links[li].value * scale;
+      }
+      y = node.y;
+      for (const li of [...inIdx[i]].sort(byCounterpart("source"))) {
+        y1s[li] = y;
+        y += data.links[li].value * scale;
+      }
+    });
+    const ribbons = data.links.map((link, i) => ({
+      link,
+      s: nodes[link.source],
+      t: nodes[link.target],
+      h: link.value * scale,
+      y0: y0s[i],
+      y1: y1s[i],
+    }));
+
+    // Label placement. Small nodes get one-line labels at node height —
+    // to the right for endpoints, to the LEFT for small pass-through hubs
+    // (a centered title above a 4px hub has nowhere to dodge in a dense
+    // cluster). Tall nodes keep their classic spots (title above hubs,
+    // two-line beside endpoints) and act as fixed obstacles. Movable
+    // labels are pushed down until nothing horizontally overlapping sits
+    // closer than one line.
+    const labelY = nodes.map((node) => node.y + node.h / 2 + 4);
+    const labelWidth = (node: LaidNode) => `${node.name} $${fmt(node.value)}`.length * 6.8;
+    const isSide = (node: LaidNode) => node.depth === 0 || node.depth === maxDepth || node.terminal;
+    type LabelBox = {
+      index: number;
+      movable: boolean;
+      twoLine: boolean;
+      baseline: number;
+      start: number;
+      end: number;
+    };
+    // A hub's left label must not run through the previous column's
+    // nodes: use the full "name $value" when the inter-column gap fits
+    // it, just the name when tight (the value stays in the tooltip), and
+    // fall back to the centered title when not even the name fits.
+    const colStep = maxDepth === 0 ? plotW : (plotW - NODE_W) / maxDepth;
+    const hubLabelRoom = colStep - NODE_W - 12;
+    const labelMode: ("full" | "name" | "title")[] = nodes.map(() => "full");
+    const boxes: LabelBox[] = nodes.map((node) => {
+      const w = labelWidth(node);
+      const small = node.h < 34;
+      const cy = node.y + node.h / 2;
+      const titled = (!isSide(node) && !small) || (!isSide(node) && node.name.length * 6.8 > hubLabelRoom);
+      if (titled) {
+        if (!isSide(node)) labelMode[node.index] = "title";
+        const cx = node.x + NODE_W / 2;
+        return {
+          index: node.index,
+          movable: false,
+          twoLine: false,
+          baseline: Math.max(node.y - 8, 12),
+          start: cx - w / 2,
+          end: cx + w / 2,
+        };
+      }
+      const left = node.depth === 0 || !isSide(node);
+      if (!isSide(node) && w > hubLabelRoom) {
+        labelMode[node.index] = "name";
+      }
+      if (isSide(node) && !left && node.depth < maxDepth) {
+        // A right-side label mid-plot must not run under a downstream
+        // node; drop to the bare name when the full label would.
+        const startX = node.x + NODE_W + 8;
+        const blockedBy = (labelW: number) =>
+          nodes.some(
+            (o) =>
+              o.index !== node.index &&
+              o.x > node.x &&
+              o.x < startX + labelW + 4 &&
+              o.y < cy + 7 &&
+              o.y + o.h > cy - 6,
+          );
+        if (blockedBy(w) && !blockedBy(node.name.length * 6.8)) {
+          labelMode[node.index] = "name";
+        }
+      }
+      const shownW = labelMode[node.index] === "name" ? node.name.length * 6.8 : w;
+      // Two-line labels only where a gutter guarantees room; tall
+      // terminals mid-plot stay single-line so they can dodge neighbors.
+      const twoLine = !small && (node.depth === 0 || node.depth === maxDepth);
+      return {
+        index: node.index,
+        movable: !twoLine,
+        twoLine,
+        baseline: twoLine ? cy - 3 : cy + 4,
+        start: left ? node.x - 8 - shownW : node.x + NODE_W + 8,
+        end: left ? node.x - 8 : node.x + NODE_W + 8 + shownW,
+      };
+    });
+    // Resolve pairwise: the lower label of an overlapping pair moves down
+    // below the upper one; a movable crowding a FIXED label from above
+    // jumps down past it instead. A few iterations reach a fixed point.
+    for (let iter = 0; iter < 4; iter += 1) {
+      let changed = false;
+      boxes.sort((a, b) => a.baseline - b.baseline);
+      for (let i = 0; i < boxes.length; i += 1) {
+        for (let j = i + 1; j < boxes.length; j += 1) {
+          const upper = boxes[i];
+          const lower = boxes[j];
+          if (upper.start >= lower.end || lower.start >= upper.end) continue;
+          const gap = upper.twoLine ? 28 : 13;
+          if (lower.baseline - upper.baseline >= gap) continue;
+          if (lower.movable) {
+            lower.baseline = upper.baseline + gap;
+            changed = true;
+          } else if (upper.movable) {
+            upper.baseline = lower.baseline + (lower.twoLine ? 28 : 13);
+            changed = true;
+          }
+        }
+      }
+      if (!changed) break;
+    }
+    for (const box of boxes) {
+      if (box.movable) labelY[box.index] = box.baseline;
+    }
+    return { nodes, ribbons, labelY, labelMode, maxDepth };
   }, [data, height, width]);
 
   return (
@@ -158,6 +331,7 @@ export function SankeySvg({
         const middle = !first && !last;
         const cy = node.y + node.h / 2;
         const inline = node.h < 34;
+        const singleLine = inline || (!first && node.depth !== layout.maxDepth);
         return (
           <g
             key={node.index}
@@ -167,22 +341,24 @@ export function SankeySvg({
             <rect x={node.x} y={node.y} width={NODE_W} height={node.h} rx={3} fill={color}>
               <title>{`${node.name} · $${fmt(node.value)}`}</title>
             </rect>
-            {middle ? (
+            {middle && (!inline || layout.labelMode[node.index] === "title") ? (
               <text x={node.x + NODE_W / 2} y={Math.max(node.y - 8, 12)} textAnchor="middle" fontSize={12.5} fontWeight={600} fill={INK}>
                 {node.name}
                 <tspan fontWeight={400} fill={INK2}>{` $${fmt(node.value)}`}</tspan>
               </text>
-            ) : inline ? (
+            ) : singleLine ? (
               <text
-                x={first ? node.x - 8 : node.x + NODE_W + 8}
-                y={cy + 4}
-                textAnchor={first ? "end" : "start"}
+                x={first || middle ? node.x - 8 : node.x + NODE_W + 8}
+                y={layout.labelY[node.index]}
+                textAnchor={first || middle ? "end" : "start"}
                 fontSize={12.5}
                 fontWeight={600}
                 fill={INK}
               >
                 {node.name}
-                <tspan fontWeight={400} fontSize={11.5} fill={INK2}>{` $${fmt(node.value)}`}</tspan>
+                {layout.labelMode[node.index] !== "name" && (
+                  <tspan fontWeight={400} fontSize={11.5} fill={INK2}>{` $${fmt(node.value)}`}</tspan>
+                )}
               </text>
             ) : (
               <>
