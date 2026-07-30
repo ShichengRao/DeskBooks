@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { api, qs } from "../api/client";
 import { ChartColorControls, useChartColors } from "../components/ChartColorControls";
 import { DateRangeControls } from "../components/DateRangeControls";
