@@ -16,6 +16,7 @@ import json
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal, InvalidOperation
+from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -122,6 +123,51 @@ def _run(db: Session, staged: StagedBalances, *, apply: bool) -> BalanceApplyRes
     if apply:
         db.commit()
     return result
+
+
+def collect_staged_prefill(staging_dir: Path) -> list[dict]:
+    """Newest staged balance per account across the manifest history.
+
+    Powers the snapshot editor's "fill from connections" button: connectors
+    stage balances files even in preview mode, so this reflects the most
+    recent fetch without any database write. Missing or malformed files are
+    skipped — staged data is a cache, not a source of truth.
+    """
+    manifest = staging_dir / "manifest.jsonl"
+    if not manifest.exists():
+        return []
+    best: dict[int, dict] = {}
+    for line in manifest.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if entry.get("kind") != "balances":
+            continue
+        path = Path(str(entry.get("path") or ""))
+        if not path.is_file():
+            continue
+        try:
+            staged = parse_staged_balances_bytes(path.read_bytes())
+        except ValueError:
+            continue
+        source = str(entry.get("source") or "connector")
+        for account_id, balance in staged.rows:
+            if balance is None:
+                continue
+            current = best.get(account_id)
+            # >= so later manifest lines (appended chronologically) win ties.
+            if current is None or staged.as_of >= current["as_of"]:
+                best[account_id] = {
+                    "account_id": account_id,
+                    "balance": balance,
+                    "as_of": staged.as_of,
+                    "source": source,
+                }
+    return sorted(best.values(), key=lambda row: row["account_id"])
 
 
 def plan_staged_balances(db: Session, staged: StagedBalances) -> BalanceApplyResult:

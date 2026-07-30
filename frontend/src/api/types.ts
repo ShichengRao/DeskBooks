@@ -226,6 +226,13 @@ export interface NetWorthSnapshot {
   balances: AccountBalance[];
 }
 
+export interface SnapshotPrefillBalance {
+  account_id: number;
+  balance: string; // money as string, matching snapshot balance inputs
+  as_of: string;
+  source: string;
+}
+
 export interface NetWorthSeriesPoint {
   snapshot_date: string;
   total: number;

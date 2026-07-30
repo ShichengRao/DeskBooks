@@ -413,6 +413,13 @@ class NetWorthWorkbookImportResult(BaseModel):
     missing_accounts: list[str] = []
 
 
+class SnapshotPrefillBalance(BaseModel):
+    account_id: int
+    balance: Decimal
+    as_of: _date
+    source: str
+
+
 class NetWorthSeriesPoint(BaseModel):
     snapshot_date: _date
     # float, not Decimal — this route has always emitted JSON numbers

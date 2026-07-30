@@ -16,7 +16,7 @@ import { ChartColorControls, useChartColors } from "../components/ChartColorCont
 import { DateRangeControls } from "../components/DateRangeControls";
 import { Field } from "../components/Field";
 import { SidePanel } from "../components/SidePanel";
-import type { Account, AccountCategory, AccountType, NetWorthSeriesPoint, NetWorthSnapshot, SignConvention } from "../api/types";
+import type { Account, AccountCategory, AccountType, NetWorthSeriesPoint, NetWorthSnapshot, SignConvention, SnapshotPrefillBalance } from "../api/types";
 import { colorAt } from "../lib/chartColors";
 import { accountCategoryLabel } from "../lib/labels";
 import { compactCurrency, currency, dateLabel, num, shortDateLabel } from "../lib/fmt";
@@ -711,6 +711,22 @@ function SnapshotEditor({
   }, [snapshot, prefillFrom]);
   const [balances, setBalances] = useState<Record<number, string>>(initialBalances);
 
+  // Latest connector-staged balances (refreshed by `make fetch-preview`).
+  // Filling is explicit and partial: only connected accounts change, and
+  // nothing is saved until the user submits.
+  const prefill = useQuery({
+    queryKey: ["snapshot-prefill"],
+    queryFn: () => api.get<SnapshotPrefillBalance[]>("/api/snapshots/prefill"),
+  });
+  const prefillRows = prefill.data ?? [];
+  const prefillAsOf = prefillRows.map((r) => r.as_of).sort().at(-1);
+  const fillFromConnections = () =>
+    setBalances((prev) => {
+      const next = { ...prev };
+      for (const row of prefillRows) next[row.account_id] = row.balance;
+      return next;
+    });
+
   const save = useMutation({
     mutationFn: async () => {
       const body = {
@@ -804,6 +820,22 @@ function SnapshotEditor({
             </button>
           )}
         </div>
+        {prefillRows.length > 0 && (
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-ink-500">
+            <span>
+              {prefillRows.length} balance{prefillRows.length === 1 ? "" : "s"} available from
+              connections{prefillAsOf ? ` (as of ${prefillAsOf})` : ""}. Run a fetch to refresh.
+            </span>
+            <button
+              type="button"
+              className="btn-ghost text-xs"
+              onClick={fillFromConnections}
+              title="Fill connected accounts from the latest fetched balances; other accounts are untouched and nothing is saved yet"
+            >
+              ↓ fill from connections
+            </button>
+          </div>
+        )}
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-ink-500">
           {dormantAccountCount > 0 ? (
             <span>
