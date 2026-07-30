@@ -666,6 +666,98 @@ def yearly_sankey(db: Session, year: int) -> dict:
     return sankey_for_period(db, date(year, 1, 1), date(year, 12, 31), str(year))
 
 
+def cashflow_sankey(db: Session, start: date, end: date, label: str) -> dict:
+    """Cash-basis Sankey: only money that actually moved.
+
+    Sources -> Cash in -> {Invested, Spending, Donations, Taxes, Cash
+    build-up} -> spending category leaves.
+
+    Unlike sankey_for_period (the NLV/wealth lens), this ignores snapshots
+    and growth entirely: transfers between own accounts and both legs of
+    credit-card payments are excluded, investment-kind outflows count as
+    "Invested" (a savings destination, not spending), and the residual
+    between cash in and cash out appears as "Cash build-up" (or "From cash
+    reserves" on the inflow side when the period ran a deficit).
+    """
+    group_map = _category_group_map(db)
+    stmt = (
+        select(models.Transaction)
+        .where(
+            models.Transaction.date >= start,
+            models.Transaction.date <= end,
+            models.Transaction.is_excluded_from_totals.is_(False),
+        )
+    )
+    income_by_source: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
+    spend_by_group: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
+    invested = donations = taxes = Decimal("0")
+    for tx in db.scalars(stmt):
+        kind = tx.kind
+        if kind in (models.TransactionKind.transfer, models.TransactionKind.cc_payment):
+            continue
+        amount = tx.amount
+        if kind in DONATION_KINDS:
+            donations += -amount
+        elif kind in TAX_KINDS:
+            taxes += -amount
+        elif kind == models.TransactionKind.investment:
+            if amount < 0:
+                invested += -amount
+            else:
+                income_by_source["Investment income"] += amount
+        elif kind in INCOME_KINDS or kind == models.TransactionKind.refund:
+            name = "Refunds" if kind == models.TransactionKind.refund else None
+            if name is None and tx.category_id and tx.category_id in group_map:
+                name = group_map[tx.category_id][0]
+            income_by_source[name or "Other income"] += amount
+        elif amount > 0:
+            income_by_source["Other income"] += amount
+        else:
+            group = "Not yet categorized"
+            if tx.category_id and tx.category_id in group_map:
+                group = group_map[tx.category_id][1]
+            spend_by_group[group] += -amount
+
+    total_in = sum(income_by_source.values(), Decimal("0"))
+    total_spend = sum(spend_by_group.values(), Decimal("0"))
+    residual = total_in - total_spend - donations - taxes - invested
+
+    graph = _SankeyGraph()
+    hub = graph.node("Cash in")
+    for name, value in sorted(income_by_source.items(), key=lambda kv: -kv[1]):
+        if value > 0:
+            graph.link(graph.node(name), hub, value, name)
+    if residual < 0:
+        graph.link(graph.node("From cash reserves"), hub, -residual, "From cash reserves")
+    if invested > 0:
+        graph.link(hub, graph.node("Invested"), invested, "Invested")
+    if total_spend > 0:
+        spending = graph.node("Spending")
+        graph.link(hub, spending, total_spend, "Spending")
+        for name, value in sorted(spend_by_group.items(), key=lambda kv: -kv[1]):
+            graph.link(spending, graph.node(name), value, name)
+    if donations > 0:
+        graph.link(hub, graph.node("Donations"), donations, "Donations")
+    if taxes > 0:
+        graph.link(hub, graph.node("Taxes"), taxes, "Taxes")
+    if residual > 0:
+        graph.link(hub, graph.node("Cash build-up"), residual, "Cash build-up")
+
+    return {
+        "year": start.year,
+        "label": label,
+        "nodes": [{"name": n} for n in graph.nodes],
+        "links": graph.links,
+        "notes": [
+            "Cash basis: only money that actually moved between your accounts and the outside world.",
+            "Transfers between your own accounts and both legs of credit-card payments are excluded.",
+            "Investment-kind outflows count as Invested (a savings destination, not spending).",
+            "Cash build-up (or From cash reserves) is the residual between cash in and cash out.",
+            "Snapshots, market growth, and unrealized gains are intentionally not part of this view — see the wealth lens.",
+        ],
+    }
+
+
 def networth_series(db: Session, start: date | None = None, end: date | None = None) -> list[dict]:
     """Per-snapshot totals and breakdowns."""
     stmt = select(models.NetWorthSnapshot).order_by(models.NetWorthSnapshot.snapshot_date.asc())

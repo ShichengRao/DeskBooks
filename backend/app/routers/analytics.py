@@ -40,6 +40,17 @@ def sankey(
     return a.yearly_sankey(db, year)
 
 
+@router.get("/cashflow", response_model=schemas.SankeyResponse)
+def cashflow(
+    db: DbSession,
+    start: date,
+    end: date,
+):
+    if end < start:
+        raise HTTPException(400, "end must be on or after start")
+    return a.cashflow_sankey(db, start, end, f"{start.isoformat()} to {end.isoformat()}")
+
+
 @router.get("/recurring", response_model=list[schemas.RecurringMerchant])
 def recurring(
     db: DbSession,

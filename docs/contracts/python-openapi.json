@@ -5095,6 +5095,59 @@
         "summary": "Shutdown"
       }
     },
+    "/api/analytics/cashflow": {
+      "get": {
+        "operationId": "cashflow_api_analytics_cashflow_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "start",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "Start",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "end",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "End",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SankeyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cashflow",
+        "tags": [
+          "analytics"
+        ]
+      }
+    },
     "/api/analytics/fire/projection": {
       "get": {
         "operationId": "fire_projection_api_analytics_fire_projection_get",

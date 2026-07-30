@@ -6,7 +6,7 @@ from decimal import Decimal
 
 import pytest
 
-from app.analytics import sankey_for_period
+from app.analytics import cashflow_sankey, sankey_for_period
 from app.models import (
     Account,
     AccountBalance,
@@ -162,3 +162,39 @@ def test_sankey_for_period_balances_cashflow_growth_and_account_deltas(db):
     assert result["year"] == 2026
     assert result["label"] == "January"
     assert any("2026-01-01" in note and "2026-02-01" in note for note in result["notes"])
+
+
+def test_cashflow_sankey_excludes_transfers_and_balances_residual(db):
+    checking = _account(db, "Checking", AccountCategory.bank, AccountType.checking)
+    salary = _category(db, "Salary", CategoryKind.income)
+    food = _category(db, "Food", CategoryKind.expense)
+    groceries = _category(db, "Groceries", CategoryKind.expense, parent=food)
+
+    for seed in [
+        _TransactionSeed(salary, date(2026, 5, 15), "5000.00", TransactionKind.income, "Employer"),
+        _TransactionSeed(groceries, date(2026, 5, 16), "-100.00", TransactionKind.expense, "Market"),
+        _TransactionSeed(None, date(2026, 5, 17), "-50.00", TransactionKind.donation, "Charity"),
+        _TransactionSeed(None, date(2026, 5, 18), "-500.00", TransactionKind.tax, "IRS"),
+        _TransactionSeed(None, date(2026, 5, 19), "-2000.00", TransactionKind.transfer, "To Savings"),
+        _TransactionSeed(None, date(2026, 5, 20), "300.00", TransactionKind.cc_payment, "Card Payment"),
+        _TransactionSeed(None, date(2026, 5, 21), "-1000.00", TransactionKind.investment, "Brokerage Buy"),
+        _TransactionSeed(None, date(2026, 5, 22), "25.00", TransactionKind.refund, "Store Refund"),
+        _TransactionSeed(None, date(2026, 5, 23), "-40.00", TransactionKind.uncategorized, "Mystery"),
+    ]:
+        _transaction(db, checking, seed)
+    db.commit()
+
+    result = cashflow_sankey(db, date(2026, 5, 1), date(2026, 5, 31), "May")
+    links = {link["label"]: link["value"] for link in result["links"]}
+
+    assert links["Salary"] == 5000.0
+    assert links["Refunds"] == 25.0
+    assert links["Invested"] == 1000.0
+    assert links["Spending"] == 140.0  # groceries 100 + uncategorized 40
+    assert links["Food"] == 100.0  # rolled up to the parent category
+    assert links["Not yet categorized"] == 40.0
+    assert links["Donations"] == 50.0
+    assert links["Taxes"] == 500.0
+    # residual: 5025 in - 140 spend - 50 - 500 - 1000 invested = 3335
+    assert links["Cash build-up"] == 3335.0
+    assert "To Savings" not in links and "Card Payment" not in links
