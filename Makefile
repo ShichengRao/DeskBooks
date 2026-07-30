@@ -1,7 +1,7 @@
 PORT ?= $(or $(FRONTEND_PORT),5173)
 API_PORT ?= $(or $(BACKEND_PORT),$(if $(filter 5173,$(PORT)),8765,8766))
 
-.PHONY: dev backend frontend open bootstrap install install-automation fetch-preview fetch-apply schedule-fetch-preview schedule-fetch-apply unschedule-fetch test test-automation api-contract-python api-contract-check typecheck build clean reset-db
+.PHONY: dev backend frontend open bootstrap install fetch-preview fetch-apply test test-automation api-contract-python api-contract-check typecheck build clean reset-db
 
 dev:
 	./run.sh --port "$(PORT)" --api-port "$(API_PORT)" $(if $(DATA_DIR),--data-dir "$(DATA_DIR)")
@@ -10,23 +10,11 @@ install:
 	cd backend && uv venv --python 3.11 .venv && uv pip install -e .
 	cd frontend && npm install
 
-install-automation:
-	cd automation && npm install && npx playwright install chromium
-
 fetch-preview:
-	automation/bin/run-scheduled-fetch.sh
+	automation/bin/run-fetch.sh
 
 fetch-apply:
-	DESKBOOKS_IMPORT_APPLY=1 automation/bin/run-scheduled-fetch.sh
-
-schedule-fetch-preview:
-	automation/bin/install-launchd.sh
-
-schedule-fetch-apply:
-	DESKBOOKS_IMPORT_APPLY=1 automation/bin/install-launchd.sh
-
-unschedule-fetch:
-	automation/bin/uninstall-launchd.sh
+	DESKBOOKS_IMPORT_APPLY=1 automation/bin/run-fetch.sh
 
 bootstrap:
 	cd backend && uv run python -m app.bootstrap

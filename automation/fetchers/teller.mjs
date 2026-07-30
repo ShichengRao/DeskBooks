@@ -4,22 +4,20 @@
  * Free for personal use (developer tier, up to 100 connections). Auth is
  * mutual TLS with the certificate pair Teller issues at signup, plus a
  * per-enrollment access token sent as HTTP basic auth (`token:`). The
- * token lives in the macOS Keychain; certificate/key paths live in
- * config.local.json.
+ * token lives in a private file next to the certificates (chmod 600);
+ * all three paths live in config.local.json.
  *
  * Status: normalizers are fixture-tested; the live API path follows
  * https://teller.io/docs/api but has not been exercised against a real
- * enrollment yet. Start with `"environment": "sandbox"` tokens.
+ * enrollment yet. Start with sandbox tokens.
  *
  * Source config:
  *   {
  *     "name": "teller",
- *     "browser": false,
  *     "module": "./fetchers/teller.mjs",
  *     "certPath": "~/.config/deskbooks/teller/certificate.pem",
  *     "keyPath": "~/.config/deskbooks/teller/private_key.pem",
- *     "tokenService": "DeskBooks.Teller",
- *     "tokenAccount": "teller",
+ *     "tokenPath": "~/.config/deskbooks/teller/access-token",
  *     "lookbackDays": 90,
  *     "invertAmounts": false,
  *     "accounts": [
@@ -30,7 +28,6 @@
 import { readFile } from "node:fs/promises";
 import { basicAuthHeader, httpsGetJson } from "../src/connector-http.mjs";
 import { resolveFrom } from "../src/fetcher-api.mjs";
-import { readGenericPassword } from "../src/keychain.mjs";
 import {
   buildStagedBalances,
   buildStagedTransactions,
@@ -81,8 +78,8 @@ function isoDaysAgo(days) {
 }
 
 function validateSource(source) {
-  if (!source.certPath || !source.keyPath) {
-    throw new Error(`${source.name}: certPath and keyPath are required`);
+  if (!source.certPath || !source.keyPath || !source.tokenPath) {
+    throw new Error(`${source.name}: certPath, keyPath, and tokenPath are required`);
   }
   const accounts = source.accounts ?? [];
   if (!accounts.length) {
@@ -102,10 +99,10 @@ export async function fetch({ source, config, downloadsDir }) {
   const mappings = validateSource(source);
   const cert = await readFile(resolveFrom(config.__dir, source.certPath));
   const key = await readFile(resolveFrom(config.__dir, source.keyPath));
-  const token = await readGenericPassword({
-    service: source.tokenService || "DeskBooks.Teller",
-    account: source.tokenAccount || "teller",
-  });
+  const token = (await readFile(resolveFrom(config.__dir, source.tokenPath), "utf8")).trim();
+  if (!token) {
+    throw new Error(`${source.name}: token file is empty: ${source.tokenPath}`);
+  }
   const http = {
     allowedHosts: TELLER_HOSTS,
     headers: { authorization: basicAuthHeader(token) },

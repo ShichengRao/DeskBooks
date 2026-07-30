@@ -55,7 +55,6 @@ export async function fetch({ downloadsDir }) {
       { name: "flaky", browser: false, module: failing },
       {
         name: "csvish",
-        browser: false,
         module: goodCsv,
         accountId: 7,
         importerName: "running_balance_bank",
@@ -94,16 +93,13 @@ export async function fetch({ downloadsDir }) {
   assert.ok(latest.every((entry) => typeof entry.sha256 === "string" && entry.sha256.length === 64));
 });
 
-test("refuses browser sources without a host allowlist", async () => {
+test("refuses browser sources — connectors are API/file based", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "deskbooks-runner-"));
   const configPath = await writeConfig(dir, {
     stagingDir: path.join(dir, "staging"),
-    sources: [{ name: "nolist", browser: true, module: "./whatever.mjs" }],
+    sources: [{ name: "browserish", browser: true, module: "./whatever.mjs" }],
   });
-  await assert.rejects(
-    runFetchers({ configPath }),
-    /nolist: browser sources must set allowedHosts or allowedHostSuffixes/,
-  );
+  await assert.rejects(runFetchers({ configPath }), /browserish: browser connectors are not supported/);
 });
 
 test("statement entries without an account id fail that source only", async () => {

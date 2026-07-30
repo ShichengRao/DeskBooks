@@ -178,8 +178,8 @@ The core app is local-only and has no telemetry; with no connectors enabled,
 routine use does not require internet access after dependencies are
 installed. Optional, off-by-default connectors under `automation/` can fetch
 transactions and balances from institutions you configure — data flows only
-between your machine and hosts you pin, with credentials in the macOS
-Keychain. See `PRIVACY.md`, `SECURITY.md`, and `docs/AUTOMATED_IMPORTS.md`.
+between your machine and hosts you pin, with credentials in private local
+files. See `PRIVACY.md`, `SECURITY.md`, and `docs/AUTOMATED_IMPORTS.md`.
 
 
 ## Maintenance

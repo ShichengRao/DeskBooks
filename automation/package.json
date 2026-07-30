@@ -6,10 +6,7 @@
   "type": "module",
   "scripts": {
     "fetch": "node src/run-fetchers.mjs",
-    "test": "node --test tests/",
-    "check": "node --check src/run-fetchers.mjs && node --check src/fetcher-api.mjs && node --check src/keychain.mjs && node --check src/connector-http.mjs && node --check src/staged-formats.mjs && node --check fetchers/example-static-csv.mjs && node --check fetchers/example-json-connector.mjs && node --check fetchers/teller.mjs && node --check fetchers/template-playwright-fetcher.mjs && node --check bin/list-teller-accounts.mjs"
-  },
-  "dependencies": {
-    "playwright": "^1.45.0"
+    "test": "node --test tests/*.test.mjs",
+    "check": "node --check src/run-fetchers.mjs && node --check src/fetcher-api.mjs && node --check src/connector-http.mjs && node --check src/staged-formats.mjs && node --check fetchers/example-json-connector.mjs && node --check fetchers/teller.mjs && node --check bin/list-teller-accounts.mjs"
   }
 }

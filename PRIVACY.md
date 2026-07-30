@@ -19,8 +19,8 @@ schedule you configure. When you enable one:
 - Data flows only between your machine and the hosts you pin for that
   connector (for example `api.teller.io`). A connector with no host allowlist
   refuses to run.
-- Credentials and tokens live in the macOS Keychain, never in the repo or in
-  config files.
+- Credentials and tokens live in private files you control (chmod 600),
+  outside the repo, referenced by path from an untracked local config.
 - Fetched files land in a local staging directory and enter the app through
   the same preview / apply / rollback pipeline as manual imports, with an
   automatic pre-apply backup.

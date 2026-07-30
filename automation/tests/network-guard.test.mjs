@@ -6,8 +6,7 @@ import { fileURLToPath } from "node:url";
 
 /**
  * The privacy contract for automation/: only src/connector-http.mjs may
- * open network connections, and browser automation goes through
- * playwright's guarded helpers. Everything else must be file/CLI work.
+ * open network connections. Everything else must be file/CLI work.
  *
  * Known limit: this guard checks import/require specifiers and a few
  * runtime tokens; it cannot see dynamic import(expression) tricks or the
@@ -88,7 +87,7 @@ test("only connector-http.mjs may import network modules", async () => {
   assert.deepEqual(violations, []);
 });
 
-test("non-exempt modules import only relative paths, playwright, or safe node builtins", async () => {
+test("non-exempt modules import only relative paths or safe node builtins", async () => {
   const violations = [];
   for (const relative of await listModuleFiles()) {
     if (NETWORK_EXEMPT.has(relative)) {
@@ -98,8 +97,7 @@ test("non-exempt modules import only relative paths, playwright, or safe node bu
     for (const spec of importSpecifiers(text)) {
       const isRelative = spec.startsWith("./") || spec.startsWith("../");
       const isSafeBuiltin = spec.startsWith("node:") && !FORBIDDEN_SPECIFIERS.has(spec);
-      const isPlaywright = spec === "playwright";
-      if (!isRelative && !isSafeBuiltin && !isPlaywright) {
+      if (!isRelative && !isSafeBuiltin) {
         violations.push(`${relative} imports ${spec}`);
       }
     }

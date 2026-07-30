@@ -16,20 +16,14 @@ This document tracks local configuration, credentials, and environment variables
 ## Automation (optional connectors)
 
 - `DESKBOOKS_FETCH_CONFIG` — optional. Path to the connector config; defaults to `automation/config.local.json`.
-- `DESKBOOKS_IMPORT_APPLY` — optional. `1` makes the scheduled job apply staged rows (after a backup) instead of preview-only.
-- `DESKBOOKS_IMPORT_MANIFEST` — optional. Manifest path for `app.automation_import`; the scheduled wrapper defaults to the latest run's manifest.
+- `DESKBOOKS_IMPORT_APPLY` — optional. `1` makes `make fetch-apply`/`run-fetch.sh` apply staged rows (after a backup) instead of preview-only.
+- `DESKBOOKS_IMPORT_MANIFEST` — optional. Manifest path for `app.automation_import`; the wrapper defaults to the latest run's manifest.
 - `DESKBOOKS_IMPORT_STAGING_DIR` — optional. Staging directory override for `app.automation_import`.
-- `DESKBOOKS_ENV_FILE` — optional. Alternate `.env.local` sourced by `run.sh` and the scheduled wrapper.
-- `DESKBOOKS_FETCH_DAY` / `DESKBOOKS_FETCH_WEEKDAY` / `DESKBOOKS_FETCH_HOUR` / `DESKBOOKS_FETCH_MINUTE` — optional. launchd schedule knobs for `install-launchd.sh`.
-- `DESKBOOKS_FETCH_LOG_DIR` — optional. Log directory for the scheduled job (default `~/Library/Logs/DeskBooks`).
-- `DESKBOOKS_LAUNCHD_LABEL` — optional. launchd job label override.
-
-`install-launchd.sh` bakes `DESKBOOKS_IMPORT_MANIFEST`, `DESKBOOKS_IMPORT_STAGING_DIR`, `DESKBOOKS_ENV_FILE`, and `PFA_DATA_DIR` into the job's environment when they are set at install time.
+- `DESKBOOKS_ENV_FILE` — optional. Alternate `.env.local` sourced by `run.sh` and `run-fetch.sh`.
 
 ## Credentials
 
-- Connector secrets (for example the Teller access token) live in the macOS Keychain, written via `automation/bin/store-keychain-password.sh <service> [account]` and read by `automation/src/keychain.mjs`. Nothing secret belongs in config files.
-- Teller's mTLS certificate/key are files on disk; keep them outside the repo (for example `~/.config/deskbooks/teller/`) and reference them by path in `automation/config.local.json`.
+- Connector credentials are private files you manage (`chmod 600`), outside the repo, referenced by path from `automation/config.local.json`. For Teller: `certPath`, `keyPath`, and `tokenPath` (see `docs/AUTOMATED_IMPORTS.md`). Nothing secret belongs in config files or the repo.
 
 ## Secret-Like Local Paths
 

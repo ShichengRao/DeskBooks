@@ -83,16 +83,9 @@ function validateSource(source) {
   if (!source.name || !source.module) {
     throw new Error("each source needs name and module");
   }
-  // Browser sources must pin the hosts they may visit. Refusing to run is
-  // deliberate: a missing (or typo'd) allowlist must never mean "anywhere".
-  if (source.browser !== false) {
-    const hosts = source.allowedHosts ?? [];
-    const suffixes = source.allowedHostSuffixes ?? [];
-    if (!hosts.length && !suffixes.length) {
-      throw new Error(
-        `${source.name}: browser sources must set allowedHosts or allowedHostSuffixes`,
-      );
-    }
+  // Connectors are API/file based; the browser-automation lane was removed.
+  if (source.browser === true) {
+    throw new Error(`${source.name}: browser connectors are not supported`);
   }
 }
 
@@ -131,7 +124,7 @@ function validateEntry(source, entry) {
   }
 }
 
-async function runSource(config, source, browserContext) {
+async function runSource(config, source) {
   const modulePath = resolveFrom(config.__dir, source.module);
   const fetcher = await import(pathToFileURL(modulePath).href);
   if (typeof fetcher.fetch !== "function") {
@@ -142,46 +135,38 @@ async function runSource(config, source, browserContext) {
   const downloadsDir = sourceDownloadDir(stagingDir, source.name);
   await ensureDir(downloadsDir);
 
-  const page = browserContext ? await browserContext.newPage() : null;
-  try {
-    const result = await fetcher.fetch({
-      source,
-      config,
-      page,
-      downloadsDir,
-      automationRoot,
-      repoRoot,
-    });
-    const staged = normalizeEntries(source, result);
-    if (staged.length === 0) {
-      throw new Error(`${source.name}: fetcher returned no files`);
-    }
-
-    const entries = [];
-    for (const item of staged) {
-      validateEntry(source, item);
-      const filePath = path.resolve(expandHome(item.path));
-      await assertNonEmptyFile(filePath);
-      const sha256 = await fileSha256(filePath);
-      const entry = {
-        source: source.name,
-        kind: item.kind,
-        account_id: item.kind === "statement" ? item.accountId : (item.accountId ?? null),
-        importer_name: item.kind === "statement" ? item.importerName : (item.importerName ?? null),
-        path: filePath,
-        sha256,
-        downloaded_at: new Date().toISOString(),
-      };
-      entries.push(entry);
-      await appendManifest(stagingDir, entry);
-      console.log(`[fetch] ${source.name}: staged ${item.kind} ${filePath}`);
-    }
-    return entries;
-  } finally {
-    if (page) {
-      await page.close().catch(() => {});
-    }
+  const result = await fetcher.fetch({
+    source,
+    config,
+    downloadsDir,
+    automationRoot,
+    repoRoot,
+  });
+  const staged = normalizeEntries(source, result);
+  if (staged.length === 0) {
+    throw new Error(`${source.name}: fetcher returned no files`);
   }
+
+  const entries = [];
+  for (const item of staged) {
+    validateEntry(source, item);
+    const filePath = path.resolve(expandHome(item.path));
+    await assertNonEmptyFile(filePath);
+    const sha256 = await fileSha256(filePath);
+    const entry = {
+      source: source.name,
+      kind: item.kind,
+      account_id: item.kind === "statement" ? item.accountId : (item.accountId ?? null),
+      importer_name: item.kind === "statement" ? item.importerName : (item.importerName ?? null),
+      path: filePath,
+      sha256,
+      downloaded_at: new Date().toISOString(),
+    };
+    entries.push(entry);
+    await appendManifest(stagingDir, entry);
+    console.log(`[fetch] ${source.name}: staged ${item.kind} ${filePath}`);
+  }
+  return entries;
 }
 
 export async function runFetchers({ configPath, sourceFilter = null } = {}) {
@@ -199,42 +184,21 @@ export async function runFetchers({ configPath, sourceFilter = null } = {}) {
     validateSource(source);
   }
 
-  const needsBrowser = enabledSources.some((source) => source.browser !== false);
-  let browserContext = null;
-  if (needsBrowser) {
-    const { chromium } = await import("playwright");
-    const profileDir = resolveFrom(
-      config.__dir,
-      config.browserProfileDir || path.join(automationRoot, "browser-profiles", "default"),
-    );
-    await ensureDir(profileDir);
-    browserContext = await chromium.launchPersistentContext(profileDir, {
-      acceptDownloads: true,
-      headless: config.headless === true,
-    });
-  }
-
   const runEntries = [];
   const failures = [];
-  try {
-    // One failing source must not abort the run: later sources still fetch,
-    // and the latest manifest is still written for whatever succeeded.
-    for (const source of enabledSources) {
-      try {
-        const entries = await runSource(config, source, browserContext);
-        runEntries.push(...entries);
-      } catch (error) {
-        failures.push({ source: source.name, error });
-        console.error(`[fetch] ${source.name} failed: ${error.message}`);
-      }
-    }
-    const latestManifestPath = await writeLatestManifest(stagingDirFor(config), runEntries);
-    console.log(`[fetch] latest manifest: ${latestManifestPath}`);
-  } finally {
-    if (browserContext) {
-      await browserContext.close();
+  // One failing source must not abort the run: later sources still fetch,
+  // and the latest manifest is still written for whatever succeeded.
+  for (const source of enabledSources) {
+    try {
+      const entries = await runSource(config, source);
+      runEntries.push(...entries);
+    } catch (error) {
+      failures.push({ source: source.name, error });
+      console.error(`[fetch] ${source.name} failed: ${error.message}`);
     }
   }
+  const latestManifestPath = await writeLatestManifest(stagingDirFor(config), runEntries);
+  console.log(`[fetch] latest manifest: ${latestManifestPath}`);
   return { entries: runEntries, failures };
 }
 

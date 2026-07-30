@@ -1,17 +1,13 @@
 {
-  "headless": false,
   "stagingDir": "~/Library/Application Support/DeskBooks/import-staging",
-  "browserProfileDir": "~/Library/Application Support/DeskBooks/browser-profiles/default",
   "sources": [
     {
       "name": "teller",
       "enabled": false,
-      "browser": false,
       "module": "./fetchers/teller.mjs",
       "certPath": "~/.config/deskbooks/teller/certificate.pem",
       "keyPath": "~/.config/deskbooks/teller/private_key.pem",
-      "tokenService": "DeskBooks.Teller",
-      "tokenAccount": "teller",
+      "tokenPath": "~/.config/deskbooks/teller/access-token",
       "lookbackDays": 90,
       "invertAmounts": false,
       "accounts": [
@@ -21,29 +17,8 @@
     {
       "name": "example_json_connector",
       "enabled": false,
-      "browser": false,
       "module": "./fetchers/example-json-connector.mjs",
       "fixturePath": "./tests/fixtures/example-bundle.json"
-    },
-    {
-      "name": "example_chase_sample",
-      "enabled": false,
-      "browser": false,
-      "module": "./fetchers/example-static-csv.mjs",
-      "accountId": 1,
-      "importerName": "chase_credit",
-      "inputPath": "../samples/chase_credit_sample.csv"
-    },
-    {
-      "name": "my_bank_browser_template",
-      "enabled": false,
-      "browser": true,
-      "module": "./fetchers/template-playwright-fetcher.mjs",
-      "accountId": 1,
-      "importerName": "running_balance_bank",
-      "startUrl": "https://example-bank.test/",
-      "allowedHostSuffixes": ["example-bank.test"],
-      "downloadTimeoutMs": 600000
     }
   ]
 }

@@ -2,46 +2,35 @@
 
 DeskBooks is strictly local by default. This document covers the optional,
 off-by-default connector pipeline that removes friction when you want it:
-fetching transactions and account balances from institutions you configure,
-on a schedule you control.
+fetching transactions and account balances from institutions you configure.
 
 The design keeps the privacy boundary sharp:
 
 1. **Only the Node automation layer touches the network.** The backend cannot
    even import HTTP libraries (`backend/tests/test_no_external_network.py`),
    and `automation/tests/network-guard.test.mjs` enforces that only
-   `automation/src/connector-http.mjs` may open connections.
+   `automation/src/connector-http.mjs` may open connections — HTTPS GETs of
+   JSON against an explicit host allowlist, nothing else. Connectors are
+   API/file based; there is no browser automation.
 2. Connectors write **staged files** into a local staging directory and
    append entries to a manifest.
 3. `python -m app.automation_import` (fully offline) previews those staged
    files with the same importer logic as the UI. With `--apply` it first
    creates a profile backup, then applies transactions as an import batch
-   (rollback-able from the Backups/Import panels) and balances as net-worth
+   (rollback-able from the Import panel) and balances as net-worth
    snapshots.
 
-Fail-closed rules: every connector must pin the hosts it may reach (missing
-allowlist = refuse to run), browser helpers refuse dangerous financial-site
-actions by label, fetchers must return non-empty files, and the importer
-refuses files outside the staging directory. One failing connector no longer
-aborts the run — other sources still stage and import, and the run exits
-nonzero so the failure is visible in logs.
+Additional fail-closed rules: fetchers must return non-empty files, the
+importer refuses files outside the staging directory, and duplicate
+detection plus sha256 idempotency make re-runs safe. One failing connector
+does not abort the run — other sources still stage and import, and the run
+exits nonzero so the failure is visible.
 
-## Connector types
-
-- **API connectors** (`"browser": false`) — talk to a provider's HTTPS API
-  through `connector-http` (host-pinned, HTTPS-only, GET/JSON only).
-  Shipped: **Teller** (`fetchers/teller.mjs`), free for personal use.
-  Template: `fetchers/example-json-connector.mjs`.
-- **Static file** (`fetchers/example-static-csv.mjs`) — stages a CSV you
-  already have; useful for testing the pipeline end to end.
-- **Browser template** (`fetchers/template-playwright-fetcher.mjs`) —
-  experimental Playwright lane for institutions with no API. Requires an
-  explicit host allowlist and is best used in `manual` style flows where you
-  log in yourself. Expect breakage when sites change.
+The connector layer has **zero npm dependencies**; nothing needs installing.
 
 ## Staged file formats
 
-API connectors normalize provider data into two JSON formats
+Connectors normalize provider data into two JSON formats
 (`automation/src/staged-formats.mjs` builds them; the backend parses them):
 
 ```jsonc
@@ -98,55 +87,50 @@ keep working.
 ## Setup
 
 ```sh
-make install-automation          # only needed for browser connectors (Playwright)
 cp automation/config.example.json automation/config.local.json
 ```
 
 `config.local.json` is gitignored. Top-level keys: `stagingDir` (defaults to
 `$PFA_DATA_DIR/import-staging`, falling back to the OS data dir — the fetch
-and import halves always agree), `browserProfileDir`, `headless`, and
-`sources[]`.
-
-Per-source keys: `name`, `module`, `enabled`, `browser` (set `false` for API
-connectors), plus whatever the fetcher documents. Statement-producing
-sources need `accountId` + `importerName`; connectors that stage
-per-account files (like Teller) map accounts themselves. **Browser sources
-must set `allowedHosts` or `allowedHostSuffixes` — the runner refuses to
-start them otherwise.**
+and import halves always agree) and `sources[]`. Per-source keys: `name`,
+`module`, `enabled`, plus whatever the fetcher documents.
 
 ## Teller setup (free, API-based)
 
 Teller's developer tier is free for up to 100 bank connections. The live
 API path follows their documented contract but has not been exercised
 against a real enrollment yet — run your first fetches with a **sandbox**
-token and preview-only (no `--apply`), and check the preview output before
+token and preview-only (no apply), and check the preview output before
 trusting it. If a provider reports amounts with the opposite sign, set
 `"invertAmounts": true` on the source.
 
 1. Sign up at <https://teller.io/> and download your mTLS certificate pair.
-   Put them somewhere private, e.g. `~/.config/deskbooks/teller/`.
-2. Enroll your bank via Teller Connect to get an access token, then store it
-   in the Keychain:
+2. Enroll your bank via Teller Connect to get an access token.
+3. Put all three in a private directory:
 
    ```sh
-   automation/bin/store-keychain-password.sh DeskBooks.Teller teller
+   mkdir -p ~/.config/deskbooks/teller && chmod 700 ~/.config/deskbooks/teller
+   # certificate.pem and private_key.pem from Teller, then:
+   printf '%s' 'token_...' > ~/.config/deskbooks/teller/access-token
+   chmod 600 ~/.config/deskbooks/teller/*
    ```
 
-3. Discover account ids and map them to DeskBooks accounts:
+4. Discover account ids and map them to DeskBooks accounts:
 
    ```sh
    cd automation
-   node bin/list-teller-accounts.mjs --cert ~/.config/deskbooks/teller/certificate.pem \
-     --key ~/.config/deskbooks/teller/private_key.pem
+   node bin/list-teller-accounts.mjs \
+     --cert ~/.config/deskbooks/teller/certificate.pem \
+     --key ~/.config/deskbooks/teller/private_key.pem \
+     --token ~/.config/deskbooks/teller/access-token
    ```
 
-4. Enable the `teller` source in `config.local.json` (see
-   `config.example.json`) and fill in `certPath`, `keyPath`, and the
-   `accounts` mapping (`tellerAccountId` → `deskbooksAccountId`).
+5. Enable the `teller` source in `config.local.json` (see
+   `config.example.json`) and fill in `certPath`, `keyPath`, `tokenPath`,
+   and the `accounts` mapping (`tellerAccountId` → `deskbooksAccountId`).
 
 Each run stages one transactions file per mapped account plus one balances
-file, so scheduled runs keep both your transactions and your net-worth
-series current.
+file, so runs keep both your transactions and your net-worth series current.
 
 ## Running
 
@@ -155,25 +139,14 @@ make fetch-preview   # fetch + stage + preview (writes nothing to the DB)
 make fetch-apply     # fetch + stage + backup + apply
 ```
 
-Under the hood the wrapper runs `npm run fetch` and then
+Under the hood `automation/bin/run-fetch.sh` runs the fetchers and then
 `uv run python -m app.automation_import` with `--manifest` pointed at the
 latest run. Useful importer flags: `--manifest`, `--staging-dir`, `--state`,
 `--source`, `--apply`, `--no-backup`.
 
-## Scheduling (macOS launchd)
-
-```sh
-make schedule-fetch-preview   # weekly preview (Mon 09:00 by default)
-make schedule-fetch-apply     # weekly fetch + apply
-make unschedule-fetch
-```
-
-Schedule knobs: `DESKBOOKS_FETCH_WEEKDAY`/`HOUR`/`MINUTE`, or
-`DESKBOOKS_FETCH_DAY` for monthly. Set `DESKBOOKS_IMPORT_MANIFEST`,
-`DESKBOOKS_IMPORT_STAGING_DIR`, or `PFA_DATA_DIR` when installing and they
-are baked into the job's environment. Logs go to `~/Library/Logs/DeskBooks/`.
-Note: the login Keychain must be unlocked (user logged in) for connector
-secrets to be readable; a locked-Keychain run fails closed.
+There is no built-in scheduler; run the make targets when you want fresh
+data, or wire `make fetch-apply` into cron/launchd yourself if you want it
+periodic.
 
 ## Verifying the automation layer
 
@@ -192,9 +165,5 @@ static analysis cannot.
 - Staged downloads, manifests, and previews live under
   `<data dir>/import-staging/` with `0600` permissions where possible;
   treat the whole tree as sensitive financial data.
-- Browser-page failure diagnostics (screenshot + HTML of a possibly
-  logged-in page) are **off by default**; helpers only write them when a
-  fetcher passes `{ enabled: true }`, and they are `0600`.
-- `automation/bin/store-keychain-password.sh` passes the secret to
-  `security` as an argument, which is briefly visible to local process
-  listings while it runs.
+- Connector credentials are files you manage (`chmod 600`), outside the
+  repo, referenced by path from the untracked `config.local.json`.
