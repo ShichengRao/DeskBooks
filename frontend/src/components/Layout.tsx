@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet } from "react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import clsx from "clsx";
 import { api } from "../api/client";
