@@ -325,6 +325,47 @@ export interface ImportBatch {
   notes: string | null;
 }
 
+export interface StagedEntry {
+  sha256: string;
+  source: string;
+  kind: "statement" | "balances";
+  file_name: string;
+  path: string;
+  account_id: number | null;
+  account_name: string | null;
+  importer_name: string | null;
+  profile: string | null;
+  downloaded_at: string | null;
+  row_count: number | null;
+  new_count: number | null;
+  as_of: string | null;
+  status:
+    | "new"
+    | "imported"
+    | "empty"
+    | "other_profile"
+    | "unknown_account"
+    | "missing_file"
+    | "invalid";
+  detail: string | null;
+}
+
+export interface StagedApplyOutcome {
+  sha256: string;
+  file_name: string;
+  status: string;
+  batch_id: number | null;
+  snapshot_id: number | null;
+  rows_applied: number | null;
+  duplicates: number | null;
+  detail: string | null;
+}
+
+export interface StagedApplyResult {
+  outcomes: StagedApplyOutcome[];
+  backup_name: string | null;
+}
+
 export interface MonthlyPoint {
   month: string;
   by_kind: Record<string, number>;

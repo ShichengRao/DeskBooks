@@ -8,7 +8,6 @@ from decimal import Decimal
 import pytest
 
 from app import balance_snapshots
-from app.automation_import import validate_entry
 from app.importers.staged_json import parse_staged_transactions_bytes
 from app.models import (
     Account,
@@ -19,6 +18,7 @@ from app.models import (
     SignConvention,
 )
 from app.routers.imports import _preview_from_bytes
+from app.staging import staged_file_profile, validate_entry
 
 
 def _account(db, name: str = "Checking") -> Account:
@@ -215,6 +215,72 @@ def test_collect_staged_prefill_returns_newest_balance_per_account(tmp_path):
     assert balance_snapshots.collect_staged_prefill(tmp_path / "nope") == []
 
 
+def test_parse_staged_balances_reads_profile_stamp():
+    payload = {
+        "format": "deskbooks.staged-balances/v1",
+        "profile": "personal",
+        "as_of": "2026-07-30",
+        "balances": [],
+    }
+    staged = balance_snapshots.parse_staged_balances_bytes(json.dumps(payload).encode())
+    assert staged.profile == "personal"
+
+    del payload["profile"]
+    assert balance_snapshots.parse_staged_balances_bytes(json.dumps(payload).encode()).profile is None
+
+    payload["profile"] = 7
+    with pytest.raises(ValueError, match="invalid profile"):
+        balance_snapshots.parse_staged_balances_bytes(json.dumps(payload).encode())
+
+
+def test_collect_staged_prefill_scopes_to_profile_and_known_accounts(tmp_path):
+    staging = tmp_path / "staging"
+    staging.mkdir()
+
+    def stage(name: str, rows: list[dict], profile: str | None) -> str:
+        payload = {"format": "deskbooks.staged-balances/v1", "as_of": "2026-07-30", "balances": rows}
+        if profile is not None:
+            payload["profile"] = profile
+        path = staging / name
+        path.write_text(json.dumps(payload))
+        return json.dumps({"kind": "balances", "path": str(path), "source": name})
+
+    lines = [
+        stage("mine.json", [{"account_id": 1, "balance": "10.00"}], "personal"),
+        stage("other.json", [{"account_id": 1, "balance": "99999.99"}], "test-profile"),
+        stage(
+            "legacy.json",
+            [{"account_id": 2, "balance": "20.00"}, {"account_id": 42, "balance": "30.00"}],
+            None,
+        ),
+    ]
+    (staging / "manifest.jsonl").write_text("\n".join(lines) + "\n")
+
+    rows = balance_snapshots.collect_staged_prefill(
+        staging, active_profile="personal", valid_account_ids={1, 2}
+    )
+    # The other profile's file is skipped even though it shares account id 1,
+    # and the legacy file's unknown id 42 is dropped while id 2 survives.
+    assert rows == [
+        {"account_id": 1, "balance": Decimal("10.00"), "as_of": date(2026, 7, 30), "source": "mine.json"},
+        {"account_id": 2, "balance": Decimal("20.00"), "as_of": date(2026, 7, 30), "source": "legacy.json"},
+    ]
+
+
+def test_staged_file_profile_prefers_manifest_then_file(tmp_path):
+    stamped = tmp_path / "stamped.json"
+    stamped.write_text(json.dumps({"format": "x", "profile": "from-file"}))
+    unstamped = tmp_path / "unstamped.json"
+    unstamped.write_text(json.dumps({"format": "x"}))
+    broken = tmp_path / "broken.json"
+    broken.write_text("{nope")
+
+    assert staged_file_profile({"profile": "from-manifest"}, stamped) == "from-manifest"
+    assert staged_file_profile({}, stamped) == "from-file"
+    assert staged_file_profile({"profile": "  "}, unstamped) is None
+    assert staged_file_profile({}, broken) is None
+
+
 def _entry_for(tmp_path, *, kind: str | None, **overrides):
     staged = tmp_path / "staging"
     staged.mkdir(exist_ok=True)
@@ -236,7 +302,7 @@ def test_validate_entry_defaults_to_statement_and_requires_importer(tmp_path):
     assert (kind, account_id, importer_name) == ("statement", 3, "staged_json")
 
     missing, staging = _entry_for(tmp_path, kind=None, account_id=3)
-    with pytest.raises(SystemExit, match="missing field: importer_name"):
+    with pytest.raises(ValueError, match="missing field: importer_name"):
         validate_entry(missing, staging)
 
 
@@ -246,5 +312,5 @@ def test_validate_entry_balances_needs_no_importer_or_account(tmp_path):
     assert (kind, account_id, importer_name) == ("balances", None, None)
 
     unknown, staging = _entry_for(tmp_path, kind="prices")
-    with pytest.raises(SystemExit, match="unknown kind"):
+    with pytest.raises(ValueError, match="unknown kind"):
         validate_entry(unknown, staging)

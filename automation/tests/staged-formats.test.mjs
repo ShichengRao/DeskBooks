@@ -37,6 +37,22 @@ test("buildStagedTransactions refuses float amounts and bad dates", () => {
   assert.throws(() => buildStagedTransactions({ transactions: [] }), /integer accountId/);
 });
 
+test("staged payloads carry a profile stamp only when one is given", () => {
+  const stamped = buildStagedTransactions({ accountId: 1, transactions: [], profile: "personal" });
+  assert.equal(stamped.profile, "personal");
+  const unstamped = buildStagedTransactions({ accountId: 1, transactions: [] });
+  assert.ok(!("profile" in unstamped));
+
+  const balances = buildStagedBalances({ asOf: "2026-07-30", rows: [], profile: "personal" });
+  assert.equal(balances.profile, "personal");
+  assert.ok(!("profile" in buildStagedBalances({ asOf: "2026-07-30", rows: [] })));
+
+  assert.throws(
+    () => buildStagedBalances({ asOf: "2026-07-30", rows: [], profile: "  " }),
+    /profile must be a non-empty string/,
+  );
+});
+
 test("buildStagedBalances validates rows and keeps explicit nulls", () => {
   const staged = buildStagedBalances({
     asOf: "2026-07-30",

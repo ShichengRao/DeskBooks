@@ -159,7 +159,7 @@ async function readSecretFile(configDir, rawPath) {
   return value;
 }
 
-export async function fetch({ source, config, downloadsDir }) {
+export async function fetch({ source, config, profile = null, downloadsDir }) {
   const mappings = validateSource(source);
   const base = plaidHost(source.environment || "sandbox");
   const clientId = await readSecretFile(config.__dir, source.clientIdPath);
@@ -217,6 +217,7 @@ export async function fetch({ source, config, downloadsDir }) {
     const accountTxns = transactions.filter((t) => idSet.has(t.account_id));
     const staged = buildStagedTransactions({
       accountId: deskbooksAccountId,
+      profile,
       transactions: normalizePlaidTransactions({
         transactions: accountTxns,
         invertAmounts: source.invertAmounts === true,
@@ -237,7 +238,7 @@ export async function fetch({ source, config, downloadsDir }) {
 
   const balanceRows = normalizePlaidBalances({ mappings, accountsById });
   if (balanceRows.length) {
-    const stagedBalances = buildStagedBalances({ asOf: today, rows: balanceRows });
+    const stagedBalances = buildStagedBalances({ asOf: today, rows: balanceRows, profile });
     const balancesPath = await writeStagedFile(
       downloadsDir,
       `${today}-${source.name}-balances.json`,

@@ -89,6 +89,16 @@ function validateSource(source) {
   }
 }
 
+function profileFor(config, source) {
+  // Account ids in mappings belong to exactly one profile's database, so a
+  // config (or a single source) can pin the profile its staged files are for.
+  const profile = source.profile ?? config.profile ?? null;
+  if (profile != null && (typeof profile !== "string" || !profile.trim())) {
+    throw new Error(`${source.name}: profile must be a non-empty string`);
+  }
+  return profile;
+}
+
 function normalizeEntries(source, result) {
   // Back-compat: `{ files: [...] }` means statement files using the
   // source-level accountId/importerName. Connectors that stage multiple
@@ -135,9 +145,11 @@ async function runSource(config, source) {
   const downloadsDir = sourceDownloadDir(stagingDir, source.name);
   await ensureDir(downloadsDir);
 
+  const profile = profileFor(config, source);
   const result = await fetcher.fetch({
     source,
     config,
+    profile,
     downloadsDir,
     automationRoot,
     repoRoot,
@@ -158,6 +170,7 @@ async function runSource(config, source) {
       kind: item.kind,
       account_id: item.kind === "statement" ? item.accountId : (item.accountId ?? null),
       importer_name: item.kind === "statement" ? item.importerName : (item.importerName ?? null),
+      profile,
       path: filePath,
       sha256,
       downloaded_at: new Date().toISOString(),

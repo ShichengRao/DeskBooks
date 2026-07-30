@@ -20,7 +20,7 @@ import {
   writeStagedFile,
 } from "../src/staged-formats.mjs";
 
-export async function fetch({ source, config, downloadsDir }) {
+export async function fetch({ source, config, profile = null, downloadsDir }) {
   if (!source.fixturePath) {
     throw new Error(`${source.name}: fixturePath is required`);
   }
@@ -32,6 +32,7 @@ export async function fetch({ source, config, downloadsDir }) {
   for (const account of bundle.accounts ?? []) {
     const staged = buildStagedTransactions({
       accountId: account.accountId,
+      profile,
       transactions: account.transactions ?? [],
     });
     const filePath = await writeStagedFile(
@@ -51,6 +52,7 @@ export async function fetch({ source, config, downloadsDir }) {
     const staged = buildStagedBalances({
       asOf: bundle.balances.asOf ?? today,
       rows: bundle.balances.rows ?? [],
+      profile,
     });
     const filePath = await writeStagedFile(downloadsDir, `${today}-${source.name}-balances.json`, staged);
     entries.push({ path: filePath, kind: "balances" });

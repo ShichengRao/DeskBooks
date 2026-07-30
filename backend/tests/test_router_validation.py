@@ -17,7 +17,8 @@ from app.models import (
     Transaction,
     TransactionKind,
 )
-from app.routers import categories, transactions
+from app.routers import accounts as accounts_router
+from app.routers import categories, snapshots, transactions
 
 
 def _category(db, name: str, parent: Category | None = None) -> Category:
@@ -109,3 +110,76 @@ def test_transaction_routes_reject_missing_category_ids(db):
             db,
         )
     assert bulk_update.value.status_code == 404
+
+
+def _account_in(name: str) -> schemas.AccountIn:
+    return schemas.AccountIn(name=name, account_category=AccountCategory.bank, type=AccountType.checking)
+
+
+def test_bulk_account_create_is_all_or_nothing(db):
+    existing = _account(db)  # named "Checking"
+    db.commit()
+
+    with pytest.raises(HTTPException) as taken:
+        accounts_router.create_accounts_bulk(
+            schemas.AccountBulkIn(accounts=[_account_in("Checking"), _account_in("CD Ladder")]),
+            db,
+        )
+    assert taken.value.status_code == 422
+    assert "Checking" in taken.value.detail
+    assert db.query(Account).count() == 1  # nothing partially inserted
+
+    with pytest.raises(HTTPException) as repeated:
+        accounts_router.create_accounts_bulk(
+            schemas.AccountBulkIn(accounts=[_account_in("Twin"), _account_in(" Twin ")]),
+            db,
+        )
+    assert repeated.value.status_code == 422
+    assert "duplicate" in repeated.value.detail
+
+    created = accounts_router.create_accounts_bulk(
+        schemas.AccountBulkIn(accounts=[_account_in("CD Ladder"), _account_in(" Rental Checking ")]),
+        db,
+    )
+    assert [a.name for a in created] == ["CD Ladder", "Rental Checking"]
+    assert all(a.id and a.id != existing.id for a in created)
+    assert db.query(Account).count() == 3
+
+
+def test_snapshot_routes_reject_unknown_account_ids(db):
+    account = _account(db)
+    db.commit()
+
+    # e.g. ids prefilled from another profile's staged balances
+    with pytest.raises(HTTPException) as create:
+        snapshots.create_snapshot(
+            schemas.NetWorthSnapshotIn(
+                snapshot_date=date(2026, 7, 30),
+                balances=[
+                    schemas.AccountBalanceIn(account_id=account.id, balance=Decimal("10.00")),
+                    schemas.AccountBalanceIn(account_id=25, balance=Decimal("1.00")),
+                    schemas.AccountBalanceIn(account_id=26, balance=Decimal("2.00")),
+                ],
+            ),
+            db,
+        )
+    assert create.value.status_code == 422
+    assert "25, 26" in create.value.detail
+
+    created = snapshots.create_snapshot(
+        schemas.NetWorthSnapshotIn(
+            snapshot_date=date(2026, 7, 30),
+            balances=[schemas.AccountBalanceIn(account_id=account.id, balance=Decimal("10.00"))],
+        ),
+        db,
+    )
+
+    with pytest.raises(HTTPException) as update:
+        snapshots.update_snapshot(
+            created.id,
+            schemas.NetWorthSnapshotUpdate(
+                balances=[schemas.AccountBalanceIn(account_id=999, balance=Decimal("5.00"))]
+            ),
+            db,
+        )
+    assert update.value.status_code == 422

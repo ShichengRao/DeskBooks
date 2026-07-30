@@ -12,9 +12,25 @@ from sqlalchemy.orm import selectinload
 from .. import analytics, models, schemas
 from ..app_paths import DATA_DIR
 from ..balance_snapshots import collect_staged_prefill
+from ..profiles import get_active_profile
 from .common import DbSession, get_or_404
 
 router = APIRouter(prefix="/api/snapshots", tags=["snapshots"])
+
+
+def _require_known_accounts(db, balances) -> None:
+    """422 (not an FK 500) when a payload names accounts this profile lacks —
+    e.g. ids pasted from another profile's connector config."""
+    wanted = {b.account_id for b in balances}
+    if not wanted:
+        return
+    known = set(db.scalars(select(models.Account.id).where(models.Account.id.in_(wanted))))
+    unknown = sorted(wanted - known)
+    if unknown:
+        raise HTTPException(
+            422,
+            f"unknown account id(s) in this profile: {', '.join(str(i) for i in unknown)}",
+        )
 
 
 @router.get("", response_model=list[schemas.NetWorthSnapshotOut])
@@ -34,6 +50,7 @@ def create_snapshot(body: schemas.NetWorthSnapshotIn, db: DbSession):
     )
     if existing:
         raise HTTPException(409, "snapshot for this date already exists")
+    _require_known_accounts(db, body.balances)
     snap = models.NetWorthSnapshot(snapshot_date=body.snapshot_date, notes=body.notes)
     db.add(snap)
     db.flush()
@@ -164,6 +181,7 @@ def update_snapshot(snap_id: int, body: schemas.NetWorthSnapshotUpdate, db: DbSe
     if body.notes is not None:
         snap.notes = body.notes
     if body.balances is not None:
+        _require_known_accounts(db, body.balances)
         # upsert balances
         existing = {b.account_id: b for b in snap.balances}
         seen = set()
@@ -199,10 +217,18 @@ def delete_snapshot(snap_id: int, db: DbSession):
 
 
 @router.get("/prefill", response_model=list[schemas.SnapshotPrefillBalance])
-def snapshot_prefill():
+def snapshot_prefill(db: DbSession):
     """Latest connector-staged balance per account, for prefilling the
-    snapshot editor. Reads staged files only — no network, no DB writes."""
-    return collect_staged_prefill(DATA_DIR / "import-staging")
+    snapshot editor. Reads staged files only — no network, no DB writes.
+
+    The staging tree is shared across profiles, so this filters to files
+    stamped for the active profile (or unstamped legacy files) and to
+    account ids that actually exist in this profile's database."""
+    return collect_staged_prefill(
+        DATA_DIR / "import-staging",
+        active_profile=get_active_profile().slug,
+        valid_account_ids=set(db.scalars(select(models.Account.id))),
+    )
 
 
 @router.get("/series", response_model=list[schemas.NetWorthSeriesPoint])

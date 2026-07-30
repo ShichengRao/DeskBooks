@@ -232,10 +232,10 @@ export function NetWorth() {
       <AccountEditorDialog
         open={creatingAccount}
         onClose={() => setCreatingAccount(false)}
-        onSaved={(account) => {
+        onSaved={(created) => {
           setForceVisibleAccountIds((current) => {
             const next = new Set(current);
-            next.add(account.id);
+            for (const account of created) next.add(account.id);
             return next;
           });
           qc.invalidateQueries({ queryKey: ["accounts"] });
@@ -871,6 +871,12 @@ function SnapshotEditor({
                       {a.institution && (
                         <span className="text-xs text-ink-400">· {a.institution}</span>
                       )}
+                      <span
+                        className="text-[10px] text-ink-300 tabular"
+                        title="Account id — connector configs map provider accounts to this id"
+                      >
+                        #{a.id}
+                      </span>
                     </div>
                     {a.url ? (
                       <a
@@ -938,13 +944,26 @@ function AccountEditorDialog({
 }: {
   open: boolean;
   onClose: () => void;
-  onSaved: (account: Account) => void;
+  onSaved: (accounts: Account[]) => void;
 }) {
+  const [bulk, setBulk] = useState(false);
   if (!open) return null;
-  return <AccountEditor onClose={onClose} onSaved={onSaved} />;
+  return bulk ? (
+    <BulkAccountEditor onClose={onClose} onSaved={onSaved} onSingle={() => setBulk(false)} />
+  ) : (
+    <AccountEditor onClose={onClose} onSaved={onSaved} onBulk={() => setBulk(true)} />
+  );
 }
 
-function AccountEditor({ onClose, onSaved }: { onClose: () => void; onSaved: (account: Account) => void }) {
+function AccountEditor({
+  onClose,
+  onSaved,
+  onBulk,
+}: {
+  onClose: () => void;
+  onSaved: (accounts: Account[]) => void;
+  onBulk: () => void;
+}) {
   const [form, setForm] = useState<AccountFormBody>({
     name: "",
     institution: null,
@@ -968,7 +987,7 @@ function AccountEditor({ onClose, onSaved }: { onClose: () => void; onSaved: (ac
         url: form.url?.trim() || null,
         notes: form.notes?.trim() || null,
       }),
-    onSuccess: onSaved,
+    onSuccess: (account) => onSaved([account]),
   });
 
   const update = <K extends keyof AccountFormBody>(key: K, value: AccountFormBody[K]) =>
@@ -976,6 +995,12 @@ function AccountEditor({ onClose, onSaved }: { onClose: () => void; onSaved: (ac
 
   return (
     <SidePanel title="New account" onClose={onClose} onSubmit={() => save.mutate()} maxWidth="max-w-xl">
+      <div className="mb-3 text-xs text-ink-500">
+        Setting up several accounts?{" "}
+        <button type="button" className="text-brand-600 hover:underline" onClick={onBulk}>
+          Add multiple at once
+        </button>
+      </div>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Name">
           <input className="input" value={form.name} onChange={(e) => update("name", e.target.value)} required />
@@ -1020,6 +1045,142 @@ function AccountEditor({ onClose, onSaved }: { onClose: () => void; onSaved: (ac
       <div className="sticky bottom-0 z-10 -mx-6 mt-4 flex items-center gap-2 border-t border-ink-100 bg-white px-6 py-3">
         <button type="submit" className="btn-primary" disabled={save.isPending || !form.name.trim()}>
           Save account
+        </button>
+        <button type="button" className="btn" onClick={onClose}>Cancel</button>
+      </div>
+      {save.isError && <div className="mt-2 text-sm text-bad-600">{String((save.error as Error).message)}</div>}
+    </SidePanel>
+  );
+}
+
+type BulkAccountRow = {
+  name: string;
+  institution: string;
+  account_category: AccountCategory;
+  type: AccountType;
+};
+
+// When the category changes, jump the type to that category's usual one —
+// still editable afterwards.
+const DEFAULT_TYPE_FOR_CATEGORY: Record<AccountCategory, AccountType> = {
+  bank: "checking",
+  investment: "brokerage",
+  tax_advantaged: "retirement",
+  credit: "credit_card",
+  liability: "other",
+  nonsense: "other",
+  cash: "cash",
+};
+
+function emptyBulkRow(): BulkAccountRow {
+  return { name: "", institution: "", account_category: "bank", type: "checking" };
+}
+
+function BulkAccountEditor({
+  onClose,
+  onSaved,
+  onSingle,
+}: {
+  onClose: () => void;
+  onSaved: (accounts: Account[]) => void;
+  onSingle: () => void;
+}) {
+  const [rows, setRows] = useState<BulkAccountRow[]>(() => [emptyBulkRow(), emptyBulkRow(), emptyBulkRow()]);
+  const filled = rows.filter((row) => row.name.trim());
+
+  const save = useMutation({
+    mutationFn: () =>
+      api.post<Account[]>("/api/accounts/bulk", {
+        accounts: filled.map((row) => ({
+          name: row.name.trim(),
+          institution: row.institution.trim() || null,
+          account_category: row.account_category,
+          type: row.type,
+        })),
+      }),
+    onSuccess: onSaved,
+  });
+
+  const update = <K extends keyof BulkAccountRow>(index: number, key: K, value: BulkAccountRow[K]) =>
+    setRows((prev) =>
+      prev.map((row, i) => {
+        if (i !== index) return row;
+        const next = { ...row, [key]: value };
+        if (key === "account_category") {
+          next.type = DEFAULT_TYPE_FOR_CATEGORY[value as AccountCategory];
+        }
+        return next;
+      }),
+    );
+
+  return (
+    <SidePanel title="New accounts" onClose={onClose} onSubmit={() => save.mutate()} maxWidth="max-w-3xl">
+      <div className="mb-3 text-xs text-ink-500">
+        One row per account — blank rows are ignored. Currency and sign convention use the defaults;
+        edit an account later for URLs and notes.{" "}
+        <button type="button" className="text-brand-600 hover:underline" onClick={onSingle}>
+          Back to single account
+        </button>
+      </div>
+      <div className="space-y-2">
+        <div className="grid grid-cols-[1fr_1fr_9rem_9rem_2rem] gap-2 label">
+          <span>Name</span>
+          <span>Institution</span>
+          <span>Category</span>
+          <span>Type</span>
+          <span />
+        </div>
+        {rows.map((row, index) => (
+          <div key={index} className="grid grid-cols-[1fr_1fr_9rem_9rem_2rem] gap-2 items-center">
+            <input
+              className="input"
+              value={row.name}
+              placeholder={`Account ${index + 1}`}
+              onChange={(e) => update(index, "name", e.target.value)}
+            />
+            <input
+              className="input"
+              value={row.institution}
+              onChange={(e) => update(index, "institution", e.target.value)}
+            />
+            <select
+              className="input"
+              value={row.account_category}
+              onChange={(e) => update(index, "account_category", e.target.value as AccountCategory)}
+            >
+              {ACCOUNT_CATEGORIES.map((category) => (
+                <option key={category} value={category}>{accountCategoryLabel(category)}</option>
+              ))}
+            </select>
+            <select
+              className="input"
+              value={row.type}
+              onChange={(e) => update(index, "type", e.target.value as AccountType)}
+            >
+              {ACCOUNT_TYPES.map((type) => (
+                <option key={type} value={type}>{type.replace(/_/g, " ")}</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="btn-ghost text-ink-400"
+              title="Remove row"
+              onClick={() => setRows((prev) => prev.filter((_, i) => i !== index))}
+              disabled={rows.length === 1}
+            >
+              ×
+            </button>
+          </div>
+        ))}
+      </div>
+      <div className="mt-2">
+        <button type="button" className="btn-ghost text-xs" onClick={() => setRows((prev) => [...prev, emptyBulkRow()])}>
+          + Add row
+        </button>
+      </div>
+      <div className="sticky bottom-0 z-10 -mx-6 mt-4 flex items-center gap-2 border-t border-ink-100 bg-white px-6 py-3">
+        <button type="submit" className="btn-primary" disabled={save.isPending || filled.length === 0}>
+          Create {filled.length || ""} account{filled.length === 1 ? "" : "s"}
         </button>
         <button type="button" className="btn" onClick={onClose}>Cancel</button>
       </div>

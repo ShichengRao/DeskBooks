@@ -19,6 +19,12 @@ The design keeps the privacy boundary sharp:
    creates a profile backup, then applies transactions as an import batch
    (rollback-able from the Import panel) and balances as net-worth
    snapshots.
+4. The **Import page** shows the same staged files ("Staged from
+   connectors"): per-file status for the active profile (new rows, already
+   imported, staged for another profile, unknown account), one-click import
+   per file or **Import all new** — the same backup + duplicate + empty-file
+   contract as the CLI, still fully offline. Only the fetch itself needs the
+   command line.
 
 Additional fail-closed rules: fetchers must return non-empty files, the
 importer refuses files outside the staging directory, and duplicate
@@ -68,6 +74,15 @@ DeskBooks a NULL balance means "account did not exist yet", and a connector
 must never assert that implicitly. Unknown account ids are reported and
 skipped.
 
+Both formats accept an optional `"profile"` — a DeskBooks profile slug.
+Account ids only mean something inside one profile's database, so a stamped
+file is skipped by `automation_import` (and by the snapshot editor's
+fill-from-connections prefill) whenever a different profile is active; it
+stays pending until its profile is active again. Unstamped files keep the
+old behavior, but the prefill still only offers account ids that exist in
+the active profile. Stamp your files by setting `profile` in the fetch
+config (below).
+
 ## Manifest
 
 Each staged file gets one JSONL entry in `manifest.jsonl` (append-only
@@ -75,7 +90,8 @@ history) and `latest-manifest.jsonl` (this run only):
 
 ```json
 { "source": "plaid_mybank", "kind": "statement", "account_id": 3,
-  "importer_name": "staged_json", "path": "/…/2026-07-30-….json",
+  "importer_name": "staged_json", "profile": "personal",
+  "path": "/…/2026-07-30-….json",
   "sha256": "…", "downloaded_at": "2026-07-30T09:00:00.000Z" }
 ```
 
@@ -92,8 +108,11 @@ cp automation/config.example.json automation/config.local.json
 
 `config.local.json` is gitignored. Top-level keys: `stagingDir` (defaults to
 `$PFA_DATA_DIR/import-staging`, falling back to the OS data dir — the fetch
-and import halves always agree) and `sources[]`. Per-source keys: `name`,
-`module`, `enabled`, plus whatever the fetcher documents.
+and import halves always agree), `profile` (recommended: the profile slug
+your account-id mappings belong to; stamps every staged file and manifest
+entry so imports and prefill refuse to touch the wrong profile), and
+`sources[]`. Per-source keys: `name`, `module`, `enabled`, an optional
+`profile` override, plus whatever the fetcher documents.
 
 ## Plaid setup (free Trial plan)
 

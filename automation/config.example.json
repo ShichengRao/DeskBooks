@@ -1,5 +1,6 @@
 {
   "stagingDir": "~/Library/Application Support/DeskBooks/import-staging",
+  "profile": "personal",
   "sources": [
     {
       "name": "plaid_mybank",
