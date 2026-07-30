@@ -7,9 +7,11 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from . import models  # noqa: F401
 from .db import init_db
+from .profiles import get_active_profile
 from .routers import (
     accounts,
     analytics,
@@ -33,6 +35,43 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="DeskBooks", version="0.1.0", lifespan=lifespan)
+
+# The active profile is server-side state shared by every browser tab, so a
+# tab that switched profiles silently redirects every other tab's reads and
+# writes. Tabs therefore declare which profile they believe they're on; a
+# mismatch is refused instead of touching the wrong database.
+PROFILE_HEADER = "X-DeskBooks-Profile"
+
+
+def profile_guard_conflict(path: str, claimed: str | None, active: str) -> dict | None:
+    """The 409 payload for a stale tab, or None when the request may pass.
+
+    Requests without the header pass (curl, older clients); the profile
+    endpoints themselves pass so a stale tab can still list profiles and
+    switch back."""
+    if not claimed or not path.startswith("/api/") or path.startswith("/api/profiles"):
+        return None
+    if claimed == active:
+        return None
+    return {
+        "code": "profile_mismatch",
+        "detail": (
+            f"this tab is on profile '{claimed}' but the app's active profile "
+            f"is now '{active}' (switched in another tab?)"
+        ),
+        "expected_profile": claimed,
+        "active_profile": active,
+    }
+
+
+@app.middleware("http")
+async def enforce_profile_header(request, call_next):
+    claimed = request.headers.get(PROFILE_HEADER)
+    if claimed:
+        conflict = profile_guard_conflict(request.url.path, claimed, get_active_profile().slug)
+        if conflict is not None:
+            return JSONResponse(status_code=409, content=conflict)
+    return await call_next(request)
 
 
 def _cors_origins() -> list[str]:

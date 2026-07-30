@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { NavLink, Outlet } from "react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import clsx from "clsx";
-import { api } from "../api/client";
+import { api, PROFILE_MISMATCH_EVENT, setExpectedProfile } from "../api/client";
 import { Field } from "./Field";
 import { SidePanel } from "./SidePanel";
 import type { Profile, ProfileList } from "../api/types";
@@ -25,10 +25,39 @@ const tabs: { to: string; label: string; end?: boolean; group?: "view" | "edit" 
 export function Layout() {
   const [profileEditorOpen, setProfileEditorOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  // The profile this tab is pinned to. Every API call carries it, and the
+  // backend refuses writes/reads once another tab switches the active
+  // profile — instead of silently serving the other profile's data under
+  // this tab's header.
+  const [tabProfile, setTabProfile] = useState<string | null>(null);
+  const [mismatchProfile, setMismatchProfile] = useState<string | null>(null);
   const profiles = useQuery({
     queryKey: ["profiles"],
     queryFn: () => api.get<ProfileList>("/api/profiles"),
+    // Re-check on focus so returning to this tab notices a switch made
+    // elsewhere even before the next click.
+    refetchOnWindowFocus: "always",
   });
+
+  useEffect(() => {
+    const active = profiles.data?.active_slug;
+    if (!active) return;
+    if (tabProfile === null) {
+      setTabProfile(active);
+      setExpectedProfile(active);
+    } else if (active !== tabProfile) {
+      setMismatchProfile(active);
+    }
+  }, [profiles.data, tabProfile]);
+
+  useEffect(() => {
+    const onMismatch = (event: Event) => {
+      const detail = (event as CustomEvent).detail as { active_profile?: string };
+      setMismatchProfile(detail?.active_profile ?? "unknown");
+    };
+    window.addEventListener(PROFILE_MISMATCH_EVENT, onMismatch);
+    return () => window.removeEventListener(PROFILE_MISMATCH_EVENT, onMismatch);
+  }, []);
   const switchProfile = useMutation({
     mutationFn: (slug: string) =>
       api.post<ProfileList>("/api/profiles/active", { slug }),
@@ -62,7 +91,14 @@ export function Layout() {
     setProfileMenuOpen(false);
     setProfileEditorOpen(true);
   };
-  const activeProfile = profiles.data?.profiles.find((p) => p.slug === profiles.data?.active_slug);
+  const profileName = (slug: string | null) =>
+    profiles.data?.profiles.find((p) => p.slug === slug)?.name ?? slug ?? "?";
+  // The header names the profile this TAB is pinned to — when another tab
+  // switches, the banner explains the divergence instead of the header
+  // silently flipping over data that still belongs to the old profile.
+  const activeProfile = profiles.data?.profiles.find(
+    (p) => p.slug === (tabProfile ?? profiles.data?.active_slug),
+  );
   const canDeleteProfile = Boolean(profiles.data && profiles.data.profiles.length > 1 && activeProfile);
   const profileBusy = switchProfile.isPending || createProfile.isPending || duplicateProfile.isPending || deleteProfile.isPending;
   const chooseProfile = (slug: string) => {
@@ -175,6 +211,26 @@ export function Layout() {
           </button>
         </div>
       </header>
+      {mismatchProfile && (
+        <div className="flex items-center gap-3 border-b border-bad-500/30 bg-bad-500/10 px-6 py-2 text-sm text-bad-700">
+          <span className="flex-1">
+            This tab is on <strong>{profileName(tabProfile)}</strong>, but the app's active profile
+            changed to <strong>{profileName(mismatchProfile)}</strong> (switched in another tab or
+            window). Requests from this tab are paused so nothing lands in the wrong profile.
+          </span>
+          <button type="button" className="btn text-xs" onClick={() => window.location.reload()}>
+            Follow to {profileName(mismatchProfile)}
+          </button>
+          <button
+            type="button"
+            className="btn text-xs"
+            disabled={!tabProfile || profileBusy}
+            onClick={() => tabProfile && switchProfile.mutate(tabProfile)}
+          >
+            Switch back to {profileName(tabProfile)}
+          </button>
+        </div>
+      )}
       <main className="flex-1 p-6 max-w-[1600px] w-full mx-auto">
         <Outlet />
       </main>
