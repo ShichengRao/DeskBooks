@@ -6,7 +6,7 @@ from decimal import Decimal
 
 import pytest
 
-from app.analytics import cashflow_sankey, sankey_for_period
+from app.analytics import cashflow_sankey, recurring_merchants, sankey_for_period
 from app.models import (
     Account,
     AccountBalance,
@@ -203,3 +203,42 @@ def test_cashflow_sankey_excludes_transfers_and_balances_residual(db):
     # residual: 5085 in - 140 spend - 50 - 500 - 1000 invested = 3395
     assert links["Cash build-up"] == 3395.0
     assert "To Savings" not in links and "Card Payment" not in links
+
+
+def test_recurring_merchants_split_spending_from_money_movement(db):
+    checking = _account(db, "Checking", AccountCategory.bank, AccountType.checking)
+    food = _category(db, "Food", CategoryKind.expense)
+
+    for day, amount, kind, merchant in [
+        (1, "-20.00", TransactionKind.expense, "Corner Deli"),
+        (8, "-22.00", TransactionKind.expense, "Corner Deli"),
+        (15, "-21.00", TransactionKind.expense, "Corner Deli"),
+        (2, "-500.00", TransactionKind.transfer, "Bank Transfer"),
+        (9, "-500.00", TransactionKind.transfer, "Bank Transfer"),
+        (16, "-500.00", TransactionKind.transfer, "Bank Transfer"),
+        (3, "12.00", TransactionKind.income, "Interest Paid"),
+        (10, "12.00", TransactionKind.income, "Interest Paid"),
+        (17, "12.00", TransactionKind.income, "Interest Paid"),
+        # negative uncategorized counts as spending
+        (4, "-9.00", TransactionKind.uncategorized, "Mystery Cafe"),
+        (11, "-9.00", TransactionKind.uncategorized, "Mystery Cafe"),
+        (18, "-9.00", TransactionKind.uncategorized, "Mystery Cafe"),
+    ]:
+        _transaction(
+            db,
+            checking,
+            _TransactionSeed(
+                food if kind == TransactionKind.expense else None,
+                date(2026, 6, day),
+                amount,
+                kind,
+                merchant,
+            ),
+        )
+    db.commit()
+
+    rows = {row["merchant"]: row for row in recurring_merchants(db, min_occurrences=3)}
+    assert rows["Corner Deli"]["is_expense"] is True
+    assert rows["Mystery Cafe"]["is_expense"] is True
+    assert rows["Bank Transfer"]["is_expense"] is False
+    assert rows["Interest Paid"]["is_expense"] is False

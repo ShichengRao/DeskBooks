@@ -3121,6 +3121,10 @@
             ],
             "title": "Cadence Days Estimate"
           },
+          "is_expense": {
+            "title": "Is Expense",
+            "type": "boolean"
+          },
           "last_seen": {
             "format": "date",
             "title": "Last Seen",
@@ -3145,7 +3149,8 @@
           "avg_amount",
           "total_amount",
           "last_seen",
-          "cadence_days_estimate"
+          "cadence_days_estimate",
+          "is_expense"
         ],
         "title": "RecurringMerchant",
         "type": "object"
