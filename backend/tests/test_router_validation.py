@@ -146,6 +146,33 @@ def test_bulk_account_create_is_all_or_nothing(db):
     assert db.query(Account).count() == 3
 
 
+def test_transaction_category_filter_includes_descendants(db):
+    account = _account(db)
+    housing = _category(db, "Housing")
+    rent = _category(db, "Rent", housing)
+    food = _category(db, "Food")
+    for cat in (rent, food):
+        db.add(
+            Transaction(
+                account_id=account.id,
+                date=date(2026, 6, 1),
+                description_raw=cat.name.upper(),
+                amount=Decimal("-10.00"),
+                category_id=cat.id,
+                kind=TransactionKind.expense,
+            )
+        )
+    db.commit()
+
+    # selecting the parent surfaces the child's rows...
+    rows = transactions.list_transactions(category_id=housing.id, db=db)
+    assert [tx.category_id for tx in rows] == [rent.id]
+    # ...and the count endpoint agrees
+    assert transactions.count_transactions(category_id=housing.id, db=db) == {"count": 1}
+    # leaf selection stays exact
+    assert transactions.count_transactions(category_id=food.id, db=db) == {"count": 1}
+
+
 def test_snapshot_routes_reject_unknown_account_ids(db):
     account = _account(db)
     db.commit()

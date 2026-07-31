@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { api, qs } from "../api/client";
 import { invalidateTxQueries } from "../api/invalidate";
@@ -400,8 +400,16 @@ function TransactionFiltersCard({
         <Field label="Category">
           <select className="input" value={filters.category_id} onChange={(e) => update({ category_id: e.target.value })}>
             <option value="">All categories</option>
-            {categories.map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
+            {/* Parents stay selectable: picking Housing includes its
+                subcategories' transactions (the backend expands to
+                descendants). */}
+            {categories.filter((c) => c.parent_id === null).map((parent) => (
+              <Fragment key={parent.id}>
+                <option value={parent.id}>{parent.name}</option>
+                {categories.filter((c) => c.parent_id === parent.id).map((child) => (
+                  <option key={child.id} value={child.id}>{`\u00A0\u00A0\u00A0\u00B7 ${child.name}`}</option>
+                ))}
+              </Fragment>
             ))}
           </select>
         </Field>
@@ -474,9 +482,18 @@ function BulkTransactionActions({
         defaultValue=""
       >
         <option value="" disabled>Bulk recategorize as…</option>
-        {categories.map((c) => (
-          <option key={c.id} value={c.id}>{c.name} ({transactionKindLabel(c.kind)})</option>
-        ))}
+        {categories.filter((c) => c.parent_id === null).map((parent) => {
+          const leaves = categories.filter((c) => c.parent_id === parent.id);
+          return leaves.length === 0 ? (
+            <option key={parent.id} value={parent.id}>{parent.name} ({transactionKindLabel(parent.kind)})</option>
+          ) : (
+            <optgroup key={parent.id} label={parent.name}>
+              {leaves.map((l) => (
+                <option key={l.id} value={l.id}>{l.name} ({transactionKindLabel(l.kind)})</option>
+              ))}
+            </optgroup>
+          );
+        })}
       </select>
       <select
         className="input max-w-xs"

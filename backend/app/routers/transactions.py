@@ -38,7 +38,24 @@ def _normalize_description(description: str) -> str:
     return " ".join(description.split())
 
 
-def _apply_filters(stmt, filters: TransactionFilters):
+def _category_with_descendants(db: Session, root_id: int) -> set[int]:
+    """The category plus everything nested under it. Selecting a parent
+    like Housing should surface its Rent/Utilities/Wifi rows — parents
+    rarely hold transactions directly."""
+    kids: dict[int | None, list[int]] = {}
+    for cid, pid in db.execute(select(models.Category.id, models.Category.parent_id)):
+        kids.setdefault(pid, []).append(cid)
+    out = {root_id}
+    queue = [root_id]
+    while queue:
+        for child in kids.get(queue.pop(), []):
+            if child not in out:
+                out.add(child)
+                queue.append(child)
+    return out
+
+
+def _apply_filters(stmt, filters: TransactionFilters, db: Session):
     if filters.start:
         stmt = stmt.where(models.Transaction.date >= filters.start)
     if filters.end:
@@ -52,7 +69,9 @@ def _apply_filters(stmt, filters: TransactionFilters):
             models.Account.account_category.in_(filters.account_category)
         )
     if filters.category_id:
-        stmt = stmt.where(models.Transaction.category_id == filters.category_id)
+        stmt = stmt.where(
+            models.Transaction.category_id.in_(_category_with_descendants(db, filters.category_id))
+        )
     if filters.kind:
         stmt = stmt.where(models.Transaction.kind.in_(filters.kind))
     if filters.amount_min is not None:
@@ -108,7 +127,7 @@ def list_transactions(
         .options(selectinload(models.Transaction.tags), selectinload(models.Transaction.split))
         .order_by(models.Transaction.date.desc(), models.Transaction.id.desc())
     )
-    stmt = _apply_filters(stmt, filters)
+    stmt = _apply_filters(stmt, filters, db)
     stmt = stmt.limit(page.limit).offset(page.offset)
     return list(db.scalars(stmt))
 
@@ -140,7 +159,7 @@ def count_transactions(
         exclude_excluded=exclude_excluded,
     )
     stmt = select(func.count(models.Transaction.id))
-    stmt = _apply_filters(stmt, filters)
+    stmt = _apply_filters(stmt, filters, db)
     return {"count": db.scalar(stmt) or 0}
 
 
