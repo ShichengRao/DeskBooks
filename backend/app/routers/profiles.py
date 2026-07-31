@@ -69,6 +69,19 @@ def activate_profile(body: schemas.ProfileActivate):
     return _profile_list()
 
 
+@router.patch("/{slug}", response_model=schemas.ProfileList)
+def rename_profile(slug: str, body: schemas.ProfileRename):
+    """Rename a profile's display name. The slug — which window pins and
+    request routing key on — and its database file stay unchanged."""
+    try:
+        profiles.rename_profile(slug, body.name)
+    except KeyError as exc:
+        raise HTTPException(404, "profile not found") from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return _profile_list()
+
+
 @router.delete("/{slug}", response_model=schemas.ProfileOut)
 def delete_profile(slug: str):
     reset_engine()

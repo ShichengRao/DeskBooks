@@ -42,6 +42,10 @@ class ProfileActivate(BaseModel):
     slug: str
 
 
+class ProfileRename(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+
+
 class ProfileOut(BaseModel):
     slug: str
     name: str

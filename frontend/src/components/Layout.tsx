@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { NavLink, Outlet } from "react-router";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
 import { api, getTabProfile, PROFILE_GONE_EVENT, setTabProfile } from "../api/client";
 import { Field } from "./Field";
@@ -24,6 +24,7 @@ const tabs: { to: string; label: string; end?: boolean; group?: "view" | "edit" 
 ];
 
 export function Layout() {
+  const queryClient = useQueryClient();
   const [profileEditorOpen, setProfileEditorOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   // The profile this tab is pinned to (per-tab via sessionStorage). Every
@@ -90,6 +91,12 @@ export function Layout() {
       window.location.reload();
     },
   });
+  const renameProfile = useMutation({
+    // Display name only; the slug this window is pinned by doesn't change.
+    mutationFn: (body: { slug: string; name: string }) =>
+      api.patch<ProfileList>(`/api/profiles/${encodeURIComponent(body.slug)}`, { name: body.name }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["profiles"] }),
+  });
 
   const stopApp = async () => {
     if (!confirm("Stop the local app servers?")) return;
@@ -112,11 +119,24 @@ export function Layout() {
     (p) => p.slug === (tabProfile ?? profiles.data?.active_slug),
   );
   const canDeleteProfile = Boolean(profiles.data && profiles.data.profiles.length > 1 && currentProfile);
-  const profileBusy = switchProfile.isPending || createProfile.isPending || duplicateProfile.isPending || deleteProfile.isPending;
+  const profileBusy =
+    switchProfile.isPending ||
+    createProfile.isPending ||
+    duplicateProfile.isPending ||
+    deleteProfile.isPending ||
+    renameProfile.isPending;
   const chooseProfile = (slug: string) => {
     setProfileMenuOpen(false);
     if (!slug || slug === tabProfile) return;
     switchProfile.mutate(slug);
+  };
+  const renameActiveProfile = () => {
+    if (!currentProfile) return;
+    const name = prompt(`Rename profile "${currentProfile.name}" to:`, currentProfile.name);
+    const cleaned = name?.trim();
+    if (!cleaned || cleaned === currentProfile.name) return;
+    setProfileMenuOpen(false);
+    renameProfile.mutate({ slug: currentProfile.slug, name: cleaned });
   };
   const removeActiveProfile = () => {
     if (!currentProfile) return;
@@ -179,6 +199,14 @@ export function Layout() {
                     disabled={profileBusy}
                   >
                     New profile
+                  </button>
+                  <button
+                    type="button"
+                    className="block w-full px-3 py-2 text-left text-xs text-ink-700 hover:bg-ink-50"
+                    onClick={renameActiveProfile}
+                    disabled={!currentProfile || profileBusy}
+                  >
+                    Rename this profile
                   </button>
                   <button
                     type="button"

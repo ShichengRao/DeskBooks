@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 
+import pytest
 from sqlalchemy import select
 
 from app import profiles
@@ -231,3 +232,35 @@ def test_delete_profile_rejects_last_profile(tmp_path, monkeypatch):
         assert "only profile" in str(exc)
     else:
         raise AssertionError("expected ValueError")
+
+
+def test_rename_profile_changes_display_name_only(tmp_path, monkeypatch):
+    monkeypatch.setattr(profiles, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(profiles, "REGISTRY_PATH", tmp_path / "profiles.json")
+    monkeypatch.setattr(profiles, "PROFILES_DIR", tmp_path / "profiles")
+    (tmp_path / "profiles.json").write_text(
+        json.dumps(
+            {
+                "active": "personal",
+                "profiles": [
+                    {"slug": "personal", "name": "Personal", "db_file": "app.db"},
+                    {"slug": "family", "name": "Family", "db_file": "profiles/family.db"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    renamed = profiles.rename_profile("family", "  Shared Household ")
+
+    assert renamed.slug == "family"
+    assert renamed.name == "Shared Household"
+    assert renamed.db_file == "profiles/family.db"
+    listed = {p.slug: p for p in profiles.list_profiles()}
+    assert listed["family"].name == "Shared Household"
+    assert listed["personal"].name == "Personal"
+
+    with pytest.raises(KeyError):
+        profiles.rename_profile("missing", "Nope")
+    with pytest.raises(ValueError):
+        profiles.rename_profile("family", "   ")

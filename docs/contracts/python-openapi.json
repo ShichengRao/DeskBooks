@@ -3052,6 +3052,21 @@
         "title": "ProfileOut",
         "type": "object"
       },
+      "ProfileRename": {
+        "properties": {
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "ProfileRename",
+        "type": "object"
+      },
       "ReconcileIn": {
         "properties": {
           "account_id": {
@@ -7843,6 +7858,57 @@
           }
         },
         "summary": "Delete Profile",
+        "tags": [
+          "profiles"
+        ]
+      },
+      "patch": {
+        "description": "Rename a profile's display name. The slug \u2014 which window pins and\nrequest routing key on \u2014 and its database file stay unchanged.",
+        "operationId": "rename_profile_api_profiles__slug__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfileRename"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rename Profile",
         "tags": [
           "profiles"
         ]
