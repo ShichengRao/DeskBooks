@@ -1,5 +1,7 @@
 import clsx from "clsx";
-import type { TransactionKind } from "../api/types";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "../api/client";
+import type { KindSettings, TransactionKind } from "../api/types";
 import { transactionKindLabel } from "./labels";
 
 export const ALL_KINDS: TransactionKind[] = [
@@ -32,4 +34,17 @@ export const KIND_TONES: Record<string, string> = {
 
 export function KindPill({ kind }: { kind: TransactionKind }) {
   return <span className={clsx("pill", KIND_TONES[kind])}>{transactionKindLabel(kind)}</span>;
+}
+
+// Kinds minus the ones hidden on the Organize tab. Pass the currently
+// selected value so an edit form can still show a row's hidden kind.
+export function useVisibleKinds(current?: TransactionKind | ""): TransactionKind[] {
+  const settings = useQuery({
+    queryKey: ["kind-settings"],
+    queryFn: () => api.get<KindSettings>("/api/settings/kinds"),
+  });
+  const hidden = new Set(settings.data?.hidden ?? []);
+  const visible = ALL_KINDS.filter((kind) => !hidden.has(kind));
+  if (current && !visible.includes(current)) visible.push(current);
+  return visible;
 }

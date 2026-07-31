@@ -1085,6 +1085,52 @@
         "title": "CategoryKind",
         "type": "string"
       },
+      "CategoryMergeIn": {
+        "properties": {
+          "target_id": {
+            "title": "Target Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "target_id"
+        ],
+        "title": "CategoryMergeIn",
+        "type": "object"
+      },
+      "CategoryMergeResult": {
+        "properties": {
+          "budgets_moved": {
+            "title": "Budgets Moved",
+            "type": "integer"
+          },
+          "rules_moved": {
+            "title": "Rules Moved",
+            "type": "integer"
+          },
+          "source_id": {
+            "title": "Source Id",
+            "type": "integer"
+          },
+          "target_id": {
+            "title": "Target Id",
+            "type": "integer"
+          },
+          "transactions_moved": {
+            "title": "Transactions Moved",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "source_id",
+          "target_id",
+          "transactions_moved",
+          "rules_moved",
+          "budgets_moved"
+        ],
+        "title": "CategoryMergeResult",
+        "type": "object"
+      },
       "CategoryOut": {
         "properties": {
           "archived": {
@@ -1210,6 +1256,34 @@
           }
         },
         "title": "CategoryUpdate",
+        "type": "object"
+      },
+      "CategoryUsage": {
+        "properties": {
+          "budgets": {
+            "title": "Budgets",
+            "type": "integer"
+          },
+          "category_id": {
+            "title": "Category Id",
+            "type": "integer"
+          },
+          "rules": {
+            "title": "Rules",
+            "type": "integer"
+          },
+          "transactions": {
+            "title": "Transactions",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "category_id",
+          "transactions",
+          "rules",
+          "budgets"
+        ],
+        "title": "CategoryUsage",
         "type": "object"
       },
       "FireProjection": {
@@ -2561,6 +2635,46 @@
           "path"
         ],
         "title": "JournalImportPreviewRequest",
+        "type": "object"
+      },
+      "KindSettingsIn": {
+        "properties": {
+          "hidden": {
+            "items": {
+              "$ref": "#/components/schemas/TransactionKind"
+            },
+            "title": "Hidden",
+            "type": "array"
+          }
+        },
+        "required": [
+          "hidden"
+        ],
+        "title": "KindSettingsIn",
+        "type": "object"
+      },
+      "KindSettingsOut": {
+        "properties": {
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Counts",
+            "type": "object"
+          },
+          "hidden": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Hidden",
+            "type": "array"
+          }
+        },
+        "required": [
+          "hidden",
+          "counts"
+        ],
+        "title": "KindSettingsOut",
         "type": "object"
       },
       "MonthlyPoint": {
@@ -6479,6 +6593,32 @@
         ]
       }
     },
+    "/api/categories/usage": {
+      "get": {
+        "description": "Reference counts per category (archived included), so the UI can\nwarn before archiving something that's still in use.",
+        "operationId": "category_usage_api_categories_usage_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CategoryUsage"
+                  },
+                  "title": "Response Category Usage Api Categories Usage Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Category Usage",
+        "tags": [
+          "categories"
+        ]
+      }
+    },
     "/api/categories/{category_id}": {
       "delete": {
         "operationId": "delete_category_api_categories__category_id__delete",
@@ -6564,6 +6704,59 @@
           }
         },
         "summary": "Update Category",
+        "tags": [
+          "categories"
+        ]
+      }
+    },
+    "/api/categories/{category_id}/merge": {
+      "post": {
+        "description": "Move every reference (transactions, rules, budgets) from this\ncategory onto the target, then archive this one. The one-click way to\ncollapse a redundant category without touching rows by hand.",
+        "operationId": "merge_category_api_categories__category_id__merge_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "category_id",
+            "required": true,
+            "schema": {
+              "title": "Category Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CategoryMergeIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoryMergeResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Merge Category",
         "tags": [
           "categories"
         ]
@@ -8022,6 +8215,67 @@
         "summary": "Update Rule",
         "tags": [
           "rules"
+        ]
+      }
+    },
+    "/api/settings/kinds": {
+      "get": {
+        "description": "Which transaction kinds are hidden from pickers, plus how many\nrows currently carry each kind (so the UI can warn).",
+        "operationId": "get_kind_settings_api_settings_kinds_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KindSettingsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Kind Settings",
+        "tags": [
+          "settings"
+        ]
+      },
+      "put": {
+        "operationId": "put_kind_settings_api_settings_kinds_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KindSettingsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KindSettingsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Kind Settings",
+        "tags": [
+          "settings"
         ]
       }
     },

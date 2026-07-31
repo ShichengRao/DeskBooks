@@ -228,11 +228,23 @@ def budget_report(
             if (target := rollup_target_for(month, category.id)) is not None
         ]
         target = sum(row_targets, Decimal("0")) if row_targets else None
+        # Archived categories only earn a row while they still have
+        # something to show in the window (history must not vanish, but an
+        # empty archived category is just noise).
+        if (
+            category.archived
+            and not transaction_count
+            and actual == 0
+            and target is None
+            and default is None
+            and override is None
+        ):
+            continue
         parent = category_by_id.get(category.parent_id) if category.parent_id else None
         rows.append(
             {
                 "category_id": category.id,
-                "category_name": category.name,
+                "category_name": category.name + (" (archived)" if category.archived else ""),
                 "parent_id": category.parent_id,
                 "parent_name": parent.name if parent else None,
                 "depth": depth(category),

@@ -135,6 +135,34 @@ class CategoryIn(BaseModel):
     archived: bool = False
 
 
+class CategoryMergeIn(BaseModel):
+    target_id: int
+
+
+class CategoryMergeResult(BaseModel):
+    source_id: int
+    target_id: int
+    transactions_moved: int
+    rules_moved: int
+    budgets_moved: int
+
+
+class CategoryUsage(BaseModel):
+    category_id: int
+    transactions: int
+    rules: int
+    budgets: int
+
+
+class KindSettingsOut(BaseModel):
+    hidden: list[str]
+    counts: dict[str, int]
+
+
+class KindSettingsIn(BaseModel):
+    hidden: list[TransactionKind]
+
+
 class CategoryUpdate(BaseModel):
     name: str | None = None
     parent_id: int | None = None

@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { api, qs } from "../api/client";
 import { invalidateTxQueries } from "../api/invalidate";
 import { Field } from "../components/Field";
 import { SidePanel } from "../components/SidePanel";
 import { TransactionsTable } from "../components/TransactionsTable";
-import { ALL_KINDS } from "../lib/kinds";
+import { ALL_KINDS, useVisibleKinds } from "../lib/kinds";
 import type { Account, AccountCategory, Category, Transaction, TransactionKind } from "../api/types";
 import { accountCategoryLabel, transactionKindLabel } from "../lib/labels";
 import { currency } from "../lib/fmt";
@@ -202,7 +202,7 @@ type TransactionFormBody = {
 
 function useTransactionPageData(filters: TransactionFilters, page: number, pageSize: number) {
   const accounts = useQuery({ queryKey: ["accounts"], queryFn: () => api.get<Account[]>("/api/accounts") });
-  const categories = useQuery({ queryKey: ["categories"], queryFn: () => api.get<Category[]>("/api/categories") });
+  const categories = useQuery({ queryKey: ["categories-all"], queryFn: () => api.get<Category[]>("/api/categories?include_archived=true") });
   const apiArgs = {
     start: filters.start || undefined,
     end: filters.end || undefined,
@@ -232,7 +232,7 @@ function useTransactionPageData(filters: TransactionFilters, page: number, pageS
     [categories.data],
   );
   const categoryGroups = useMemo(() => {
-    const cats = categories.data ?? [];
+    const cats = (categories.data ?? []).filter((c) => !c.archived);
     const parents = cats.filter((c) => c.parent_id === null);
     return parents.map((group) => ({ group, leaves: cats.filter((c) => c.parent_id === group.id) }));
   }, [categories.data]);
@@ -361,6 +361,7 @@ function TransactionFiltersCard({
   categories: Category[];
   onChange: (filters: TransactionFilters) => void;
 }) {
+  const visibleKinds = useVisibleKinds();
   const update = (patch: Partial<TransactionFilters>) => onChange({ ...filters, ...patch });
 
   return (
@@ -400,8 +401,16 @@ function TransactionFiltersCard({
         <Field label="Category">
           <select className="input" value={filters.category_id} onChange={(e) => update({ category_id: e.target.value })}>
             <option value="">All categories</option>
-            {categories.map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
+            {/* Parents stay selectable: picking Housing includes its
+                subcategories' transactions (the backend expands to
+                descendants). */}
+            {categories.filter((c) => !c.archived && c.parent_id === null).map((parent) => (
+              <Fragment key={parent.id}>
+                <option value={parent.id}>{parent.name}</option>
+                {categories.filter((c) => !c.archived && c.parent_id === parent.id).map((child) => (
+                  <option key={child.id} value={child.id}>{`\u00A0\u00A0\u00A0\u00B7 ${child.name}`}</option>
+                ))}
+              </Fragment>
             ))}
           </select>
         </Field>
@@ -412,7 +421,7 @@ function TransactionFiltersCard({
             onChange={(e) => update({ kind: e.target.value ? [e.target.value as TransactionKind] : [] })}
           >
             <option value="">All kinds</option>
-            {ALL_KINDS.map((k) => (
+            {visibleKinds.map((k) => (
               <option key={k} value={k}>{transactionKindLabel(k)}</option>
             ))}
           </select>
@@ -459,6 +468,7 @@ function BulkTransactionActions({
   onMarkSplit: () => void;
   onClear: () => void;
 }) {
+  const visibleKinds = useVisibleKinds();
   if (selectedIds.length === 0) return null;
 
   return (
@@ -474,9 +484,18 @@ function BulkTransactionActions({
         defaultValue=""
       >
         <option value="" disabled>Bulk recategorize as…</option>
-        {categories.map((c) => (
-          <option key={c.id} value={c.id}>{c.name} ({transactionKindLabel(c.kind)})</option>
-        ))}
+        {categories.filter((c) => !c.archived && c.parent_id === null).map((parent) => {
+          const leaves = categories.filter((c) => !c.archived && c.parent_id === parent.id);
+          return leaves.length === 0 ? (
+            <option key={parent.id} value={parent.id}>{parent.name} ({transactionKindLabel(parent.kind)})</option>
+          ) : (
+            <optgroup key={parent.id} label={parent.name}>
+              {leaves.map((l) => (
+                <option key={l.id} value={l.id}>{l.name} ({transactionKindLabel(l.kind)})</option>
+              ))}
+            </optgroup>
+          );
+        })}
       </select>
       <select
         className="input max-w-xs"
@@ -488,7 +507,7 @@ function BulkTransactionActions({
         defaultValue=""
       >
         <option value="" disabled>Bulk set kind…</option>
-        {ALL_KINDS.map((k) => (
+        {visibleKinds.map((k) => (
           <option key={k} value={k}>{transactionKindLabel(k)}</option>
         ))}
       </select>
@@ -713,6 +732,7 @@ function TransactionEditor({
     is_excluded_from_totals: tx?.is_excluded_from_totals ?? false,
     notes: tx?.notes ?? "",
   });
+  const formKinds = useVisibleKinds(form.kind as TransactionKind);
   const categoryById = useMemo(
     () => Object.fromEntries(categories.map((c) => [c.id, c])),
     [categories],
@@ -788,7 +808,7 @@ function TransactionEditor({
               value={form.kind}
               onChange={(e) => setForm({ ...form, kind: e.target.value as TransactionKind })}
             >
-              {ALL_KINDS.map((k) => (
+              {formKinds.map((k) => (
                 <option key={k} value={k}>{transactionKindLabel(k)}</option>
               ))}
             </select>

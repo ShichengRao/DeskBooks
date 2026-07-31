@@ -176,3 +176,27 @@ def test_budget_report_applies_defaults_and_monthly_overrides_to_actual_spending
     assert range_result["focus_month"] is None
     _assert_named_values(range_rows, RANGE_ROW_TOTALS)
     _assert_values(range_result, FOCUS_REPORT_TOTALS)
+
+
+def test_budget_report_hides_archived_categories_without_activity(db):
+    account = _checking_account(db)
+    live = _category(db, "Food")
+    empty_archived = _category(db, "Old Hobby")
+    empty_archived.archived = True
+    spent_archived = _category(db, "Legacy Dining")
+    spent_archived.archived = True
+    planned_archived = _category(db, "Legacy Plan")
+    planned_archived.archived = True
+    _expense(db, account, live, date(2026, 6, 3), "-10.00")
+    _expense(db, account, spent_archived, date(2026, 6, 4), "-25.00")
+    db.add(BudgetDefault(category_id=planned_archived.id, amount=Decimal("40.00")))
+    db.commit()
+
+    result = budget_report(db, date(2026, 6, 1), date(2026, 6, 30))
+    rows = {row["category_name"]: row for row in result["rows"]}
+
+    assert "Old Hobby" not in rows
+    assert "Old Hobby (archived)" not in rows
+    assert rows["Legacy Dining (archived)"]["actual_amount"] == Decimal("-25.00") * -1
+    assert rows["Legacy Plan (archived)"]["default_amount"] == Decimal("40.00")
+    assert "Food" in rows

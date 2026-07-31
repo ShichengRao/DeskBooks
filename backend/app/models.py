@@ -379,6 +379,19 @@ class JournalEntryRevision(RevisionMetadataMixin, Base):
     entry: Mapped[JournalEntry] = relationship(back_populates="revisions")
 
 
+class AppSettings(Base):
+    """Singleton row for small app-wide UI preferences.
+
+    hidden_kinds: TransactionKind values removed from pickers and filters.
+    Hiding is cosmetic — existing rows keep their kind and analytics still
+    count them, which is why the UI warns when rows exist."""
+
+    __tablename__ = "app_settings"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    hidden_kinds: Mapped[list | None] = mapped_column(JSON, default=list)
+
+
 class FireSettings(Base):
     """Singleton row holding the user's FIRE-calculator inputs.
 
