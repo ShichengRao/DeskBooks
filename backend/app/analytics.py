@@ -709,9 +709,11 @@ def cashflow_sankey(db: Session, start: date, end: date, label: str) -> dict:
             name = "Refunds" if kind == models.TransactionKind.refund else None
             if name is None and tx.category_id and tx.category_id in group_map:
                 name = group_map[tx.category_id][0]
-            income_by_source[name or "Other income"] += amount
+            # Distinct from any real category ("Other Income" exists) so the
+            # fallback bucket can't masquerade as a category node.
+            income_by_source[name or "Uncategorized income"] += amount
         elif amount > 0:
-            income_by_source["Other income"] += amount
+            income_by_source["Uncategorized income"] += amount
         else:
             group = "Not yet categorized"
             if tx.category_id and tx.category_id in group_map:
