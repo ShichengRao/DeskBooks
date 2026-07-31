@@ -826,3 +826,6 @@ class RecurringMerchant(BaseModel):
     total_amount: float
     last_seen: _date
     cadence_days_estimate: float | None
+    # Majority of the merchant's rows are spending (expense/donation/tax or
+    # negative uncategorized) — the UI splits the table on this.
+    is_expense: bool

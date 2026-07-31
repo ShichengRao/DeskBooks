@@ -6,7 +6,7 @@ from decimal import Decimal
 
 import pytest
 
-from app.analytics import cashflow_sankey, sankey_for_period
+from app.analytics import cashflow_sankey, recurring_merchants, sankey_for_period
 from app.models import (
     Account,
     AccountBalance,
@@ -180,6 +180,7 @@ def test_cashflow_sankey_excludes_transfers_and_balances_residual(db):
         _TransactionSeed(None, date(2026, 5, 21), "-1000.00", TransactionKind.investment, "Brokerage Buy"),
         _TransactionSeed(None, date(2026, 5, 22), "25.00", TransactionKind.refund, "Store Refund"),
         _TransactionSeed(None, date(2026, 5, 23), "-40.00", TransactionKind.uncategorized, "Mystery"),
+        _TransactionSeed(None, date(2026, 5, 24), "60.00", TransactionKind.uncategorized, "Mystery In"),
     ]:
         _transaction(db, checking, seed)
     db.commit()
@@ -193,8 +194,51 @@ def test_cashflow_sankey_excludes_transfers_and_balances_residual(db):
     assert links["Spending"] == 140.0  # groceries 100 + uncategorized 40
     assert links["Food"] == 100.0  # rolled up to the parent category
     assert links["Not yet categorized"] == 40.0
+    # unknown inflows get a label no real category can collide with
+    # (the default taxonomy has an "Other Income" category)
+    assert links["Uncategorized income"] == 60.0
+    assert "Other income" not in links
     assert links["Donations"] == 50.0
     assert links["Taxes"] == 500.0
-    # residual: 5025 in - 140 spend - 50 - 500 - 1000 invested = 3335
-    assert links["Cash build-up"] == 3335.0
+    # residual: 5085 in - 140 spend - 50 - 500 - 1000 invested = 3395
+    assert links["Cash build-up"] == 3395.0
     assert "To Savings" not in links and "Card Payment" not in links
+
+
+def test_recurring_merchants_split_spending_from_money_movement(db):
+    checking = _account(db, "Checking", AccountCategory.bank, AccountType.checking)
+    food = _category(db, "Food", CategoryKind.expense)
+
+    for day, amount, kind, merchant in [
+        (1, "-20.00", TransactionKind.expense, "Corner Deli"),
+        (8, "-22.00", TransactionKind.expense, "Corner Deli"),
+        (15, "-21.00", TransactionKind.expense, "Corner Deli"),
+        (2, "-500.00", TransactionKind.transfer, "Bank Transfer"),
+        (9, "-500.00", TransactionKind.transfer, "Bank Transfer"),
+        (16, "-500.00", TransactionKind.transfer, "Bank Transfer"),
+        (3, "12.00", TransactionKind.income, "Interest Paid"),
+        (10, "12.00", TransactionKind.income, "Interest Paid"),
+        (17, "12.00", TransactionKind.income, "Interest Paid"),
+        # negative uncategorized counts as spending
+        (4, "-9.00", TransactionKind.uncategorized, "Mystery Cafe"),
+        (11, "-9.00", TransactionKind.uncategorized, "Mystery Cafe"),
+        (18, "-9.00", TransactionKind.uncategorized, "Mystery Cafe"),
+    ]:
+        _transaction(
+            db,
+            checking,
+            _TransactionSeed(
+                food if kind == TransactionKind.expense else None,
+                date(2026, 6, day),
+                amount,
+                kind,
+                merchant,
+            ),
+        )
+    db.commit()
+
+    rows = {row["merchant"]: row for row in recurring_merchants(db, min_occurrences=3)}
+    assert rows["Corner Deli"]["is_expense"] is True
+    assert rows["Mystery Cafe"]["is_expense"] is True
+    assert rows["Bank Transfer"]["is_expense"] is False
+    assert rows["Interest Paid"]["is_expense"] is False

@@ -453,11 +453,39 @@ function RecurringMerchantsPanel({
       {loading ? (
         <div className="text-sm text-ink-500 italic">Loading recurring merchants…</div>
       ) : merchants.length ? (
-        <RecurringMerchantsTable merchants={merchants} />
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+          <RecurringMerchantsGroup
+            title="Recurring expenses"
+            merchants={merchants.filter((merchant) => merchant.is_expense)}
+          />
+          <RecurringMerchantsGroup
+            title="Recurring transfers & income"
+            merchants={merchants.filter((merchant) => !merchant.is_expense)}
+          />
+        </div>
       ) : (
         <div className="text-sm text-ink-500 italic">
           {recurringEmptyMessage(hasAnyTransactions, Boolean(start || end))}
         </div>
+      )}
+    </div>
+  );
+}
+
+function RecurringMerchantsGroup({
+  title,
+  merchants,
+}: {
+  title: string;
+  merchants: RecurringMerchant[];
+}) {
+  return (
+    <div>
+      <div className="label mb-2">{title}</div>
+      {merchants.length ? (
+        <RecurringMerchantsTable merchants={merchants} />
+      ) : (
+        <div className="text-sm text-ink-500 italic">None in this range.</div>
       )}
     </div>
   );

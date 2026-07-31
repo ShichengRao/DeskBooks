@@ -493,4 +493,5 @@ export interface RecurringMerchant {
   total_amount: number;
   last_seen: string;
   cadence_days_estimate: number | null;
+  is_expense: boolean;
 }

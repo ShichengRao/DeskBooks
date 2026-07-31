@@ -13,6 +13,10 @@ const GAP = 12;
 const PAD_X = 8;
 const LABEL_W = 170;
 const MIN_H = 4;
+// A $5 flow at typical scale is sub-pixel; every ribbon gets at least this
+// much so small flows stay visible (faces squeeze proportionally if the
+// boosted ribbons outgrow their node).
+const MIN_RIBBON = 2;
 const INK = "#111827";
 const INK2 = "#6b7280";
 const SURFACE = "#ffffff";
@@ -168,25 +172,41 @@ export function SankeySvg({
       const nb = nodes[data.links[b][side]];
       return na.y - nb.y || na.x - nb.x;
     };
+    // Every ribbon is at least MIN_RIBBON tall so tiny flows stay visible.
+    // Boosted heights can outgrow a node face, so each face squeezes its
+    // ribbons proportionally back to the node height; the two ends of a
+    // ribbon may then differ slightly and the path tapers between them.
+    const baseH = data.links.map((link) => Math.max(link.value * scale, MIN_RIBBON));
     const y0s = new Array(data.links.length).fill(0);
     const y1s = new Array(data.links.length).fill(0);
+    const h0s = new Array(data.links.length).fill(0);
+    const h1s = new Array(data.links.length).fill(0);
     nodes.forEach((node, i) => {
+      const out = [...outIdx[i]].sort(byCounterpart("target"));
+      const outTotal = out.reduce((s, li) => s + baseH[li], 0);
+      const outSqueeze = outTotal > node.h ? node.h / outTotal : 1;
       let y = node.y;
-      for (const li of [...outIdx[i]].sort(byCounterpart("target"))) {
+      for (const li of out) {
+        h0s[li] = baseH[li] * outSqueeze;
         y0s[li] = y;
-        y += data.links[li].value * scale;
+        y += h0s[li];
       }
+      const into = [...inIdx[i]].sort(byCounterpart("source"));
+      const inTotal = into.reduce((s, li) => s + baseH[li], 0);
+      const inSqueeze = inTotal > node.h ? node.h / inTotal : 1;
       y = node.y;
-      for (const li of [...inIdx[i]].sort(byCounterpart("source"))) {
+      for (const li of into) {
+        h1s[li] = baseH[li] * inSqueeze;
         y1s[li] = y;
-        y += data.links[li].value * scale;
+        y += h1s[li];
       }
     });
     const ribbons = data.links.map((link, i) => ({
       link,
       s: nodes[link.source],
       t: nodes[link.target],
-      h: link.value * scale,
+      h0: h0s[i],
+      h1: h1s[i],
       y0: y0s[i],
       y1: y1s[i],
     }));
@@ -304,7 +324,7 @@ export function SankeySvg({
       role="img"
       aria-label="Sankey diagram"
     >
-      {layout.ribbons.map(({ link, s, t, h, y0, y1 }, i) => {
+      {layout.ribbons.map(({ link, s, t, h0, h1, y0, y1 }, i) => {
         const x0 = s.x + NODE_W;
         const x1 = t.x;
         const mx = (x0 + x1) / 2;
@@ -312,7 +332,7 @@ export function SankeySvg({
         return (
           <path
             key={`ribbon-${i}`}
-            d={`M${x0},${y0} C${mx},${y0} ${mx},${y1} ${x1},${y1} L${x1},${y1 + h} C${mx},${y1 + h} ${mx},${y0 + h} ${x0},${y0 + h} Z`}
+            d={`M${x0},${y0} C${mx},${y0} ${mx},${y1} ${x1},${y1} L${x1},${y1 + h1} C${mx},${y1 + h1} ${mx},${y0 + h0} ${x0},${y0 + h0} Z`}
             fill={color}
             opacity={0.32}
             stroke={SURFACE}

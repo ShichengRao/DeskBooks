@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.orm import Session
 
 from . import models
@@ -709,9 +709,11 @@ def cashflow_sankey(db: Session, start: date, end: date, label: str) -> dict:
             name = "Refunds" if kind == models.TransactionKind.refund else None
             if name is None and tx.category_id and tx.category_id in group_map:
                 name = group_map[tx.category_id][0]
-            income_by_source[name or "Other income"] += amount
+            # Distinct from any real category ("Other Income" exists) so the
+            # fallback bucket can't masquerade as a category node.
+            income_by_source[name or "Uncategorized income"] += amount
         elif amount > 0:
-            income_by_source["Other income"] += amount
+            income_by_source["Uncategorized income"] += amount
         else:
             group = "Not yet categorized"
             if tx.category_id and tx.category_id in group_map:
@@ -822,6 +824,27 @@ def recurring_merchants(
         where.append(models.Transaction.date >= start)
     if end:
         where.append(models.Transaction.date <= end)
+    # Spending-side rows vs money movement / income, so the UI can split
+    # the table (interest and transfers next to restaurants read wrong).
+    spendish = case(
+        (
+            or_(
+                models.Transaction.kind.in_(
+                    [
+                        models.TransactionKind.expense,
+                        models.TransactionKind.donation,
+                        models.TransactionKind.tax,
+                    ]
+                ),
+                and_(
+                    models.Transaction.kind == models.TransactionKind.uncategorized,
+                    models.Transaction.amount < 0,
+                ),
+            ),
+            1,
+        ),
+        else_=0,
+    )
     stmt = (
         select(
             key,
@@ -830,6 +853,7 @@ def recurring_merchants(
             func.sum(models.Transaction.amount).label("total_amount"),
             func.max(models.Transaction.date).label("last_seen"),
             func.min(models.Transaction.date).label("first_seen"),
+            func.sum(spendish).label("spend_n"),
         )
         .where(*where)
         .group_by(key)
@@ -837,7 +861,7 @@ def recurring_merchants(
         .order_by(func.count(models.Transaction.id).desc())
     )
     out = []
-    for merchant, n, avg_amount, total_amount, last_seen, first_seen in db.execute(stmt):
+    for merchant, n, avg_amount, total_amount, last_seen, first_seen, spend_n in db.execute(stmt):
         span_days = (last_seen - first_seen).days if last_seen and first_seen else 0
         cadence = (span_days / (n - 1)) if n > 1 and span_days > 0 else None
         out.append(
@@ -848,6 +872,8 @@ def recurring_merchants(
                 "total_amount": Decimal(str(total_amount)).quantize(Decimal("0.01")) if total_amount is not None else Decimal("0"),
                 "last_seen": last_seen,
                 "cadence_days_estimate": cadence,
+                # majority vote; ties count as spending
+                "is_expense": int(spend_n or 0) * 2 >= int(n),
             }
         )
     return out
