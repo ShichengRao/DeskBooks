@@ -9,6 +9,7 @@ import { Planning } from "./pages/Planning";
 import { Budgets } from "./pages/Budgets";
 import { Import } from "./pages/Import";
 import { Rules } from "./pages/Rules";
+import { Organize } from "./pages/Organize";
 import { Reconcile } from "./pages/Reconcile";
 import { Backups } from "./pages/Backups";
 
@@ -43,6 +44,7 @@ export function App() {
           <Route path="import" element={<Import />} />
           <Route path="reconcile" element={<Reconcile />} />
           <Route path="rules" element={<Rules />} />
+          <Route path="organize" element={<Organize />} />
           <Route path="backups" element={<Backups />} />
         </Route>
       </Routes>

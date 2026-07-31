@@ -5,7 +5,7 @@ import { api } from "../api/client";
 import { invalidateTxQueries } from "../api/invalidate";
 import { Field } from "../components/Field";
 import { SidePanel } from "../components/SidePanel";
-import { ALL_KINDS } from "../lib/kinds";
+import { ALL_KINDS, useVisibleKinds } from "../lib/kinds";
 import type { Account, Category, Rule, RuleCoverage, RuleProposal, RuleProposalBacktestInput, TransactionKind } from "../api/types";
 import { transactionKindLabel } from "../lib/labels";
 import { currency, dateLabel } from "../lib/fmt";
@@ -690,6 +690,7 @@ function RuleEditor({
       set_category_id: null,
     },
   );
+  const ruleKinds = useVisibleKinds(r.set_kind ?? undefined);
 
   return (
     <SidePanel
@@ -726,7 +727,7 @@ function RuleEditor({
           <Field label="Set: kind">
             <select className="input" value={r.set_kind ?? ""} onChange={(e) => setR({ ...r, set_kind: e.target.value as TransactionKind || null })}>
               <option value="">—</option>
-              {ALL_KINDS.map((k) => (<option key={k} value={k}>{transactionKindLabel(k)}</option>))}
+              {ruleKinds.map((k) => (<option key={k} value={k}>{transactionKindLabel(k)}</option>))}
             </select>
           </Field>
           <Field label="Set: merchant override"><input className="input" value={r.set_merchant ?? ""} onChange={(e) => setR({ ...r, set_merchant: e.target.value || null })} /></Field>

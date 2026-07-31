@@ -213,6 +213,18 @@ export interface RuleCoverage {
   labeled_accuracy: number | null;
 }
 
+export interface CategoryUsage {
+  category_id: number;
+  transactions: number;
+  rules: number;
+  budgets: number;
+}
+
+export interface KindSettings {
+  hidden: string[];
+  counts: Record<string, number>;
+}
+
 export interface AccountBalance {
   account_id: number;
   balance: string | null;

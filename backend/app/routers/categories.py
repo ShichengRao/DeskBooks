@@ -1,13 +1,42 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
 from .common import DbSession, add_and_refresh, apply_patch, commit_and_refresh, get_or_404
 
 router = APIRouter(prefix="/api/categories", tags=["categories"])
+
+
+@router.get("/usage", response_model=list[schemas.CategoryUsage])
+def category_usage(db: DbSession):
+    """Reference counts per category (archived included), so the UI can
+    warn before archiving something that's still in use."""
+
+    def counts(column) -> dict[int, int]:
+        return {
+            cid: int(n)
+            for cid, n in db.execute(
+                select(column, func.count()).where(column.is_not(None)).group_by(column)
+            )
+        }
+
+    tx = counts(models.Transaction.category_id)
+    rules = counts(models.Rule.set_category_id)
+    budgets = counts(models.BudgetDefault.category_id)
+    for cid, n in counts(models.BudgetOverride.category_id).items():
+        budgets[cid] = budgets.get(cid, 0) + n
+    return [
+        schemas.CategoryUsage(
+            category_id=cid,
+            transactions=tx.get(cid, 0),
+            rules=rules.get(cid, 0),
+            budgets=budgets.get(cid, 0),
+        )
+        for cid in db.scalars(select(models.Category.id))
+    ]
 
 
 @router.get("", response_model=list[schemas.CategoryOut])
@@ -36,6 +65,19 @@ def _validate_parent(db: Session, *, category_id: int | None, parent_id: int | N
             raise HTTPException(400, "category hierarchy contains a cycle")
         seen.add(current.id)
         current = db.get(models.Category, current.parent_id) if current.parent_id else None
+
+    # One level of nesting max: the parent must be top-level, and a
+    # category that has children of its own can't become someone's child.
+    if parent.parent_id is not None:
+        raise HTTPException(400, "only one level of nesting: that parent is itself a subcategory")
+    if category_id is not None:
+        has_children = db.scalar(
+            select(func.count())
+            .select_from(models.Category)
+            .where(models.Category.parent_id == category_id)
+        )
+        if has_children:
+            raise HTTPException(400, "category has subcategories of its own; move them first")
 
 
 @router.post("", response_model=schemas.CategoryOut)

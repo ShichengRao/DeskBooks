@@ -21,6 +21,7 @@ from .routers import (
     journal,
     profiles,
     rules,
+    settings,
     snapshots,
     transactions,
 )
@@ -86,6 +87,7 @@ app.include_router(budgets.router)
 app.include_router(categories.router)
 app.include_router(transactions.router)
 app.include_router(rules.router)
+app.include_router(settings.router)
 app.include_router(snapshots.router)
 app.include_router(goals.router)
 app.include_router(journal.router)

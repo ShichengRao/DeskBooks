@@ -1212,6 +1212,34 @@
         "title": "CategoryUpdate",
         "type": "object"
       },
+      "CategoryUsage": {
+        "properties": {
+          "budgets": {
+            "title": "Budgets",
+            "type": "integer"
+          },
+          "category_id": {
+            "title": "Category Id",
+            "type": "integer"
+          },
+          "rules": {
+            "title": "Rules",
+            "type": "integer"
+          },
+          "transactions": {
+            "title": "Transactions",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "category_id",
+          "transactions",
+          "rules",
+          "budgets"
+        ],
+        "title": "CategoryUsage",
+        "type": "object"
+      },
       "FireProjection": {
         "properties": {
           "current_by_category": {
@@ -2561,6 +2589,46 @@
           "path"
         ],
         "title": "JournalImportPreviewRequest",
+        "type": "object"
+      },
+      "KindSettingsIn": {
+        "properties": {
+          "hidden": {
+            "items": {
+              "$ref": "#/components/schemas/TransactionKind"
+            },
+            "title": "Hidden",
+            "type": "array"
+          }
+        },
+        "required": [
+          "hidden"
+        ],
+        "title": "KindSettingsIn",
+        "type": "object"
+      },
+      "KindSettingsOut": {
+        "properties": {
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Counts",
+            "type": "object"
+          },
+          "hidden": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Hidden",
+            "type": "array"
+          }
+        },
+        "required": [
+          "hidden",
+          "counts"
+        ],
+        "title": "KindSettingsOut",
         "type": "object"
       },
       "MonthlyPoint": {
@@ -6474,6 +6542,32 @@
         ]
       }
     },
+    "/api/categories/usage": {
+      "get": {
+        "description": "Reference counts per category (archived included), so the UI can\nwarn before archiving something that's still in use.",
+        "operationId": "category_usage_api_categories_usage_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CategoryUsage"
+                  },
+                  "title": "Response Category Usage Api Categories Usage Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Category Usage",
+        "tags": [
+          "categories"
+        ]
+      }
+    },
     "/api/categories/{category_id}": {
       "delete": {
         "operationId": "delete_category_api_categories__category_id__delete",
@@ -8017,6 +8111,67 @@
         "summary": "Update Rule",
         "tags": [
           "rules"
+        ]
+      }
+    },
+    "/api/settings/kinds": {
+      "get": {
+        "description": "Which transaction kinds are hidden from pickers, plus how many\nrows currently carry each kind (so the UI can warn).",
+        "operationId": "get_kind_settings_api_settings_kinds_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KindSettingsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Kind Settings",
+        "tags": [
+          "settings"
+        ]
+      },
+      "put": {
+        "operationId": "put_kind_settings_api_settings_kinds_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KindSettingsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KindSettingsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Kind Settings",
+        "tags": [
+          "settings"
         ]
       }
     },
