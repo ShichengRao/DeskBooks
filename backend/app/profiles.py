@@ -197,6 +197,21 @@ def delete_profile(slug: str) -> ProfileInfo:
     return deleted
 
 
+def rename_profile(slug: str, name: str) -> ProfileInfo:
+    # Display name only: the slug (which window pins and request routing
+    # key on) and the database file both stay put.
+    cleaned = name.strip()
+    if not cleaned:
+        raise ValueError("profile name cannot be empty")
+    registry = _read_registry()
+    row = next((r for r in registry["profiles"] if r.get("slug") == slug), None)
+    if row is None:
+        raise KeyError(slug)
+    row["name"] = cleaned
+    _write_registry(registry)
+    return _profile_from_row(row, str(registry.get("active") or ""))
+
+
 def set_active_profile(slug: str) -> ProfileInfo:
     registry = _read_registry()
     for row in registry["profiles"]:
