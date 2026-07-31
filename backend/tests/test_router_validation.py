@@ -274,3 +274,42 @@ def test_kind_settings_roundtrip_and_guard(db):
             schemas.KindSettingsIn(hidden=[TransactionKind.uncategorized]), db
         )
     assert guarded.value.status_code == 400
+
+
+def test_category_merge_moves_references_and_archives_source(db):
+    from app.models import Rule
+
+    account = _account(db)
+    source = _category(db, "Health")
+    target = _category(db, "Health & Wellness")
+    other_kind = Category(name="Salary", kind=CategoryKind.income)
+    db.add(other_kind)
+    db.add(
+        Transaction(
+            account_id=account.id,
+            date=date(2026, 6, 1),
+            description_raw="CLINIC",
+            amount=Decimal("-50.00"),
+            category_id=source.id,
+            kind=TransactionKind.expense,
+        )
+    )
+    db.add(Rule(name="Clinic", match_description_pattern="Clinic", set_category_id=source.id))
+    db.flush()
+    db.commit()
+
+    with pytest.raises(HTTPException) as selfmerge:
+        categories.merge_category(source.id, schemas.CategoryMergeIn(target_id=source.id), db)
+    assert selfmerge.value.status_code == 400
+
+    with pytest.raises(HTTPException) as kinds:
+        categories.merge_category(source.id, schemas.CategoryMergeIn(target_id=other_kind.id), db)
+    assert kinds.value.status_code == 400
+    assert "kinds differ" in kinds.value.detail
+
+    result = categories.merge_category(source.id, schemas.CategoryMergeIn(target_id=target.id), db)
+    assert result.transactions_moved == 1
+    assert result.rules_moved == 1
+    assert db.query(Transaction).one().category_id == target.id
+    assert db.query(Rule).one().set_category_id == target.id
+    assert db.get(Category, source.id).archived is True

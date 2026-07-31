@@ -80,6 +80,75 @@ def _validate_parent(db: Session, *, category_id: int | None, parent_id: int | N
             raise HTTPException(400, "category has subcategories of its own; move them first")
 
 
+@router.post("/{category_id}/merge", response_model=schemas.CategoryMergeResult)
+def merge_category(category_id: int, body: schemas.CategoryMergeIn, db: DbSession):
+    """Move every reference (transactions, rules, budgets) from this
+    category onto the target, then archive this one. The one-click way to
+    collapse a redundant category without touching rows by hand."""
+    source = get_or_404(db, models.Category, category_id)
+    target = get_or_404(db, models.Category, body.target_id)
+    if source.id == target.id:
+        raise HTTPException(400, "cannot merge a category into itself")
+    if target.archived:
+        raise HTTPException(400, "target category is archived")
+    if source.kind != target.kind:
+        raise HTTPException(
+            400,
+            f"kinds differ ({source.kind.value} vs {target.kind.value}); "
+            "change one of them first so analytics stay consistent",
+        )
+    if db.scalar(select(func.count()).select_from(models.Category).where(models.Category.parent_id == source.id)):
+        raise HTTPException(400, "category has subcategories; move them first")
+
+    transactions_moved = db.execute(
+        update(models.Transaction)
+        .where(models.Transaction.category_id == source.id)
+        .values(category_id=target.id)
+    ).rowcount
+    rules_moved = db.execute(
+        update(models.Rule)
+        .where(models.Rule.set_category_id == source.id)
+        .values(set_category_id=target.id)
+    ).rowcount
+
+    budgets_moved = 0
+    # Budget rows are unique per category (and per month for overrides):
+    # repoint the source's rows unless the target already has one for the
+    # same slot, in which case the target's plan wins and the source's row
+    # is dropped.
+    target_default = db.scalar(
+        select(models.BudgetDefault).where(models.BudgetDefault.category_id == target.id)
+    )
+    for row in db.scalars(select(models.BudgetDefault).where(models.BudgetDefault.category_id == source.id)):
+        if target_default is not None:
+            db.delete(row)
+        else:
+            row.category_id = target.id
+            budgets_moved += 1
+    target_override_months = {
+        month
+        for month in db.scalars(
+            select(models.BudgetOverride.month).where(models.BudgetOverride.category_id == target.id)
+        )
+    }
+    for row in db.scalars(select(models.BudgetOverride).where(models.BudgetOverride.category_id == source.id)):
+        if row.month in target_override_months:
+            db.delete(row)
+        else:
+            row.category_id = target.id
+            budgets_moved += 1
+
+    source.archived = True
+    db.commit()
+    return schemas.CategoryMergeResult(
+        source_id=source.id,
+        target_id=target.id,
+        transactions_moved=transactions_moved,
+        rules_moved=rules_moved,
+        budgets_moved=budgets_moved,
+    )
+
+
 @router.post("", response_model=schemas.CategoryOut)
 def create_category(body: schemas.CategoryIn, db: DbSession):
     _validate_parent(db, category_id=None, parent_id=body.parent_id)

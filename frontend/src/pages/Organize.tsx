@@ -66,6 +66,11 @@ export function Organize() {
     mutationFn: (id: number) => api.del(`/api/categories/${id}`),
     onSuccess: invalidateCategories,
   });
+  const mergeCategory = useMutation({
+    mutationFn: ({ id, targetId }: { id: number; targetId: number }) =>
+      api.post(`/api/categories/${id}/merge`, { target_id: targetId }),
+    onSuccess: invalidateCategories,
+  });
   const putKinds = useMutation({
     mutationFn: (hidden: string[]) => api.put<KindSettings>("/api/settings/kinds", { hidden }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["kind-settings"] }),
@@ -108,6 +113,24 @@ export function Organize() {
     if (confirm(message)) archiveCategory.mutate(category.id);
   };
 
+  const mergeWithConfirm = (category: Category, targetId: number) => {
+    if (childrenOf(category.id).length > 0) {
+      alert(`"${category.name}" still has subcategories — move or archive them first.`);
+      return;
+    }
+    const target = all.find((c) => c.id === targetId);
+    const u = usageById[category.id];
+    const ok = confirm(
+      `Move ${usageText(u)} from "${category.name}" into "${target?.name}", then archive "${category.name}"?`,
+    );
+    if (ok) mergeCategory.mutate({ id: category.id, targetId });
+  };
+
+  const renameCategory = (category: Category) => {
+    const name = prompt(`Rename "${category.name}" to:`, category.name)?.trim();
+    if (name && name !== category.name) patchCategory.mutate({ id: category.id, body: { name } });
+  };
+
   const hidden = new Set(kindSettings.data?.hidden ?? []);
   const toggleKind = (kind: string) => {
     const counts = kindSettings.data?.counts ?? {};
@@ -124,7 +147,7 @@ export function Organize() {
     putKinds.mutate([...next]);
   };
 
-  const busy = patchCategory.isPending || archiveCategory.isPending;
+  const busy = patchCategory.isPending || archiveCategory.isPending || mergeCategory.isPending;
 
   return (
     <div className="space-y-6">
@@ -149,6 +172,9 @@ export function Organize() {
                 busy={busy}
                 onNest={(parentId) => patchCategory.mutate({ id: parent.id, body: { parent_id: parentId } })}
                 onArchive={() => archiveWithWarning(parent)}
+                onRename={() => renameCategory(parent)}
+                onMerge={(targetId) => mergeWithConfirm(parent, targetId)}
+                mergeTargets={active.filter((c) => c.id !== parent.id && c.kind === parent.kind)}
               />
               {childrenOf(parent.id).map((child) => (
                 <CategoryRow
@@ -161,14 +187,17 @@ export function Organize() {
                   busy={busy}
                   onNest={(parentId) => patchCategory.mutate({ id: child.id, body: { parent_id: parentId } })}
                   onArchive={() => archiveWithWarning(child)}
+                  onRename={() => renameCategory(child)}
+                  onMerge={(targetId) => mergeWithConfirm(child, targetId)}
+                  mergeTargets={active.filter((c) => c.id !== child.id && c.kind === child.kind)}
                 />
               ))}
             </Fragment>
           ))}
         </div>
-        {(patchCategory.isError || archiveCategory.isError) && (
+        {(patchCategory.isError || archiveCategory.isError || mergeCategory.isError) && (
           <div className="mt-2 text-sm text-bad-600">
-            {String(((patchCategory.error || archiveCategory.error) as Error).message)}
+            {String(((patchCategory.error || archiveCategory.error || mergeCategory.error) as Error).message)}
           </div>
         )}
         {archived.length > 0 && (
@@ -291,6 +320,9 @@ function CategoryRow({
   busy,
   onNest,
   onArchive,
+  onRename,
+  onMerge,
+  mergeTargets,
 }: {
   category: Category;
   depth: number;
@@ -300,6 +332,9 @@ function CategoryRow({
   busy: boolean;
   onNest: (parentId: number | null) => void;
   onArchive: () => void;
+  onRename: () => void;
+  onMerge: (targetId: number) => void;
+  mergeTargets: Category[];
 }) {
   return (
     <div className="flex items-center gap-2 text-sm">
@@ -330,6 +365,24 @@ function CategoryRow({
             ))}
         </select>
       )}
+      <select
+        className="input max-w-[9.5rem] text-xs"
+        value=""
+        disabled={busy || hasChildren}
+        title={hasChildren ? "Move its subcategories out first" : "Move everything into another category, then archive this one"}
+        onChange={(e) => {
+          if (e.target.value) onMerge(parseInt(e.target.value, 10));
+          e.target.value = "";
+        }}
+      >
+        <option value="">Merge into…</option>
+        {mergeTargets.map((target) => (
+          <option key={target.id} value={target.id}>{target.name}</option>
+        ))}
+      </select>
+      <button className="btn-ghost text-xs" disabled={busy} onClick={onRename}>
+        Rename
+      </button>
       <button className="btn-ghost text-xs text-bad-600" disabled={busy} onClick={onArchive}>
         Archive
       </button>

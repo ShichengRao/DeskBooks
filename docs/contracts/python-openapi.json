@@ -1085,6 +1085,52 @@
         "title": "CategoryKind",
         "type": "string"
       },
+      "CategoryMergeIn": {
+        "properties": {
+          "target_id": {
+            "title": "Target Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "target_id"
+        ],
+        "title": "CategoryMergeIn",
+        "type": "object"
+      },
+      "CategoryMergeResult": {
+        "properties": {
+          "budgets_moved": {
+            "title": "Budgets Moved",
+            "type": "integer"
+          },
+          "rules_moved": {
+            "title": "Rules Moved",
+            "type": "integer"
+          },
+          "source_id": {
+            "title": "Source Id",
+            "type": "integer"
+          },
+          "target_id": {
+            "title": "Target Id",
+            "type": "integer"
+          },
+          "transactions_moved": {
+            "title": "Transactions Moved",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "source_id",
+          "target_id",
+          "transactions_moved",
+          "rules_moved",
+          "budgets_moved"
+        ],
+        "title": "CategoryMergeResult",
+        "type": "object"
+      },
       "CategoryOut": {
         "properties": {
           "archived": {
@@ -6653,6 +6699,59 @@
           }
         },
         "summary": "Update Category",
+        "tags": [
+          "categories"
+        ]
+      }
+    },
+    "/api/categories/{category_id}/merge": {
+      "post": {
+        "description": "Move every reference (transactions, rules, budgets) from this\ncategory onto the target, then archive this one. The one-click way to\ncollapse a redundant category without touching rows by hand.",
+        "operationId": "merge_category_api_categories__category_id__merge_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "category_id",
+            "required": true,
+            "schema": {
+              "title": "Category Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CategoryMergeIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoryMergeResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Merge Category",
         "tags": [
           "categories"
         ]
