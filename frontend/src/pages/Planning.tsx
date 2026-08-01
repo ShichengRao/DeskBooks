@@ -755,6 +755,8 @@ function FireCalculator() {
           growth_credit: s.growth_credit,
           annual_retirement_spending: s.annual_retirement_spending,
           withdrawal_rate: s.withdrawal_rate,
+          birth_year: s.birth_year,
+          retirement_age: s.retirement_age,
         }),
       }).then((r) => r.json()),
     onSuccess: () => {
@@ -806,11 +808,30 @@ function FireCalculator() {
                   in {yearsToRetire} year{yearsToRetire === 1 ? "" : "s"} · target {currency(projection.target_total)}
                 </div>
               </>
+            ) : projection.total_at_retirement_age !== null ? (
+              // Target not reached: anchor to retirement age instead of a
+              // dead-end "never" — this is the trajectory with no new
+              // contributions.
+              <>
+                <div className="text-2xl font-semibold text-warn-600 tabular">
+                  {currency(projection.total_at_retirement_age)}
+                </div>
+                <div className="text-xs text-ink-500">
+                  at {projection.retirement_age} ({projection.retirement_age_year}) ·{" "}
+                  {target > 0
+                    ? `${Math.round((num(projection.total_at_retirement_age) / target) * 100)}% of target `
+                    : ""}
+                  {currency(projection.target_total)}
+                </div>
+              </>
             ) : (
               <>
-                <div className="text-2xl font-semibold text-bad-600">never</div>
+                <div className="text-2xl font-semibold text-warn-600 tabular">
+                  {currency(projection.years[projection.years.length - 1]?.total ?? 0)}
+                </div>
                 <div className="text-xs text-ink-500">
-                  in 60 yrs · target {currency(projection.target_total)}
+                  in 60 yrs · target {currency(projection.target_total)} — set a birth year to
+                  anchor this to your retirement age
                 </div>
               </>
             )}
@@ -841,6 +862,34 @@ function FireCalculator() {
                 onChange={(e) => form && setForm({ ...form, withdrawal_rate: e.target.value })}
               />
               <span className="text-xs text-ink-500">e.g. 0.04 = 4% rule</span>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <div className="label mb-1">Birth year</div>
+              <input
+                type="number"
+                step="1"
+                placeholder="optional"
+                className="input tabular text-right"
+                value={form?.birth_year ?? ""}
+                onChange={(e) =>
+                  form &&
+                  setForm({ ...form, birth_year: e.target.value === "" ? null : parseInt(e.target.value, 10) })
+                }
+              />
+            </div>
+            <div>
+              <div className="label mb-1">Retirement age</div>
+              <input
+                type="number"
+                step="1"
+                className="input tabular text-right"
+                value={form?.retirement_age ?? 65}
+                onChange={(e) =>
+                  form && setForm({ ...form, retirement_age: parseInt(e.target.value || "65", 10) })
+                }
+              />
             </div>
           </div>
           <div className="border-t border-ink-100 pt-3 space-y-2">

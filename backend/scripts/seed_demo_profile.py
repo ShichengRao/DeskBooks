@@ -400,6 +400,11 @@ def seed_demo_db(db_path: Path) -> dict:
             set_category_id=categories[ckey].id, set_kind=models.TransactionKind(kind),
         ))
 
+    session.add(models.FireSettings(
+        annual_retirement_spending=_d(45000),
+        birth_year=1996,
+        retirement_age=65,
+    ))
     session.add(models.Goal(
         title="Emergency fund: 6 months of rent",
         target_amount=_d(9000), target_date=date(2027, 6, 1),

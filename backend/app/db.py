@@ -34,6 +34,25 @@ def _active_db_path() -> Path:
     return get_active_profile().db_path
 
 
+# create_all only creates missing TABLES; columns added to an existing model
+# need an explicit ALTER. Additive, constant-default columns only — anything
+# fancier deserves a real migration tool.
+_ADDITIVE_COLUMNS: tuple[tuple[str, str, str], ...] = (
+    ("fire_settings", "birth_year", "INTEGER"),
+    ("fire_settings", "retirement_age", "INTEGER NOT NULL DEFAULT 65"),
+)
+
+
+def _apply_additive_columns(engine: Engine) -> None:
+    with engine.begin() as conn:
+        for table, column, ddl in _ADDITIVE_COLUMNS:
+            existing = {
+                row[1] for row in conn.exec_driver_sql(f"PRAGMA table_info({table})")
+            }
+            if existing and column not in existing:
+                conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
+
+
 def engine_for(db_path: Path) -> Engine:
     """One cached engine per database file; tables ensured on first use."""
     from . import models  # noqa: F401  ensure models are imported
@@ -53,6 +72,7 @@ def engine_for(db_path: Path) -> Engine:
         # create_all stays inside the lock so a second request can't grab
         # the engine before its tables exist.
         models.Base.metadata.create_all(bind=engine)
+        _apply_additive_columns(engine)
         _engines[db_path] = engine
         _factories[db_path] = sessionmaker(
             bind=engine,

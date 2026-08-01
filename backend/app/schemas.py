@@ -773,6 +773,8 @@ class FireSettingsIn(BaseModel):
     growth_credit: Decimal
     annual_retirement_spending: Decimal
     withdrawal_rate: Decimal
+    birth_year: int | None = None
+    retirement_age: int = 65
 
 
 class FireSettingsOut(ORMBase):
@@ -784,6 +786,8 @@ class FireSettingsOut(ORMBase):
     growth_credit: Decimal
     annual_retirement_spending: Decimal
     withdrawal_rate: Decimal
+    birth_year: int | None
+    retirement_age: int
     updated_at: datetime
 
 
@@ -800,6 +804,9 @@ class FireProjection(BaseModel):
     current_total: Decimal
     current_by_category: dict[str, Decimal]
     retirement_year: int | None
+    retirement_age: int
+    retirement_age_year: int | None
+    total_at_retirement_age: Decimal | None
     years: list[FireProjectionYear]
     notes: list[str] = []
 
