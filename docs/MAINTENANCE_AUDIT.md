@@ -18,9 +18,6 @@
 - `backend/` - backend application
 - `docs/` - project documentation
 - `frontend/` - frontend application
-- `repro_v0` / `repro_v1` / `repro_v2` - untracked local experiment notes
-  (June 2026 profile-mirroring exercise); contain personal references, so
-  keep them out of Git or delete them
 - `run.sh` - project file or directory
 - `samples/` - fixtures, sample data, or local runtime data
 
@@ -49,5 +46,4 @@ Most of the original backlog is done: CI exists, environment variables are
 documented (`docs/ENVIRONMENT.md`), architecture and dependency guidance
 exist, and deployment posture is recorded (`docs/RELEASE.md`). Still open:
 
-- Remove or gitignore the untracked `repro_v0`/`repro_v1`/`repro_v2` notes.
 - Add issue labels or TODO triage notes for easy future PRs.
