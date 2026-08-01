@@ -182,13 +182,20 @@ export function NetWorth() {
       };
     }) ?? [];
 
-  // Only chart the categories that actually appear on each side.
-  const assetSeries = ACCOUNT_CATEGORY_SERIES.filter((s) =>
-    chartData.some((row) => Number(row[`asset_pct_${s.category}`] ?? 0) > 0.05),
-  );
-  const debtSeries = ACCOUNT_CATEGORY_SERIES.filter((s) =>
-    chartData.some((row) => Number(row[`debt_pct_${s.category}`] ?? 0) > 0.05),
-  );
+  // Only chart the categories that actually appear on each side, ordered
+  // largest-first by their latest share so the legend reads the way the
+  // chart does (colors stay keyed to the category, not its rank).
+  const lastRow = chartData[chartData.length - 1];
+  const sideSeries = (prefix: "asset_pct_" | "debt_pct_") =>
+    ACCOUNT_CATEGORY_SERIES.filter((s) =>
+      chartData.some((row) => Number(row[`${prefix}${s.category}`] ?? 0) > 0.05),
+    ).sort(
+      (a, b) =>
+        Number(lastRow?.[`${prefix}${b.category}`] ?? 0) -
+        Number(lastRow?.[`${prefix}${a.category}`] ?? 0),
+    );
+  const assetSeries = sideSeries("asset_pct_");
+  const debtSeries = sideSeries("debt_pct_");
 
   const accountById = useMemo(
     () => Object.fromEntries((accounts.data ?? []).map((a) => [a.id, a])),
