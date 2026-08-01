@@ -28,6 +28,7 @@ const ACCOUNT_CATEGORY_SERIES = [
   { category: "nonsense", key: "cat_nonsense", pctKey: "pct_nonsense", label: accountCategoryLabel("nonsense") },
   { category: "cash", key: "cat_cash", pctKey: "pct_cash", label: accountCategoryLabel("cash") },
   { category: "credit", key: "cat_credit", pctKey: "pct_credit", label: accountCategoryLabel("credit") },
+  { category: "liability", key: "cat_liability", pctKey: "pct_liability", label: accountCategoryLabel("liability") },
 ] as const;
 
 type ChartColors = ReturnType<typeof useChartColors>;
@@ -394,6 +395,12 @@ function NetWorthValuePanel({
   onAllTime: () => void;
 }) {
   const hasRangeFilter = Boolean(start || end);
+  // Liabilities and carried card balances sit below zero; extend the floor
+  // to fit them (log scale can't show negatives, so it keeps its floor).
+  const valueFloor = Math.min(
+    0,
+    ...data.flatMap((row) => ACCOUNT_CATEGORY_SERIES.map((s) => Number(row[s.key] ?? 0))),
+  );
   return (
     <div className="card p-4">
       <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
@@ -420,7 +427,7 @@ function NetWorthValuePanel({
             <XAxis dataKey="date" tickFormatter={(date) => shortDateLabel(date)} tick={{ fontSize: 12 }} stroke="#7a8392" />
             <YAxis
               scale={showLog ? "log" : "auto"}
-              domain={showLog ? [1000, "auto"] : [0, "auto"]}
+              domain={showLog ? [1000, "auto"] : [valueFloor, "auto"]}
               allowDataOverflow
               tickFormatter={(value) => compactCurrency(value)}
               tick={{ fontSize: 12 }}
