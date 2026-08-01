@@ -18,6 +18,7 @@ const ACCOUNT_CATEGORIES: AccountCategory[] = [
   "tax_advantaged",
   "credit",
   "liability",
+  "property",
   "nonsense",
   "cash",
 ];

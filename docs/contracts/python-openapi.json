@@ -103,7 +103,8 @@
           "tax_advantaged",
           "credit",
           "liability",
-          "cash"
+          "cash",
+          "property"
         ],
         "title": "AccountCategory",
         "type": "string"

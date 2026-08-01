@@ -298,6 +298,8 @@ def _growth_bucket_for_account(acc: models.Account) -> str:
         return "Stock Growth"
     if acc.account_category == models.AccountCategory.tax_advantaged:
         return "Stock Growth"  # 401k/IRA/HSA mostly track the market
+    if acc.account_category == models.AccountCategory.property:
+        return "Home Appreciation"
     if acc.type in (models.AccountType.checking, models.AccountType.savings):
         return "Bank Interest"
     return "Other growth"
@@ -313,6 +315,8 @@ def _delta_bucket_for_account(acc: models.Account) -> str:
         return "Stock Account"
     if acc.account_category == models.AccountCategory.bank:
         return "CDs + Bank Accounts"
+    if acc.account_category == models.AccountCategory.property:
+        return "Real Estate"
     return "Other Accounts"
 
 

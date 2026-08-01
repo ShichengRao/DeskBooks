@@ -43,6 +43,7 @@ class AccountCategory(enum.StrEnum):
     credit = "credit"
     liability = "liability"
     cash = "cash"
+    property = "property"  # house/real estate; typically snapshot-only
 
 
 class AccountType(enum.StrEnum):

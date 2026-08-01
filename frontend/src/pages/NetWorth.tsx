@@ -29,6 +29,7 @@ const ACCOUNT_CATEGORY_SERIES = [
   { category: "cash", key: "cat_cash", pctKey: "pct_cash", label: accountCategoryLabel("cash") },
   { category: "credit", key: "cat_credit", pctKey: "pct_credit", label: accountCategoryLabel("credit") },
   { category: "liability", key: "cat_liability", pctKey: "pct_liability", label: accountCategoryLabel("liability") },
+  { category: "property", key: "cat_property", pctKey: "pct_property", label: accountCategoryLabel("property") },
 ] as const;
 
 type ChartColors = ReturnType<typeof useChartColors>;
@@ -86,7 +87,7 @@ function openAccountLinks(links: string[]) {
   }
 }
 
-const ACCOUNT_CATEGORIES: AccountCategory[] = ["bank", "investment", "tax_advantaged", "credit", "liability", "nonsense", "cash"];
+const ACCOUNT_CATEGORIES: AccountCategory[] = ["bank", "investment", "tax_advantaged", "credit", "liability", "property", "nonsense", "cash"];
 const ACCOUNT_TYPES: AccountType[] = ["checking", "savings", "cd", "brokerage", "crypto", "wallet", "retirement", "college", "hsa", "credit_card", "cash", "other"];
 const SIGN_CONVENTIONS: SignConvention[] = ["outflow_negative", "outflow_positive"];
 const DORMANT_ACCOUNT_SNAPSHOT_COUNT = 5;
@@ -1089,6 +1090,7 @@ const DEFAULT_TYPE_FOR_CATEGORY: Record<AccountCategory, AccountType> = {
   tax_advantaged: "retirement",
   credit: "credit_card",
   liability: "other",
+  property: "other",
   nonsense: "other",
   cash: "cash",
 };

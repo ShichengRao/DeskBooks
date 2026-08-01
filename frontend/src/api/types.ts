@@ -29,6 +29,7 @@ export type AccountCategory =
   | "bank"
   | "investment"
   | "nonsense"
+  | "property"
   | "tax_advantaged"
   | "credit"
   | "liability"

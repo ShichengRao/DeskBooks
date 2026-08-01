@@ -4,6 +4,7 @@ export const ACCOUNT_CATEGORY_LABELS: Record<AccountCategory, string> = {
   bank: "Bank Accounts",
   investment: "Investment Accounts",
   nonsense: "Wallets / Crypto / Misc",
+  property: "Real Estate",
   tax_advantaged: "Tax Advantaged Accounts",
   credit: "Credit Cards",
   liability: "Liabilities",
