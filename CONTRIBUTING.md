@@ -13,6 +13,7 @@ Useful checks:
 ```bash
 cd backend && uv run pytest
 cd frontend && npm run typecheck
+make api-contract-python   # regenerates the frozen OpenAPI snapshot; CI diffs it
 ```
 
 ## Privacy Rules

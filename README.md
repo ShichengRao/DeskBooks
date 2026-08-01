@@ -4,7 +4,8 @@ A local personal finance app for tracking transactions, net worth,
 planning notes, rules, and spending analytics.
 
 Data lives on your machine in your operating system's user data directory,
-not in the repo by default.
+not in the repo by default. A read-only demo with entirely synthetic data
+runs at <https://deskbooks-demo.vercel.app>.
 
 > Developer/setup internals live in `docs/DEVELOPMENT.md`.
 
@@ -78,12 +79,15 @@ income/inflows are positive.
 ### Net Worth
 
 Create and edit dated net-worth snapshots. Charts show totals by account
-category, including a percentage-based breakdown.
+category (including real estate and liabilities), plus side-by-side
+asset-allocation and liability-mix breakdowns.
 
 ### Planning
 
-Track goals and journal entries. Goals and journal edits keep revision
-history so changes are easy to review later.
+Track goals and journal entries (both keep revision history), and run the
+FIRE projection: per-category real growth rates compound your latest
+snapshot toward a spending / withdrawal-rate target, with an
+amount-at-retirement-age readout when the target isn't reached.
 
 ### Budgets
 
@@ -110,7 +114,9 @@ Supported import formats:
 
 - Chase credit card CSV
 - Wells Fargo checking CSV
-- Amex CSV
+- Amex CSV and XLSX
+- 401(k) contribution-history CSV
+- staged JSON from the automation connectors
 
 Synthetic examples for these formats live in `samples/`.
 
@@ -132,10 +138,18 @@ The Rules panel shows:
 - net-new coverage added by a proposal
 - historical correctness and breakdown examples
 
-### Reconcile
+### Splits & Netting
 
-Review imported data and account state when checking that the app matches
-your source records.
+Track shared expenses (who owes what per split group) and net out
+offsetting transactions: the app suggests unlinked equal-and-opposite
+pairs — refunds, reversals, reimbursements — and linking a pair drops
+both rows out of spending analytics.
+
+### Organize
+
+Self-service taxonomy cleanup: rename, merge, nest (one level), and
+archive categories with usage counts and warnings; hide unused
+transaction kinds; and regroup accounts across net-worth categories.
 
 ### Backups
 
@@ -170,7 +184,8 @@ make reset-db
 
 Profiles are local workspace selectors, not web accounts. Use them when
 multiple people share a computer account or when you want a throwaway demo
-database.
+database. Each browser window pins its own profile, so two people can use
+two profiles side by side at the same time.
 
 ## Privacy
 

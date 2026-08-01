@@ -33,7 +33,7 @@ The backend OpenAPI docs are available at:
 
 ```text
 backend/             FastAPI + SQLAlchemy + SQLite
-frontend/            React + Vite + TypeScript + Tailwind + Recharts/Plotly
+frontend/            React + Vite + TypeScript + Tailwind + Recharts (+ custom SVG sankey)
 docs/                Architecture, roadmap, and development notes
 samples/             Synthetic import examples
 ```
@@ -44,7 +44,7 @@ samples/             Synthetic import examples
 |---|---|---|
 | Backend | FastAPI + SQLAlchemy 2 + SQLite + Pydantic v2 | Local-first; OpenAPI; typed |
 | Frontend | React 18 + Vite + TS + Tailwind | Fast iteration; no SSR needed |
-| Charts | Recharts + Plotly.js | Recharts for everyday charts; Plotly for Sankey |
+| Charts | Recharts + custom SVG | Recharts for everyday charts; the Sankey is a hand-rolled SVG component |
 | Tooling | uv, npm, Makefile, bash | Minimum ceremony |
 
 See `docs/ARCHITECTURE.md` for longer-form tradeoffs and data model notes.
@@ -72,8 +72,11 @@ Built-in CSV formats:
   `Transaction Date, Post Date, Description, Category, Type, Amount, Memo`
 - Wells Fargo checking:
   `DATE, DESCRIPTION, AMOUNT, CHECK #, STATUS`
-- Amex:
+- Amex CSV:
   `Date, Description, Amount`
+- Amex XLSX statement exports
+- 401(k)/contribution-history CSVs
+- Staged JSON from the automation connectors (`docs/AUTOMATED_IMPORTS.md`)
 
 Amex exports charges as positive values; the importer converts them to the
 app's outflow-negative convention.
