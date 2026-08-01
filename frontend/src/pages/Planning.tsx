@@ -777,7 +777,10 @@ function FireCalculator() {
           birth_year: s.birth_year,
           retirement_age: s.retirement_age,
         }),
-      }).then((r) => r.json());
+      }).then(async (r) => {
+        if (!r.ok) throw new Error(`${r.status}: ${await r.text()}`);
+        return r.json();
+      });
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["fire-settings"] });
