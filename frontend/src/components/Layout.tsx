@@ -65,7 +65,18 @@ export function Layout() {
       setTabProfile(slug);
       window.location.reload();
     },
+    onError: (error, slug) => {
+      // The read-only demo 403s the default-setting mutation, but the pin
+      // is purely client-side — switch this window anyway.
+      if (error instanceof Error && error.message.startsWith("403")) {
+        setTabProfile(slug);
+        window.location.reload();
+        return;
+      }
+      alert(error instanceof Error ? error.message : String(error));
+    },
   });
+  const surfaceError = (error: Error) => alert(error.message);
   const createProfile = useMutation({
     mutationFn: (body: { name: string; seed_starter_data: boolean }) =>
       api.post<ProfileList>("/api/profiles", body),
@@ -74,6 +85,7 @@ export function Layout() {
       setTabProfile(data.active_slug);
       window.location.reload();
     },
+    onError: surfaceError,
   });
   const duplicateProfile = useMutation({
     mutationFn: (body: { name: string; source_slug: string }) =>
@@ -82,6 +94,7 @@ export function Layout() {
       setTabProfile(data.active_slug);
       window.location.reload();
     },
+    onError: surfaceError,
   });
   const deleteProfile = useMutation({
     mutationFn: (slug: string) => api.del<Profile>(`/api/profiles/${encodeURIComponent(slug)}`),
@@ -90,12 +103,14 @@ export function Layout() {
       setTabProfile(null);
       window.location.reload();
     },
+    onError: surfaceError,
   });
   const renameProfile = useMutation({
     // Display name only; the slug this window is pinned by doesn't change.
     mutationFn: (body: { slug: string; name: string }) =>
       api.patch<ProfileList>(`/api/profiles/${encodeURIComponent(body.slug)}`, { name: body.name }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["profiles"] }),
+    onError: surfaceError,
   });
 
   const stopApp = async () => {
