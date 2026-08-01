@@ -33,3 +33,6 @@ internet access unless you click an account URL that you saved in the app.
 
 Local data is plaintext. Treat SQLite files, staged downloads, and imported
 documents as sensitive financial records.
+
+The hosted read-only demo contains only synthetic, generated data; no real
+profile is ever deployed.

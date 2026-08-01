@@ -5,7 +5,7 @@
 - **Backend**: Python 3.11+ (managed by `uv`), FastAPI, SQLAlchemy 2.x,
   SQLite, Pydantic v2, stdlib CSV parsing, and OpenPyXL for `.xlsx` imports.
 - **Frontend**: React 18 + TypeScript + Vite, Tailwind CSS, TanStack Query,
-  TanStack Table, Recharts (general charts), Plotly.js (Sankey).
+  Recharts (general charts), and a hand-rolled SVG Sankey component.
 - **Storage**: local SQLite profile files in the OS user data directory.
 - **Launcher**: `./run.sh` (and `make dev`) start uvicorn + Vite and open the
   browser. No Electron/Tauri shell for v1 — the browser is the UI.
@@ -22,9 +22,10 @@
   while preserving SQLite portability.
 - **React + Vite** fits the app as a local SPA. There is no server-side
   rendering need, and Vite keeps iteration fast.
-- **Recharts + Plotly split** keeps common charts lightweight while using
-  Plotly only for Sankey, where it is materially better than hand-rolled
-  charting.
+- **Recharts + a custom SVG Sankey** keeps the chart stack to one small
+  dependency. Plotly was dropped: the backend aggregates Sankey nodes/links,
+  and the frontend component does layout itself (barycenter column ordering,
+  minimum ribbon widths, label de-overlap) with plain SVG.
 - **Tailwind with small local components** avoids a large design-system
   dependency while keeping the interface consistent.
 - **Browser launcher instead of native shell** keeps packaging optional. A
@@ -36,52 +37,48 @@
 deskbooks/
 ├── backend/
 │   ├── app/
-│   │   ├── main.py            # FastAPI entrypoint
-│   │   ├── db.py              # engine, session, init
+│   │   ├── main.py            # FastAPI entrypoint (+ demo-mode guard)
+│   │   ├── db.py              # per-profile engines, additive migrations
+│   │   ├── app_paths.py       # data-dir resolution (PFA_DATA_DIR)
 │   │   ├── models.py          # SQLAlchemy models
 │   │   ├── schemas.py         # Pydantic models
 │   │   ├── onboarding.py      # starter data loader
 │   │   ├── profiles.py        # local profile registry
 │   │   ├── backups.py         # profile-scoped SQLite backups
-│   │   ├── budgets.py         # budget rollups
-│   │   ├── importers/
-│   │   │   ├── base.py        # CsvImporter ABC + sniffing
-│   │   │   ├── chase_credit.py
-│   │   │   ├── wells_fargo_checking.py
-│   │   │   └── amex.py
-│   │   ├── rules.py           # rule engine
-│   │   ├── analytics.py       # rollups, sankey, trends
+│   │   ├── budgets.py         # budget report
+│   │   ├── importers/         # CsvImporter ABC + per-format modules
+│   │   │   (chase_credit, wells_fargo_checking, us_banks, amex,
+│   │   │    amex_xlsx, contribution_history, staged_json)
+│   │   ├── rules.py           # rule engine + proposals
+│   │   ├── analytics.py       # rollups, sankey, FIRE, cancel-pairs
 │   │   └── routers/           # one router per concept
-│   │       ├── accounts.py
-│   │       ├── transactions.py
-│   │       ├── categories.py
-│   │       ├── rules.py
-│   │       ├── snapshots.py
-│   │       ├── goals.py
-│   │       ├── journal.py
-│   │       └── analytics.py
+│   │       (accounts, transactions, categories, rules, snapshots,
+│   │        goals, journal, budgets, imports, backups, profiles,
+│   │        settings, analytics)
+│   ├── scripts/
+│   │   └── seed_demo_profile.py  # synthetic demo/family personas
 │   ├── data/                  # gitignored development data only
 │   └── pyproject.toml
 ├── frontend/
 │   ├── src/
 │   │   ├── main.tsx
 │   │   ├── App.tsx
-│   │   ├── api/               # typed fetch wrappers
-│   │   ├── pages/
-│   │   │   ├── Dashboard.tsx
-│   │   │   ├── Transactions.tsx
-│   │   │   ├── NetWorth.tsx
-│   │   │   ├── Planning.tsx
-│   │   │   ├── Analytics.tsx   # Sankey + trends
-│   │   │   └── Import.tsx
-│   │   ├── components/
+│   │   ├── api/               # typed fetch wrappers (+ per-tab profile pin)
+│   │   ├── pages/             # Dashboard, Transactions, NetWorth,
+│   │   │                      # Planning, Budgets, Analytics, Import,
+│   │   │                      # Reconcile (Splits & netting), Rules,
+│   │   │                      # Organize, Backups
+│   │   ├── components/        # incl. SankeySvg
 │   │   └── lib/
 │   ├── index.html
 │   ├── package.json
 │   └── vite.config.ts
-├── docs/
+├── automation/                # optional local fetch connectors (Node)
+├── api/                       # Vercel entrypoint for the read-only demo
+├── docs/                      # incl. contracts/ (frozen OpenAPI snapshot)
 ├── samples/                   # synthetic import examples
 ├── run.sh
+├── vercel.json
 ├── Makefile
 └── README.md
 ```
@@ -91,10 +88,10 @@ deskbooks/
 ```
 Account
   id, name, institution, account_category[bank|investment|nonsense|
-    tax_advantaged|credit|liability|cash], type[checking|savings|cd|
-    brokerage|crypto|wallet|retirement|college|hsa|credit_card|cash],
-  is_liquid, is_taxable, currency, sign_convention[outflow_negative|
-    outflow_positive], url, notes, is_closed, opened_at, closed_at
+    tax_advantaged|credit|liability|cash|property], type[checking|savings|
+    cd|brokerage|crypto|wallet|retirement|college|hsa|credit_card|cash|
+    other], currency, sign_convention[outflow_negative|outflow_positive],
+  url, notes, is_closed, opened_at, closed_at, sort_order
 
 Category
   id, name, parent_id (nullable, hierarchical), kind[expense|income|
@@ -107,10 +104,14 @@ Transaction
   account convention), category_id (nullable), kind (mirrors
   Category.kind but stored for fast filtering and pre-categorization),
   notes, transfer_pair_id (nullable, FK self), import_batch_id,
-  raw (JSON), is_excluded_from_totals (manual hide), created_at,
-  updated_at
+  matched_rule_id (nullable), is_user_categorized, raw (JSON),
+  is_excluded_from_totals (manual hide), created_at, updated_at
 
 Tag, TransactionTag (m2m)
+
+TransactionSplit
+  transaction_id (PK/FK), group_name, personal_share (0..1), notes
+  -- shared expenses: analytics count amount * personal_share
 
 Rule
   id, name, priority, is_active, match_account_id (nullable),
@@ -159,7 +160,20 @@ ImportBatch
   id, source_filename, importer_name, account_id, imported_at,
   row_count_total, row_count_applied, row_count_duplicate, status[
     preview|applied|rolled_back], notes
+
+FireSettings (singleton)
+  growth_{bank,investment,tax_advantaged,nonsense,cash,credit,property}
+  (real annual rates), annual_retirement_spending, withdrawal_rate,
+  birth_year (nullable), retirement_age
+
+AppSettings (singleton)
+  hidden_kinds (JSON) — transaction kinds hidden from pickers/filters
 ```
+
+Schema evolution: `create_all` creates missing tables; additive columns on
+existing tables are applied by a small PRAGMA-check + `ALTER TABLE`
+registry in `db.py` (`_ADDITIVE_COLUMNS`). Anything beyond additive
+columns needs a real migration tool.
 
 Key invariants:
 
@@ -187,47 +201,70 @@ Key invariants:
 
 ## API Shape
 
+Every request may carry an `X-DeskBooks-Profile` header naming the profile
+it belongs to (the UI pins one per browser tab, enabling two windows on two
+profiles at once); requests without the header use the registry's active
+profile.
+
 ```
 GET    /api/accounts
-POST   /api/accounts
+POST   /api/accounts            # also /bulk for many at once
 PATCH  /api/accounts/{id}
 DELETE /api/accounts/{id}
 
 GET    /api/profiles
 POST   /api/profiles
+POST   /api/profiles/duplicate
 POST   /api/profiles/active
+PATCH  /api/profiles/{slug}     # rename (display name only)
+DELETE /api/profiles/{slug}
 
 GET    /api/backups
 POST   /api/backups
 POST   /api/backups/{name}/restore
 
-GET    /api/categories
+GET    /api/categories?include_archived=
+GET    /api/categories/usage    # per-category txn/rule/budget counts
 POST   /api/categories
-PATCH  /api/categories/{id}
+PATCH  /api/categories/{id}     # incl. one-level nesting via parent_id
+POST   /api/categories/{id}/merge
+DELETE /api/categories/{id}     # soft archive
+
+GET    /api/settings/kinds      # hidden transaction kinds
+PUT    /api/settings/kinds
 
 GET    /api/rules
 POST   /api/rules
 PATCH  /api/rules/{id}
 POST   /api/rules/{id}/reapply           # reruns the rule over all txns
 
-GET    /api/transactions?...filters...
+GET    /api/transactions?...filters...   # category filter includes descendants
+GET    /api/transactions/count
+GET    /api/transactions/{id}
+POST   /api/transactions
 PATCH  /api/transactions/{id}
 PUT    /api/transactions/{id}/split
-PATCH  /api/transactions/bulk            # bulk categorize/exclude/tag
-POST   /api/transactions/{id}/pair       # mark two as a transfer pair
+PATCH  /api/transactions/bulk/update     # bulk categorize/exclude/tag
+POST   /api/transactions/pair            # link two rows as a pair
 POST   /api/transactions/{id}/unpair
 DELETE /api/transactions/{id}
 
-POST   /api/imports/preview              # multipart CSV → preview JSON
+GET    /api/imports/importers
+POST   /api/imports/preview              # multipart CSV/XLSX → preview JSON
+POST   /api/imports/preview-path         # preview a staged local file
 POST   /api/imports/apply                # commit a previewed batch
 GET    /api/imports
+GET    /api/imports/staged               # connector-staged files
+POST   /api/imports/staged/apply
 POST   /api/imports/{id}/rollback
 
 GET    /api/snapshots
 POST   /api/snapshots                    # create new (with all balances)
+POST   /api/snapshots/import-workbook
+GET    /api/snapshots/prefill            # balances from staged connector data
 PATCH  /api/snapshots/{id}
 DELETE /api/snapshots/{id}
-GET    /api/snapshots/series             # for charts: list of (date, total, by_category, ...)
+GET    /api/snapshots/series             # for charts: (date, total, by_category, ...)
 
 GET    /api/goals
 POST   /api/goals
@@ -248,13 +285,16 @@ DELETE /api/budgets/overrides/{id}
 GET    /api/analytics/monthly?start=&end=
 GET    /api/analytics/sankey?year=       # or ?start=&end=
 GET    /api/analytics/recurring          # merchant frequency detection
+GET    /api/analytics/splits             # split-group summaries
+GET    /api/analytics/cancel-candidates  # equal-and-opposite pair suggestions
+GET    /api/analytics/cancel-pairs       # already-linked pairs
 GET    /api/analytics/fire/settings
 PUT    /api/analytics/fire/settings
 GET    /api/analytics/fire/projection
-GET    /api/analytics/reconcile
-PUT    /api/analytics/reconcile
-GET    /api/analytics/splits
 ```
+
+The frozen OpenAPI snapshot in `docs/contracts/` is regenerated by
+`make api-contract-python`; CI fails when routes drift from it.
 
 ## Import Pipeline
 
@@ -299,8 +339,10 @@ turns a recurring merchant into a rule.
   X and wrote down the values."
 - `AccountBalance` rows can be NULL → "this account didn't exist on that
   date" (distinct from 0).
-- The snapshot-creation UI starts from the *previous* snapshot,
-  pre-fills values, and the user edits.
+- The snapshot editor starts blank (no autofill from the previous
+  snapshot); balances can be pulled on demand from connector-staged data
+  via `GET /api/snapshots/prefill`, or whole histories imported from a
+  workbook.
 - All chart series are computed in the backend so the frontend just
   consumes pre-aggregated JSON.
 
@@ -316,9 +358,12 @@ turns a recurring merchant into a rule.
   tied to a goal or standalone. Editing an entry creates a
   `JournalEntryRevision` so the user keeps the github-blame
   view they explicitly asked for.
-- FIRE settings/projections are stored locally and computed from current
-  balance, contribution, target, and return assumptions. They are planning
-  math only, not financial advice.
+- FIRE settings/projections are stored locally. The projection compounds
+  the latest snapshot by per-category real growth rates (no future
+  contributions are modeled) toward spending / withdrawal-rate. With a
+  birth year set, a missed target reports the projected amount at
+  retirement age instead of "never". Planning math only, not financial
+  advice.
 
 ## Budgets
 
@@ -355,7 +400,9 @@ A Sankey aggregates any requested date range:
 - outflow groupings such as expenses, donations, taxes, and investments
 - leaf categories/accounts
 
-The diagram is computed server-side; the frontend only renders the response.
+Node/link aggregation is server-side; the frontend component performs
+layout (column ordering, ribbon thickness floors, label placement) and
+renders plain SVG.
 
 ## Current Non-Goals
 
@@ -364,6 +411,11 @@ The diagram is computed server-side; the frontend only renders the response.
 - Cloud sync or any hosted storage of user data
 - Mobile app
 - Native macOS wrapper, though the app can be packaged later
+
+One deliberate exception: a **read-only hosted demo** (Vercel; see
+`vercel.json` + `api/index.py`) serves the app with entirely synthetic
+profiles seeded on cold start. `PFA_DEMO_MODE=1` turns the API read-only
+and blocks filesystem-touching routes; no user data is ever hosted.
 
 Optional, off-by-default connectors under `automation/` can fetch
 transactions and balances from institutions the user configures (see

@@ -1,6 +1,9 @@
 # Release And Deployment
 
-This repository does not yet declare a fully verified release process. Use these notes as the maintainer baseline until a project-specific release path is confirmed.
+The app itself is local-only and unreleased. Two deployment-adjacent paths exist:
+
+- **CI** runs the verification commands below on every pull request, plus the frozen OpenAPI contract check (`make api-contract-python`).
+- **Read-only demo**: Vercel builds the frontend statically and runs the FastAPI app as a Python function (`vercel.json` + `api/index.py`), seeding synthetic profiles on cold start with `PFA_DEMO_MODE=1`. No user data is deployed.
 
 ## Local Verification
 - `cd frontend && npm run typecheck`

@@ -10,6 +10,10 @@ service.
 - Keep the SQLite database files on a trusted local disk.
 - Do not expose the FastAPI server to a LAN or the public internet.
 
+The one sanctioned exception is the read-only hosted demo: it serves only
+synthetic data seeded at cold start, and `PFA_DEMO_MODE=1` rejects all
+mutations and filesystem-touching routes.
+
 ## Reporting Issues
 
 Report security issues through GitHub's private vulnerability reporting flow

@@ -3,7 +3,7 @@
 Use this as the maintainer checklist for dependency updates and reproducible setup.
 
 ## Inventory
-- `frontend` Node package: 8 runtime deps, 9 dev deps, lockfile `frontend/package-lock.json`.
+- `frontend` Node package: 6 runtime deps, 8 dev deps, lockfile `frontend/package-lock.json`.
 - `backend` Python project metadata is listed in `backend/pyproject.toml`.
 
 ## Update Guidance

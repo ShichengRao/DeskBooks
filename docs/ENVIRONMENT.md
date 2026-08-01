@@ -10,6 +10,7 @@ This document tracks local configuration, credentials, and environment variables
 - `PFA_CORS_ORIGINS` — optional. Comma-separated allowed origins; set by `run.sh`/`make` to the exact frontend origin.
 - `PFA_API_TARGET` — optional, development. Where the Vite dev server proxies `/api` (set by the launcher).
 - `PFA_SEED_STARTER_DATA` — optional. `0` disables starter-data seeding on bootstrap.
+- `PFA_DEMO_MODE` — optional. `1` turns the API read-only (mutations and filesystem-touching routes return 403) for the hosted demo; the Vercel entrypoint (`api/index.py`) sets it and seeds synthetic profiles into `/tmp` on cold start.
 - `FRONTEND_PORT` / `BACKEND_PORT` — optional aliases for the launcher's `PORT` / `API_PORT`.
 - `APPDATA` / `XDG_DATA_HOME` — platform defaults consulted when picking the data directory on Windows/Linux.
 
