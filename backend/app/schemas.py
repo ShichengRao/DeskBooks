@@ -771,6 +771,7 @@ class FireSettingsIn(BaseModel):
     growth_nonsense: Decimal
     growth_cash: Decimal
     growth_credit: Decimal
+    growth_property: Decimal = Decimal("0.0100")
     annual_retirement_spending: Decimal
     withdrawal_rate: Decimal
     birth_year: int | None = None
@@ -784,6 +785,7 @@ class FireSettingsOut(ORMBase):
     growth_nonsense: Decimal
     growth_cash: Decimal
     growth_credit: Decimal
+    growth_property: Decimal
     annual_retirement_spending: Decimal
     withdrawal_rate: Decimal
     birth_year: int | None
