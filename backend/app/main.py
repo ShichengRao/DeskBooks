@@ -5,8 +5,9 @@ import signal
 import threading
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from . import models  # noqa: F401
 from .db import init_db
@@ -57,6 +58,24 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# Routes that read or touch the host filesystem beyond the profile database;
+# they have no place on a public read-only deployment.
+_DEMO_BLOCKED_PREFIXES = ("/api/admin", "/api/backups", "/api/imports")
+
+
+@app.middleware("http")
+async def demo_read_only_guard(request: Request, call_next):
+    # PFA_DEMO_MODE=1 turns the API read-only for public demo hosting: any
+    # mutating method and any filesystem-touching route gets a 403. Checked
+    # per-request so tests can toggle it without rebuilding the app.
+    if os.environ.get("PFA_DEMO_MODE") == "1":
+        if request.method not in ("GET", "HEAD", "OPTIONS"):
+            return JSONResponse({"detail": "This deployment is a read-only demo."}, status_code=403)
+        if request.url.path.startswith(_DEMO_BLOCKED_PREFIXES):
+            return JSONResponse({"detail": "Not available in the read-only demo."}, status_code=403)
+    return await call_next(request)
 
 
 @app.get("/api/health")
