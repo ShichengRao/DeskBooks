@@ -128,6 +128,7 @@ def seed_demo_db(db_path: Path) -> dict:
         )
         bal[acct] += float(amount)
         txns.append(row)
+        return row
 
     grocers = [
         ("TRADER JOE S #520 PHILADELPHIA PA", "Trader Joe's", 24, 78),
@@ -281,6 +282,30 @@ def seed_demo_db(db_path: Path) -> dict:
     txn("chk", date(2026, 4, 14), "IRS TREAS 310 TAX REF", 512.00, "income", "refund")
     txn("chk", date(2025, 10, 9), "EXPENSE REIMB - SCHUYLKILL DESIGN CO", 94.50, "reimbursement")
 
+    # a shared beach weekend (4 people, user paid) so the Splits view has a
+    # live group with money still owed back
+    shore_charges = [
+        (date(2026, 6, 5), "SHORE HOUSE RENTAL OCEAN CITY NJ", -840.00, "travel", "Shore House Rentals"),
+        (date(2026, 6, 6), "ACME MARKETS 7942 OCEAN CITY NJ", -96.40, "groceries", "Acme Markets"),
+        (date(2026, 6, 7), "MANCO & MANCO PIZZA BOARDWALK", -54.60, "restaurants", "Manco & Manco"),
+    ]
+    shore_rows = [
+        txn("cc", when, desc, amt, "expense", ckey, merchant=merch)
+        for when, desc, amt, ckey, merch in shore_charges
+    ]
+    shore_rows.append(
+        txn("chk", date(2026, 6, 11), "ZELLE FROM ROOMMATE - SHORE WEEKEND", 300.00, "reimbursement")
+    )
+    shore_rows.append(
+        txn("chk", date(2026, 6, 14), "ZELLE FROM COWORKER - SHORE WEEKEND", 240.00, "reimbursement")
+    )
+
+    # an unlinked purchase/refund pair so the netting view has a suggestion
+    txn("cc", date(2026, 7, 10), "GYM EQUIPMENT ORDER - RETURNED", -89.99, "expense", "stuff",
+        merchant="Fitness Warehouse")
+    txn("cc", date(2026, 7, 18), "REFUND - GYM EQUIPMENT ORDER", 89.99, "refund", None,
+        merchant="Fitness Warehouse")
+
     # recent uncategorized rows so the Rules workflow has something to demo
     for when, desc, amt in [
         (date(2026, 7, 24), "SQ *REANIMATOR COFFEE ROASTERS", -6.75),
@@ -293,6 +318,18 @@ def seed_demo_db(db_path: Path) -> dict:
         txn("cc", when, desc, amt, "uncategorized", None, user_cat=False)
 
     session.add_all(txns)
+    session.commit()
+
+    # split rows: user fronted the shore weekend for 4 people (25% share);
+    # the Zelle inflows are reimbursements against the same group
+    for row in shore_rows:
+        session.add(
+            models.TransactionSplit(
+                transaction_id=row.id,
+                group_name="Shore weekend",
+                personal_share=_d("0.25") if row.amount < 0 else _d("0"),
+            )
+        )
     session.commit()
 
     # monthly snapshots (1st of each month) plus a fresh final one

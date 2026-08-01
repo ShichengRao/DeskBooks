@@ -979,76 +979,89 @@ def fire_projection(db: Session, max_years: int = 60) -> dict:
     }
 
 
-def reconcile_account_period(
-    db: Session,
-    account_id: int,
-    start: date,
-    end: date,
-    *,
-    year: int | None = None,
-    month: int | None = None,
-) -> dict:
-    """Return imported transaction totals for an arbitrary account period."""
-    stmt = select(
-        models.Transaction.id,
-        models.Transaction.date,
-        models.Transaction.description_normalized,
-        models.Transaction.amount,
-        models.Transaction.kind,
-        models.Transaction.category_id,
-    ).where(
-        models.Transaction.account_id == account_id,
-        models.Transaction.date >= start,
-        models.Transaction.date <= end,
-        models.Transaction.is_excluded_from_totals.is_(False),
-    )
-    rows = list(db.execute(stmt))
-    by_kind: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
-    total = Decimal("0")
-    inflows = Decimal("0")
-    outflows = Decimal("0")
-    for _id, _d, _desc, amt, kind, _cat in rows:
-        by_kind[kind.value] += amt
-        total += amt
-        if amt >= 0:
-            inflows += amt
-        else:
-            outflows += amt
-    recon = None
-    if year is not None and month is not None:
-        recon = db.scalar(
-            select(models.MonthlyReconciliation).where(
-                models.MonthlyReconciliation.account_id == account_id,
-                models.MonthlyReconciliation.year == year,
-                models.MonthlyReconciliation.month == month,
+def linked_cancel_pairs(db: Session, start: date, end: date) -> list[dict]:
+    """Transactions already linked via transfer_pair_id, as deduped pairs
+    with at least one side inside the range; newest first."""
+    txs = list(
+        db.scalars(
+            select(models.Transaction).where(
+                models.Transaction.transfer_pair_id.is_not(None),
+                models.Transaction.date >= start,
+                models.Transaction.date <= end,
             )
         )
-    statement_total = recon.statement_total if recon else None
-    delta = (Decimal(total) - Decimal(statement_total)) if statement_total is not None else None
-    return {
-        "account_id": account_id,
-        "year": year,
-        "month": month,
-        "start": start,
-        "end": end,
-        "transaction_count": len(rows),
-        "imported_total": total,
-        "imported_inflows": inflows,
-        "imported_outflows": outflows,
-        "by_kind": dict(by_kind),
-        "statement_total": statement_total,
-        "statement_notes": recon.notes if recon else None,
-        "delta": delta,
-    }
+    )
+    seen: set[int] = set()
+    pairs: list[dict] = []
+    for tx in txs:
+        if tx.id in seen:
+            continue
+        other = db.get(models.Transaction, tx.transfer_pair_id)
+        if other is None:
+            continue
+        seen.add(tx.id)
+        seen.add(other.id)
+        a, b = (tx, other) if tx.id < other.id else (other, tx)
+        pairs.append({"a": a, "b": b})
+    pairs.sort(key=lambda p: max(p["a"].date, p["b"].date), reverse=True)
+    return pairs
 
 
-def reconcile_account_month(db: Session, account_id: int, year: int, month: int) -> dict:
-    """Return the sum of imported transactions for (account, year, month)
-    plus any user-saved statement total, plus a per-kind breakdown so the
-    user can see which rows aren't standard expenses.
-    """
-    from calendar import monthrange
+def cancel_out_candidates(
+    db: Session, start: date, end: date, *, window_days: int = 45, limit: int = 100
+) -> list[dict]:
+    """Suggest unlinked equal-and-opposite pairs (refunds, reversals,
+    reimbursements) worth netting out. Each transaction is offered at most
+    once, matched to its nearest-dated counterpart within window_days.
+    Transfers, card payments, and investment flows are skipped — those are
+    deliberate money moves, not accidental offsets."""
+    stmt = (
+        select(models.Transaction)
+        .where(
+            models.Transaction.date >= start,
+            models.Transaction.date <= end,
+            models.Transaction.transfer_pair_id.is_(None),
+            models.Transaction.is_excluded_from_totals.is_(False),
+            models.Transaction.amount != 0,
+            models.Transaction.kind.not_in(
+                [
+                    models.TransactionKind.transfer,
+                    models.TransactionKind.cc_payment,
+                    models.TransactionKind.investment,
+                ]
+            ),
+        )
+        .order_by(models.Transaction.date)
+    )
+    rows = list(db.scalars(stmt))
+    by_abs: dict[Decimal, list[models.Transaction]] = defaultdict(list)
+    for tx in rows:
+        by_abs[abs(tx.amount)].append(tx)
 
-    start = date(year, month, 1)
-    end = date(year, month, monthrange(year, month)[1])
-    return reconcile_account_period(db, account_id, start, end, year=year, month=month)
+    used: set[int] = set()
+    out: list[dict] = []
+    for group in by_abs.values():
+        positives = [t for t in group if t.amount > 0]
+        negatives = [t for t in group if t.amount < 0]
+        if not positives or not negatives:
+            continue
+        for p in positives:
+            if p.id in used:
+                continue
+            best: models.Transaction | None = None
+            best_gap: int | None = None
+            for n in negatives:
+                if n.id in used:
+                    continue
+                gap = abs((n.date - p.date).days)
+                if gap > window_days:
+                    continue
+                if best_gap is None or gap < best_gap:
+                    best, best_gap = n, gap
+            if best is not None:
+                used.add(p.id)
+                used.add(best.id)
+                a, b = (p, best) if (p.date, p.id) <= (best.date, best.id) else (best, p)
+                out.append({"a": a, "b": b, "gap_days": best_gap})
+    out.sort(key=lambda c: abs(c["a"].amount), reverse=True)
+    return out[:limit]

@@ -1020,6 +1020,43 @@
         "title": "BudgetReportRow",
         "type": "object"
       },
+      "CancelCandidateOut": {
+        "properties": {
+          "a": {
+            "$ref": "#/components/schemas/TransactionOut"
+          },
+          "b": {
+            "$ref": "#/components/schemas/TransactionOut"
+          },
+          "gap_days": {
+            "title": "Gap Days",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "a",
+          "b",
+          "gap_days"
+        ],
+        "title": "CancelCandidateOut",
+        "type": "object"
+      },
+      "CancelPairOut": {
+        "properties": {
+          "a": {
+            "$ref": "#/components/schemas/TransactionOut"
+          },
+          "b": {
+            "$ref": "#/components/schemas/TransactionOut"
+          }
+        },
+        "required": [
+          "a",
+          "b"
+        ],
+        "title": "CancelPairOut",
+        "type": "object"
+      },
       "CategoryIn": {
         "properties": {
           "archived": {
@@ -3065,172 +3102,6 @@
           "name"
         ],
         "title": "ProfileRename",
-        "type": "object"
-      },
-      "ReconcileIn": {
-        "properties": {
-          "account_id": {
-            "title": "Account Id",
-            "type": "integer"
-          },
-          "month": {
-            "title": "Month",
-            "type": "integer"
-          },
-          "notes": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Notes"
-          },
-          "statement_total": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Statement Total"
-          },
-          "year": {
-            "title": "Year",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "account_id",
-          "year",
-          "month"
-        ],
-        "title": "ReconcileIn",
-        "type": "object"
-      },
-      "ReconcileResponse": {
-        "properties": {
-          "account_id": {
-            "title": "Account Id",
-            "type": "integer"
-          },
-          "by_kind": {
-            "additionalProperties": {
-              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-              "type": "string"
-            },
-            "title": "By Kind",
-            "type": "object"
-          },
-          "delta": {
-            "anyOf": [
-              {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Delta"
-          },
-          "end": {
-            "format": "date",
-            "title": "End",
-            "type": "string"
-          },
-          "imported_inflows": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Imported Inflows",
-            "type": "string"
-          },
-          "imported_outflows": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Imported Outflows",
-            "type": "string"
-          },
-          "imported_total": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Imported Total",
-            "type": "string"
-          },
-          "month": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Month"
-          },
-          "start": {
-            "format": "date",
-            "title": "Start",
-            "type": "string"
-          },
-          "statement_notes": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Statement Notes"
-          },
-          "statement_total": {
-            "anyOf": [
-              {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Statement Total"
-          },
-          "transaction_count": {
-            "title": "Transaction Count",
-            "type": "integer"
-          },
-          "year": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Year"
-          }
-        },
-        "required": [
-          "account_id",
-          "start",
-          "end",
-          "transaction_count",
-          "imported_total",
-          "imported_inflows",
-          "imported_outflows",
-          "by_kind",
-          "statement_total",
-          "statement_notes",
-          "delta"
-        ],
-        "title": "ReconcileResponse",
         "type": "object"
       },
       "RecurringMerchant": {
@@ -5554,6 +5425,132 @@
         "summary": "Shutdown"
       }
     },
+    "/api/analytics/cancel-candidates": {
+      "get": {
+        "description": "Unlinked transactions that come in equal-and-opposite amount pairs\nwithin window_days of each other \u2014 likely refunds, reversals, or\nreimbursements that should net out of cashflow once linked.",
+        "operationId": "cancel_candidates_api_analytics_cancel_candidates_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "start",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "Start",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "end",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "End",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "window_days",
+            "required": false,
+            "schema": {
+              "default": 45,
+              "title": "Window Days",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CancelCandidateOut"
+                  },
+                  "title": "Response Cancel Candidates Api Analytics Cancel Candidates Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Candidates",
+        "tags": [
+          "analytics"
+        ]
+      }
+    },
+    "/api/analytics/cancel-pairs": {
+      "get": {
+        "description": "Pairs already linked via transfer_pair_id with at least one side in\nthe range; newest first.",
+        "operationId": "cancel_pairs_api_analytics_cancel_pairs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "start",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "Start",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "end",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "End",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CancelPairOut"
+                  },
+                  "title": "Response Cancel Pairs Api Analytics Cancel Pairs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Pairs",
+        "tags": [
+          "analytics"
+        ]
+      }
+    },
     "/api/analytics/cashflow": {
       "get": {
         "operationId": "cashflow_api_analytics_cashflow_get",
@@ -5762,153 +5759,6 @@
           }
         },
         "summary": "Monthly",
-        "tags": [
-          "analytics"
-        ]
-      }
-    },
-    "/api/analytics/reconcile": {
-      "get": {
-        "operationId": "reconcile_api_analytics_reconcile_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "account_id",
-            "required": true,
-            "schema": {
-              "title": "Account Id",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "year",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Year"
-            }
-          },
-          {
-            "in": "query",
-            "name": "month",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Month"
-            }
-          },
-          {
-            "in": "query",
-            "name": "start",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "format": "date",
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Start"
-            }
-          },
-          {
-            "in": "query",
-            "name": "end",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "format": "date",
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "End"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ReconcileResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Reconcile",
-        "tags": [
-          "analytics"
-        ]
-      },
-      "put": {
-        "operationId": "upsert_reconcile_api_analytics_reconcile_put",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ReconcileIn"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ReconcileResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Upsert Reconcile",
         "tags": [
           "analytics"
         ]

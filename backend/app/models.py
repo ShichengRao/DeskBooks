@@ -422,26 +422,9 @@ class FireSettings(Base):
     )
 
 
-class MonthlyReconciliation(Base):
-    """Per-(account, month) user-entered statement total + notes.
-
-    Lets the user record "the bank says I withdrew $X net in May" and
-    compare against what the app's imported transactions sum to.
-    """
-
-    __tablename__ = "monthly_reconciliations"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id", ondelete="CASCADE"))
-    year: Mapped[int] = mapped_column(Integer)
-    month: Mapped[int] = mapped_column(Integer)
-    statement_total: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
-    notes: Mapped[str | None] = mapped_column(Text)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), onupdate=func.now()
-    )
-
-    __table_args__ = (UniqueConstraint("account_id", "year", "month", name="uq_recon_acct_month"),)
+# MonthlyReconciliation (per-account statement totals) was removed once the
+# Reconcile tab pivoted to splits + cancel-out pairs; existing databases may
+# still carry the orphaned monthly_reconciliations table, which is harmless.
 
 
 class BudgetPlanMixin:
@@ -516,7 +499,6 @@ __all__ = [
     "JournalEntryRevision",
     "ImportBatch",
     "ImportStatus",
-    "MonthlyReconciliation",
     "FireSettings",
     "BudgetDefault",
     "BudgetOverride",
