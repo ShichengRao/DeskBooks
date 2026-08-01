@@ -417,6 +417,10 @@ class FireSettings(Base):
     )
     # 4 % SWR by default — overrideable for conservative/aggressive runs.
     withdrawal_rate: Mapped[Decimal] = mapped_column(Numeric(6, 4), default=Decimal("0.0400"))
+    # Optional age anchor: with a birth year the projection can say "at
+    # retirement age you'd have $X" instead of a bare "never".
+    birth_year: Mapped[int | None] = mapped_column(Integer)
+    retirement_age: Mapped[int] = mapped_column(Integer, default=65)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
     )

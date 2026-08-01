@@ -947,7 +947,7 @@ def fire_projection(db: Session, max_years: int = 60) -> dict:
         years.append(
             {
                 "year": year,
-                "age": None,  # the app doesn't track DOB; UI can compute if needed
+                "age": (year - settings.birth_year) if settings.birth_year else None,
                 "total": total.quantize(Decimal("0.01")),
                 "by_category": {k: v.quantize(Decimal("0.01")) for k, v in current.items()},
                 "pct_of_target": float(total / target * 100) if target > 0 else 0.0,
@@ -959,6 +959,19 @@ def fire_projection(db: Session, max_years: int = 60) -> dict:
         for cat, rate in rates.items():
             if cat in current:
                 current[cat] = current[cat] * (Decimal("1") + rate)
+
+    # When the target is never reached, "never" is a dead end — anchor the
+    # story to retirement age instead: "at this trajectory you'd have $X at
+    # 65". Needs a birth year; clamped into the projected window.
+    retirement_age = settings.retirement_age or 65
+    retirement_age_year: int | None = None
+    total_at_retirement_age: Decimal | None = None
+    if settings.birth_year:
+        retirement_age_year = settings.birth_year + retirement_age
+        clamped = min(max(retirement_age_year, years[0]["year"]), years[-1]["year"])
+        total_at_retirement_age = next(
+            row["total"] for row in years if row["year"] == clamped
+        )
 
     notes = [
         "Growth rates are real (inflation-adjusted) — no need to subtract inflation separately.",
@@ -974,6 +987,9 @@ def fire_projection(db: Session, max_years: int = 60) -> dict:
         "current_total": sum(by_category.values(), Decimal("0")).quantize(Decimal("0.01")),
         "current_by_category": {k: v.quantize(Decimal("0.01")) for k, v in by_category.items()},
         "retirement_year": retirement_year,
+        "retirement_age": retirement_age,
+        "retirement_age_year": retirement_age_year,
+        "total_at_retirement_age": total_at_retirement_age,
         "years": years,
         "notes": notes,
     }

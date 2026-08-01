@@ -1346,6 +1346,21 @@
             "title": "Notes",
             "type": "array"
           },
+          "retirement_age": {
+            "title": "Retirement Age",
+            "type": "integer"
+          },
+          "retirement_age_year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retirement Age Year"
+          },
           "retirement_year": {
             "anyOf": [
               {
@@ -1362,6 +1377,18 @@
             "title": "Target Total",
             "type": "string"
           },
+          "total_at_retirement_age": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total At Retirement Age"
+          },
           "years": {
             "items": {
               "$ref": "#/components/schemas/FireProjectionYear"
@@ -1375,6 +1402,9 @@
           "current_total",
           "current_by_category",
           "retirement_year",
+          "retirement_age",
+          "retirement_age_year",
+          "total_at_retirement_age",
           "years"
         ],
         "title": "FireProjection",
@@ -1437,6 +1467,17 @@
               }
             ],
             "title": "Annual Retirement Spending"
+          },
+          "birth_year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Birth Year"
           },
           "growth_bank": {
             "anyOf": [
@@ -1510,6 +1551,11 @@
             ],
             "title": "Growth Tax Advantaged"
           },
+          "retirement_age": {
+            "default": 65,
+            "title": "Retirement Age",
+            "type": "integer"
+          },
           "withdrawal_rate": {
             "anyOf": [
               {
@@ -1543,6 +1589,17 @@
             "title": "Annual Retirement Spending",
             "type": "string"
           },
+          "birth_year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Birth Year"
+          },
           "growth_bank": {
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Growth Bank",
@@ -1573,6 +1630,10 @@
             "title": "Growth Tax Advantaged",
             "type": "string"
           },
+          "retirement_age": {
+            "title": "Retirement Age",
+            "type": "integer"
+          },
           "updated_at": {
             "format": "date-time",
             "title": "Updated At",
@@ -1593,6 +1654,8 @@
           "growth_credit",
           "annual_retirement_spending",
           "withdrawal_rate",
+          "birth_year",
+          "retirement_age",
           "updated_at"
         ],
         "title": "FireSettingsOut",

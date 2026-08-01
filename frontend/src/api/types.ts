@@ -399,6 +399,8 @@ export interface FireSettings {
   growth_credit: string;
   annual_retirement_spending: string;
   withdrawal_rate: string;
+  birth_year: number | null;
+  retirement_age: number;
   updated_at: string;
 }
 
@@ -415,6 +417,9 @@ export interface FireProjection {
   current_total: string;
   current_by_category: Record<string, string>;
   retirement_year: number | null;
+  retirement_age: number;
+  retirement_age_year: number | null;
+  total_at_retirement_age: string | null;
   years: FireProjectionYear[];
   notes: string[];
 }
