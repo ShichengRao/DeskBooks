@@ -80,3 +80,28 @@ def test_additive_column_migration_adds_missing_columns():
         cols = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(fire_settings)")}
     assert {"birth_year", "retirement_age"} <= cols
     engine.dispose()
+
+
+def test_projection_carries_property_flat_without_a_growth_rate(db):
+    db.add(FireSettings())
+    account = Account(
+        name="House",
+        institution=None,
+        account_category=AccountCategory.property,
+        type=AccountType.other,
+        sign_convention=SignConvention.outflow_negative,
+    )
+    db.add(account)
+    db.flush()
+    snap = NetWorthSnapshot(snapshot_date=date(2026, 7, 1))
+    db.add(snap)
+    db.flush()
+    db.add(AccountBalance(snapshot_id=snap.id, account_id=account.id, balance=Decimal("300000.00")))
+    db.commit()
+
+    result = fire_projection(db, max_years=5)
+
+    assert result["current_by_category"]["property"] == Decimal("300000.00")
+    # no growth field exists for property, so it must not compound (or crash)
+    assert result["years"][0]["by_category"]["property"] == Decimal("300000.00")
+    assert result["years"][5]["by_category"]["property"] == Decimal("300000.00")
