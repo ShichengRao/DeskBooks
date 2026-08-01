@@ -976,7 +976,7 @@ def fire_projection(db: Session, max_years: int = 60) -> dict:
     notes = [
         "Growth rates are real (inflation-adjusted) — no need to subtract inflation separately.",
         f"Target = annual retirement spending / withdrawal rate = "
-        f"{settings.annual_retirement_spending} / {settings.withdrawal_rate} = "
+        f"{settings.annual_retirement_spending} / {Decimal(settings.withdrawal_rate):.1%} = "
         f"{target.quantize(Decimal('0.01'))}.",
         f"Current NLV anchored to snapshot {latest.snapshot_date if latest else '(no snapshot)'}.",
         "Contributions are not modeled — projection assumes you stop adding to accounts today.",
