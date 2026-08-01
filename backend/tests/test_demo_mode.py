@@ -36,3 +36,12 @@ def test_demo_mode_off_is_inert(monkeypatch):
     assert response.status_code == 403
     assert "run.sh" in response.json()["detail"]
     assert client.get("/api/health").status_code == 200
+
+
+def test_unbounded_compute_params_are_clamped():
+    # These guards protect the hosted demo (and any local instance) from
+    # arbitrarily expensive requests; they run with demo mode off.
+    assert client.get("/api/analytics/fire/projection?max_years=1000000").status_code == 422
+    huge = client.get("/api/budgets?start=0001-01-01&end=9999-12-31")
+    assert huge.status_code == 400
+    assert "range too large" in huge.json()["detail"]

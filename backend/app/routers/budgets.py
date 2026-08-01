@@ -39,6 +39,10 @@ def get_budget(
         focus_month = month
     if start is None or end is None:
         raise HTTPException(400, "provide start/end or month")
+    # The report walks every month in the range; cap the span so an
+    # arbitrary query can't ask for tens of thousands of iterations.
+    if (end.year - start.year) * 12 + (end.month - start.month) > 600:
+        raise HTTPException(400, "range too large: at most 50 years of months")
     if end < start:
         raise HTTPException(400, "end must be on or after start")
     return budgets.budget_report(db, start, end, focus_month)

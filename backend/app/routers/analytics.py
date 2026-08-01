@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -87,7 +87,7 @@ def put_fire_settings(body: schemas.FireSettingsIn, db: DbSession):
 
 
 @router.get("/fire/projection", response_model=schemas.FireProjection)
-def fire_projection(db: DbSession, max_years: int = 60):
+def fire_projection(db: DbSession, max_years: int = Query(60, ge=1, le=120)):
     return a.fire_projection(db, max_years=max_years)
 
 

@@ -5697,6 +5697,8 @@
             "required": false,
             "schema": {
               "default": 60,
+              "maximum": 120,
+              "minimum": 1,
               "title": "Max Years",
               "type": "integer"
             }
