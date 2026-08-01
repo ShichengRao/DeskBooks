@@ -418,6 +418,8 @@ class FireSettings(Base):
     )
     # 4 % SWR by default — overrideable for conservative/aggressive runs.
     withdrawal_rate: Mapped[Decimal] = mapped_column(Numeric(6, 4), default=Decimal("0.0400"))
+    # Real growth for property (house ≈ inflation + ~1% historically).
+    growth_property: Mapped[Decimal] = mapped_column(Numeric(6, 4), default=Decimal("0.0100"))
     # Optional age anchor: with a birth year the projection can say "at
     # retirement age you'd have $X" instead of a bare "never".
     birth_year: Mapped[int | None] = mapped_column(Integer)

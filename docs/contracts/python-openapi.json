@@ -1540,6 +1540,19 @@
             ],
             "title": "Growth Nonsense"
           },
+          "growth_property": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "default": "0.0100",
+            "title": "Growth Property"
+          },
           "growth_tax_advantaged": {
             "anyOf": [
               {
@@ -1626,6 +1639,11 @@
             "title": "Growth Nonsense",
             "type": "string"
           },
+          "growth_property": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Growth Property",
+            "type": "string"
+          },
           "growth_tax_advantaged": {
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Growth Tax Advantaged",
@@ -1653,6 +1671,7 @@
           "growth_nonsense",
           "growth_cash",
           "growth_credit",
+          "growth_property",
           "annual_retirement_spending",
           "withdrawal_rate",
           "birth_year",

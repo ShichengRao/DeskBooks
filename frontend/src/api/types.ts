@@ -398,6 +398,7 @@ export interface FireSettings {
   growth_nonsense: string;
   growth_cash: string;
   growth_credit: string;
+  growth_property: string;
   annual_retirement_spending: string;
   withdrawal_rate: string;
   birth_year: number | null;

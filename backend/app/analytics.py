@@ -933,6 +933,7 @@ def fire_projection(db: Session, max_years: int = 60) -> dict:
         "cash": Decimal(settings.growth_cash),
         "credit": Decimal(settings.growth_credit),
         "liability": Decimal(settings.growth_credit),
+        "property": Decimal(settings.growth_property),
     }
 
     target = (

@@ -78,12 +78,12 @@ def test_additive_column_migration_adds_missing_columns():
     _apply_additive_columns(engine)
     with engine.begin() as conn:
         cols = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(fire_settings)")}
-    assert {"birth_year", "retirement_age"} <= cols
+    assert {"birth_year", "retirement_age", "growth_property"} <= cols
     engine.dispose()
 
 
-def test_projection_carries_property_flat_without_a_growth_rate(db):
-    db.add(FireSettings())
+def test_projection_compounds_property_at_its_own_rate(db):
+    db.add(FireSettings())  # growth_property defaults to 1% real
     account = Account(
         name="House",
         institution=None,
@@ -102,6 +102,28 @@ def test_projection_carries_property_flat_without_a_growth_rate(db):
     result = fire_projection(db, max_years=5)
 
     assert result["current_by_category"]["property"] == Decimal("300000.00")
-    # no growth field exists for property, so it must not compound (or crash)
     assert result["years"][0]["by_category"]["property"] == Decimal("300000.00")
+    year_five = result["years"][5]["by_category"]["property"]
+    assert abs(year_five - Decimal("300000.00") * Decimal("1.01") ** 5) < Decimal("0.05")
+
+
+def test_projection_holds_property_flat_at_zero_rate(db):
+    db.add(FireSettings(growth_property=Decimal("0")))
+    account = Account(
+        name="House",
+        institution=None,
+        account_category=AccountCategory.property,
+        type=AccountType.other,
+        sign_convention=SignConvention.outflow_negative,
+    )
+    db.add(account)
+    db.flush()
+    snap = NetWorthSnapshot(snapshot_date=date(2026, 7, 1))
+    db.add(snap)
+    db.flush()
+    db.add(AccountBalance(snapshot_id=snap.id, account_id=account.id, balance=Decimal("300000.00")))
+    db.commit()
+
+    result = fire_projection(db, max_years=5)
+
     assert result["years"][5]["by_category"]["property"] == Decimal("300000.00")

@@ -721,6 +721,7 @@ const CATS: { key: keyof FireSettings; label: string; hint: string }[] = [
   { key: "growth_nonsense", label: accountCategoryLabel("nonsense"), hint: "crypto / wallets / misc" },
   { key: "growth_cash", label: "Cash", hint: "physical cash" },
   { key: "growth_credit", label: "Credit / Liability", hint: "debt growth (usually 0)" },
+  { key: "growth_property", label: accountCategoryLabel("property"), hint: "house ≈ inflation + ~1%" },
 ];
 
 function FireCalculator() {
@@ -751,6 +752,7 @@ function FireCalculator() {
         growth_nonsense: pct(s.growth_nonsense),
         growth_cash: pct(s.growth_cash),
         growth_credit: pct(s.growth_credit),
+        growth_property: pct(s.growth_property),
       });
     }
   }, [settingsQ.data, form]);
@@ -769,6 +771,7 @@ function FireCalculator() {
           growth_nonsense: frac(s.growth_nonsense),
           growth_cash: frac(s.growth_cash),
           growth_credit: frac(s.growth_credit),
+          growth_property: frac(s.growth_property),
           annual_retirement_spending: s.annual_retirement_spending,
           withdrawal_rate: frac(s.withdrawal_rate),
           birth_year: s.birth_year,

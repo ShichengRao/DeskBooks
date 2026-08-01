@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import clsx from "clsx";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CartesianGrid,
@@ -135,7 +136,8 @@ export function NetWorth() {
   const [rangeStart, setRangeStart] = useState("");
   const [rangeEnd, setRangeEnd] = useState("");
   const [focusedValueSeries, setFocusedValueSeries] = useState<string | null>(null);
-  const [focusedPercentSeries, setFocusedPercentSeries] = useState<string | null>(null);
+  const [focusedAssetSeries, setFocusedAssetSeries] = useState<string | null>(null);
+  const [focusedDebtSeries, setFocusedDebtSeries] = useState<string | null>(null);
   const chartColors = useChartColors();
   const series = useQuery({
     queryKey: ["nw-series", rangeStart, rangeEnd],
@@ -151,20 +153,42 @@ export function NetWorth() {
   const [forceVisibleAccountIds, setForceVisibleAccountIds] = useState<Set<number>>(() => new Set());
   const [importingWorkbook, setImportingWorkbook] = useState(false);
 
-  const chartData =
+  const chartData: NetWorthChartRow[] =
     series.data?.map((p) => {
       const total = num(p.total);
       const categoryValues = Object.fromEntries(Object.entries(p.by_category).map(([k, v]) => [`cat_${k}`, num(v)]));
-      const categoryPercentages = Object.fromEntries(
-        Object.entries(p.by_category).map(([k, v]) => [`pct_${k}`, total ? (num(v) / total) * 100 : 0]),
+      // Shares are computed against gross totals per side, not net worth —
+      // a mortgaged house would otherwise read as 200% of net worth.
+      const assetTotal = Object.values(p.by_category).reduce((s, v) => s + Math.max(0, num(v)), 0);
+      const debtTotal = Object.values(p.by_category).reduce((s, v) => s + Math.max(0, -num(v)), 0);
+      const assetShares = Object.fromEntries(
+        Object.entries(p.by_category).map(([k, v]) => [
+          `asset_pct_${k}`,
+          assetTotal ? (Math.max(0, num(v)) / assetTotal) * 100 : 0,
+        ]),
+      );
+      const debtShares = Object.fromEntries(
+        Object.entries(p.by_category).map(([k, v]) => [
+          `debt_pct_${k}`,
+          debtTotal ? (Math.max(0, -num(v)) / debtTotal) * 100 : 0,
+        ]),
       );
       return {
         date: p.snapshot_date,
         total,
         ...categoryValues,
-        ...categoryPercentages,
+        ...assetShares,
+        ...debtShares,
       };
     }) ?? [];
+
+  // Only chart the categories that actually appear on each side.
+  const assetSeries = ACCOUNT_CATEGORY_SERIES.filter((s) =>
+    chartData.some((row) => Number(row[`asset_pct_${s.category}`] ?? 0) > 0.05),
+  );
+  const debtSeries = ACCOUNT_CATEGORY_SERIES.filter((s) =>
+    chartData.some((row) => Number(row[`debt_pct_${s.category}`] ?? 0) > 0.05),
+  );
 
   const accountById = useMemo(
     () => Object.fromEntries((accounts.data ?? []).map((a) => [a.id, a])),
@@ -200,14 +224,34 @@ export function NetWorth() {
           setRangeEnd("");
         }}
       />
-      <NetWorthAllocationPanel
-        data={chartData}
-        focused={focusedPercentSeries}
-        snapshotCount={snapshots.data?.length ?? 0}
-        hasRangeFilter={Boolean(rangeStart || rangeEnd)}
-        chartColors={chartColors}
-        onFocus={setFocusedPercentSeries}
-      />
+      <div className={clsx("grid grid-cols-1 gap-6", debtSeries.length > 0 && "xl:grid-cols-2")}>
+        <ShareOfTotalPanel
+          title="Asset allocation"
+          subtitle="each asset category as a share of total assets"
+          prefix="asset_pct_"
+          seriesDefs={assetSeries}
+          data={chartData}
+          focused={focusedAssetSeries}
+          snapshotCount={snapshots.data?.length ?? 0}
+          hasRangeFilter={Boolean(rangeStart || rangeEnd)}
+          chartColors={chartColors}
+          onFocus={setFocusedAssetSeries}
+        />
+        {debtSeries.length > 0 && (
+          <ShareOfTotalPanel
+            title="Liability mix"
+            subtitle="each debt category as a share of total debt"
+            prefix="debt_pct_"
+            seriesDefs={debtSeries}
+            data={chartData}
+            focused={focusedDebtSeries}
+            snapshotCount={snapshots.data?.length ?? 0}
+            hasRangeFilter={Boolean(rangeStart || rangeEnd)}
+            chartColors={chartColors}
+            onFocus={setFocusedDebtSeries}
+          />
+        )}
+      </div>
       <NetWorthSnapshotsTable
         snapshots={snapshots.data ?? []}
         series={series.data ?? []}
@@ -501,7 +545,11 @@ function NetWorthChartControls({
   );
 }
 
-function NetWorthAllocationPanel({
+function ShareOfTotalPanel({
+  title,
+  subtitle,
+  prefix,
+  seriesDefs,
   data,
   focused,
   snapshotCount,
@@ -509,6 +557,10 @@ function NetWorthAllocationPanel({
   chartColors,
   onFocus,
 }: {
+  title: string;
+  subtitle: string;
+  prefix: "asset_pct_" | "debt_pct_";
+  seriesDefs: (typeof ACCOUNT_CATEGORY_SERIES)[number][];
   data: NetWorthChartRow[];
   focused: string | null;
   snapshotCount: number;
@@ -516,22 +568,11 @@ function NetWorthAllocationPanel({
   chartColors: ChartColors;
   onFocus: (value: string | null) => void;
 }) {
-  // Allocations live on a 0–100% scale; extend the floor only as far as
-  // the data actually dips (credit cards at -0.1% used to drag the
-  // auto-domain down to -30%).
-  const pctFloor = Math.min(
-    0,
-    Math.floor(
-      Math.min(
-        0,
-        ...data.flatMap((row) => ACCOUNT_CATEGORY_SERIES.map((s) => Number(row[s.pctKey] ?? 0))),
-      ),
-    ),
-  );
   return (
     <div className="card p-4">
       <div className="mb-2">
-        <div className="text-sm font-medium">Allocation by account category</div>
+        <div className="text-sm font-medium">{title}</div>
+        <div className="text-xs text-ink-500">{subtitle}</div>
         {focused && <button className="btn-ghost text-xs mt-1" onClick={() => onFocus(null)}>show all percentages</button>}
       </div>
       <div className="h-72">
@@ -543,7 +584,7 @@ function NetWorthAllocationPanel({
             <CartesianGrid stroke="#eceef2" vertical={false} />
             <XAxis dataKey="date" tickFormatter={(date) => shortDateLabel(date)} tick={{ fontSize: 12 }} stroke="#7a8392" />
             <YAxis
-              domain={[pctFloor, 100]}
+              domain={[0, 100]}
               ticks={[0, 25, 50, 75, 100]}
               tickFormatter={(value) => `${Number(value).toFixed(0)}%`}
               tick={{ fontSize: 12 }}
@@ -556,15 +597,17 @@ function NetWorthAllocationPanel({
                 <ChartLegend payload={props.payload as any} focusedKey={focused} onToggle={(key) => onFocus(focused === key ? null : key)} />
               )}
             />
-            {ACCOUNT_CATEGORY_SERIES.map((seriesDef, index) => (
+            {seriesDefs.map((seriesDef) => (
               <Line
-                key={seriesDef.pctKey}
-                dataKey={seriesDef.pctKey}
-                stroke={colorAt(chartColors.colors, index + 1)}
+                key={prefix + seriesDef.category}
+                dataKey={prefix + seriesDef.category}
+                // Color follows the category across every chart on the page,
+                // so filtering one side never repaints the survivors.
+                stroke={colorAt(chartColors.colors, ACCOUNT_CATEGORY_SERIES.indexOf(seriesDef) + 1)}
                 name={seriesDef.label}
                 dot={false}
                 connectNulls
-                hide={focused !== null && focused !== seriesDef.pctKey}
+                hide={focused !== null && focused !== prefix + seriesDef.category}
               />
             ))}
           </LineChart>
