@@ -691,14 +691,6 @@ class MonthlyPoint(BaseModel):
     net: float
 
 
-class ReconcileIn(BaseModel):
-    account_id: int
-    year: int
-    month: int
-    statement_total: Decimal | None = None
-    notes: str | None = None
-
-
 class BudgetDefaultIn(BaseModel):
     category_id: int
     amount: Decimal
@@ -812,20 +804,13 @@ class FireProjection(BaseModel):
     notes: list[str] = []
 
 
-class ReconcileResponse(BaseModel):
-    account_id: int
-    year: int | None = None
-    month: int | None = None
-    start: _date
-    end: _date
-    transaction_count: int
-    imported_total: Decimal
-    imported_inflows: Decimal
-    imported_outflows: Decimal
-    by_kind: dict[str, Decimal]
-    statement_total: Decimal | None
-    statement_notes: str | None
-    delta: Decimal | None
+class CancelPairOut(BaseModel):
+    a: TransactionOut
+    b: TransactionOut
+
+
+class CancelCandidateOut(CancelPairOut):
+    gap_days: int
 
 
 class SankeyNode(BaseModel):

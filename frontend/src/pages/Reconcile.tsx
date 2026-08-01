@@ -1,228 +1,68 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
 import { api, qs } from "../api/client";
-import type { Account, ReconcileResponse, SplitGroupSummary, Transaction } from "../api/types";
+import type { CancelCandidate, CancelPair, SplitGroupSummary, Transaction } from "../api/types";
 import { currency, dateLabel } from "../lib/fmt";
 import { KindPill } from "../lib/kinds";
 
-// Mirrors the "Total (Bank) vs Bank (actual)" reconciliation row from the
-// original 6-month expense spreadsheet.
+// The tab used to compare imported totals against bank-statement numbers;
+// that never earned its keep. It now tracks the two flows where rows relate
+// to each other: shared splits, and equal-and-opposite pairs that should
+// cancel out of cashflow.
 
-type RangeMode = "month" | "custom";
-
-const monthOptions = Array.from({ length: 12 }, (_, i) => i + 1);
-
-function dateInputValue(year: number, month: number, day: number) {
-  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+function dateInputValue(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-function monthEndDate(year: number, month: number) {
-  const endDateObj = new Date(year, month, 0);
-  return dateInputValue(endDateObj.getFullYear(), endDateObj.getMonth() + 1, endDateObj.getDate());
+function daysAgo(n: number) {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return dateInputValue(d);
 }
 
-function ReconcileFilters({
-  accounts,
-  accountId,
-  setAccountId,
-  rangeMode,
-  setRangeMode,
-  year,
-  setYear,
-  month,
-  setMonth,
-  customStart,
-  setCustomStart,
-  customEnd,
-  setCustomEnd,
+function RangeCard({
+  start,
+  end,
+  setStart,
+  setEnd,
 }: {
-  accounts: Account[] | undefined;
-  accountId: number | "";
-  setAccountId: (value: number | "") => void;
-  rangeMode: RangeMode;
-  setRangeMode: (value: RangeMode) => void;
-  year: number;
-  setYear: (value: number) => void;
-  month: number;
-  setMonth: (value: number) => void;
-  customStart: string;
-  setCustomStart: (value: string) => void;
-  customEnd: string;
-  setCustomEnd: (value: string) => void;
+  start: string;
+  end: string;
+  setStart: (value: string) => void;
+  setEnd: (value: string) => void;
 }) {
+  const presets: { label: string; start: string; end: string }[] = [
+    { label: "Last 3 months", start: daysAgo(90), end: dateInputValue(new Date()) },
+    { label: "Last 12 months", start: daysAgo(365), end: dateInputValue(new Date()) },
+    { label: "All time", start: "2000-01-01", end: dateInputValue(new Date()) },
+  ];
   return (
-    <div className="card p-4 grid grid-cols-1 md:grid-cols-5 gap-3">
+    <div className="card p-4 flex flex-wrap items-end gap-3">
       <label className="block">
-        <div className="label mb-1">Account</div>
-        <select
-          className="input"
-          value={accountId}
-          onChange={(e) => setAccountId(e.target.value ? parseInt(e.target.value, 10) : "")}
-        >
-          <option value="">— pick —</option>
-          {accounts?.map((a) => (
-            <option key={a.id} value={a.id}>{a.name}</option>
-          ))}
-        </select>
+        <div className="label mb-1">From</div>
+        <input type="date" className="input" value={start} onChange={(e) => setStart(e.target.value)} />
       </label>
       <label className="block">
-        <div className="label mb-1">Range</div>
-        <select className="input" value={rangeMode} onChange={(e) => setRangeMode(e.target.value as RangeMode)}>
-          <option value="month">Calendar month</option>
-          <option value="custom">Custom dates</option>
-        </select>
+        <div className="label mb-1">To</div>
+        <input type="date" className="input" value={end} onChange={(e) => setEnd(e.target.value)} />
       </label>
-      <label className="block">
-        <div className="label mb-1">Year</div>
-        <input
-          type="number"
-          className="input tabular"
-          value={year}
-          onChange={(e) => setYear(parseInt(e.target.value, 10))}
-          disabled={rangeMode === "custom"}
-        />
-      </label>
-      <label className="block">
-        <div className="label mb-1">Month</div>
-        <select
-          className="input"
-          value={month}
-          onChange={(e) => setMonth(parseInt(e.target.value, 10))}
-          disabled={rangeMode === "custom"}
-        >
-          {monthOptions.map((m) => (
-            <option key={m} value={m}>{new Date(2000, m - 1, 1).toLocaleString("en", { month: "long" })}</option>
-          ))}
-        </select>
-      </label>
-      <div className="grid grid-cols-2 gap-2 md:col-span-5">
-        <label className="block">
-          <div className="label mb-1">Custom start</div>
-          <input
-            type="date"
-            className="input"
-            value={customStart}
-            onChange={(e) => setCustomStart(e.target.value)}
-            disabled={rangeMode === "month"}
-          />
-        </label>
-        <label className="block">
-          <div className="label mb-1">Custom end</div>
-          <input
-            type="date"
-            className="input"
-            value={customEnd}
-            onChange={(e) => setCustomEnd(e.target.value)}
-            disabled={rangeMode === "month"}
-          />
-        </label>
-      </div>
-    </div>
-  );
-}
-
-function SummaryCards({
-  summary,
-  statementInput,
-  setStatementInput,
-  statementNotes,
-  setStatementNotes,
-  saveStatement,
-  isSaving,
-  rangeMode,
-  displayedDelta,
-}: {
-  summary: ReconcileResponse;
-  statementInput: string;
-  setStatementInput: (value: string) => void;
-  statementNotes: string;
-  setStatementNotes: (value: string) => void;
-  saveStatement: () => void;
-  isSaving: boolean;
-  rangeMode: RangeMode;
-  displayedDelta: number | null;
-}) {
-  return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-      <div className="card p-4">
-        <div className="label">Imported net (signed)</div>
-        <div className="text-2xl font-semibold tabular mt-1">{currency(summary.imported_total)}</div>
-        <div className="text-xs text-ink-500 mt-1">
-          {summary.transaction_count} transactions · inflows {currency(summary.imported_inflows)} · outflows {currency(summary.imported_outflows)}
-        </div>
-      </div>
-      <div className="card p-4">
-        <div className="label">Statement net (from your bank UI)</div>
-        <input
-          type="number"
-          step="0.01"
-          className="input tabular text-right text-2xl font-semibold mt-1 py-2"
-          placeholder="—"
-          value={statementInput}
-          onChange={(e) => setStatementInput(e.target.value)}
-        />
-        <textarea
-          className="input mt-2 text-xs"
-          rows={2}
-          placeholder="Notes (e.g., source file, observed quirks)"
-          value={statementNotes}
-          onChange={(e) => setStatementNotes(e.target.value)}
-        />
-        <button
-          className="btn-primary mt-2 text-xs"
-          onClick={saveStatement}
-          disabled={isSaving || rangeMode === "custom"}
-        >
-          {rangeMode === "custom" ? "Custom total is not saved" : "Save statement total"}
-        </button>
-      </div>
-      <DeltaCard displayedDelta={displayedDelta} />
-    </div>
-  );
-}
-
-function DeltaCard({ displayedDelta }: { displayedDelta: number | null }) {
-  const deltaMatches = displayedDelta !== null && Math.abs(displayedDelta) < 0.5;
-
-  return (
-    <div className="card p-4">
-      <div className="label">Δ (imported − statement)</div>
-      <div
-        className={clsx(
-          "text-2xl font-semibold tabular mt-1",
-          displayedDelta === null
-            ? "text-ink-400"
-            : deltaMatches
-              ? "text-good-600"
-              : "text-bad-600",
-        )}
-      >
-        {displayedDelta !== null ? currency(displayedDelta, { showSign: true }) : "—"}
-      </div>
-      <div className="text-xs text-ink-500 mt-1">
-        {displayedDelta === null
-          ? "Enter a statement total to see the reconciliation delta."
-          : deltaMatches
-            ? "Matches within rounding."
-            : "Investigate which rows are missing or extra."}
-      </div>
-    </div>
-  );
-}
-
-function ByKindBreakdown({ byKind }: { byKind: Record<string, string> }) {
-  return (
-    <div className="card p-4">
-      <div className="text-sm font-medium mb-2">By kind</div>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 tabular">
-        {Object.entries(byKind).map(([k, v]) => (
-          <div key={k} className="flex items-center justify-between bg-ink-50 rounded-md px-3 py-2">
-            <KindPill kind={k as any} />
-            <span className={clsx("font-medium", Number(v) < 0 ? "text-bad-600" : "text-good-600")}>
-              {currency(v)}
-            </span>
-          </div>
+      <div className="flex gap-2 pb-1">
+        {presets.map((p) => (
+          <button
+            key={p.label}
+            type="button"
+            className={clsx(
+              "btn-ghost text-xs",
+              start === p.start && end === p.end && "bg-brand-100 text-brand-800",
+            )}
+            onClick={() => {
+              setStart(p.start);
+              setEnd(p.end);
+            }}
+          >
+            {p.label}
+          </button>
         ))}
       </div>
     </div>
@@ -231,6 +71,7 @@ function ByKindBreakdown({ byKind }: { byKind: Record<string, string> }) {
 
 function SectionTable({
   title,
+  subtitle,
   countLabel,
   headers,
   emptyColSpan,
@@ -239,6 +80,7 @@ function SectionTable({
   children,
 }: {
   title: string;
+  subtitle?: string;
   countLabel: string;
   headers: ReactNode;
   emptyColSpan: number;
@@ -248,9 +90,12 @@ function SectionTable({
 }) {
   return (
     <div className="card overflow-hidden">
-      <div className="px-3 py-2 bg-ink-50 text-sm flex items-baseline justify-between">
-        <span>{title}</span>
-        <span className="text-ink-500 text-xs">{countLabel}</span>
+      <div className="px-3 py-2 bg-ink-50 text-sm flex items-baseline justify-between gap-3">
+        <span>
+          {title}
+          {subtitle && <span className="ml-2 text-xs text-ink-500 font-normal">{subtitle}</span>}
+        </span>
+        <span className="text-ink-500 text-xs whitespace-nowrap">{countLabel}</span>
       </div>
       <table className="w-full text-sm tabular">
         <thead className="bg-ink-50 text-left">
@@ -274,16 +119,17 @@ function SectionTable({
 function SplitGroupsTable({ groups }: { groups: SplitGroupSummary[] | undefined }) {
   return (
     <SectionTable
-      title="Split groups in range"
+      title="Split groups"
+      subtitle="shared charges and what's still owed back"
       countLabel={`${groups?.length ?? 0} groups`}
       headers={
         <>
-            <th className="px-2 py-1.5">Group</th>
-            <th className="px-2 py-1.5 text-right">Shared charges</th>
-            <th className="px-2 py-1.5 text-right">Your share</th>
-            <th className="px-2 py-1.5 text-right">Expected back</th>
-            <th className="px-2 py-1.5 text-right">Received</th>
-            <th className="px-2 py-1.5 text-right">Remaining</th>
+          <th className="px-2 py-1.5">Group</th>
+          <th className="px-2 py-1.5 text-right">Shared charges</th>
+          <th className="px-2 py-1.5 text-right">Your share</th>
+          <th className="px-2 py-1.5 text-right">Expected back</th>
+          <th className="px-2 py-1.5 text-right">Received</th>
+          <th className="px-2 py-1.5 text-right">Remaining</th>
         </>
       }
       emptyColSpan={6}
@@ -314,33 +160,107 @@ function SplitGroupsTable({ groups }: { groups: SplitGroupSummary[] | undefined 
   );
 }
 
-function TransactionsTable({ transactions }: { transactions: Transaction[] | undefined }) {
+function TxCell({ tx }: { tx: Transaction }) {
+  return (
+    <td className="px-2 py-1.5">
+      <div className="font-medium">{tx.merchant ?? tx.description_normalized ?? tx.description_raw}</div>
+      <div className="text-xs text-ink-500 flex items-center gap-2">
+        <span>{dateLabel(tx.date)}</span>
+        <KindPill kind={tx.kind} />
+        <span className={clsx("font-medium", Number(tx.amount) < 0 ? "text-bad-600" : "text-good-600")}>
+          {currency(tx.amount)}
+        </span>
+      </div>
+    </td>
+  );
+}
+
+function CandidatesTable({
+  candidates,
+  onLink,
+  linking,
+}: {
+  candidates: CancelCandidate[] | undefined;
+  onLink: (candidate: CancelCandidate) => void;
+  linking: boolean;
+}) {
   return (
     <SectionTable
-      title="Transactions in range"
-      countLabel={`${transactions?.length ?? 0} rows`}
+      title="Suggested cancel-outs"
+      subtitle="equal-and-opposite rows that probably net to zero; linking marks both as transfers so they drop out of spending"
+      countLabel={`${candidates?.length ?? 0} suggestions`}
       headers={
         <>
-            <th className="px-2 py-1.5 w-24">Date</th>
-            <th className="px-2 py-1.5">Description</th>
-            <th className="px-2 py-1.5 w-32">Kind</th>
-            <th className="px-2 py-1.5 w-32 text-right">Amount</th>
+          <th className="px-2 py-1.5">One side</th>
+          <th className="px-2 py-1.5">Other side</th>
+          <th className="px-2 py-1.5 w-24 text-right">Amount</th>
+          <th className="px-2 py-1.5 w-20 text-right">Gap</th>
+          <th className="px-2 py-1.5 w-28"></th>
+        </>
+      }
+      emptyColSpan={5}
+      emptyText="No offsetting pairs found in this range."
+      isEmpty={!candidates || candidates.length === 0}
+    >
+      {candidates?.map((c) => (
+        <tr key={`${c.a.id}-${c.b.id}`} className="table-row-hover">
+          <TxCell tx={c.a} />
+          <TxCell tx={c.b} />
+          <td className="px-2 py-1.5 text-right font-medium">{currency(Math.abs(Number(c.a.amount)))}</td>
+          <td className="px-2 py-1.5 text-right text-ink-500">
+            {c.gap_days === 0 ? "same day" : `${c.gap_days}d`}
+          </td>
+          <td className="px-2 py-1.5 text-right">
+            <button type="button" className="btn text-xs" disabled={linking} onClick={() => onLink(c)}>
+              Link pair
+            </button>
+          </td>
+        </tr>
+      ))}
+    </SectionTable>
+  );
+}
+
+function LinkedPairsTable({
+  pairs,
+  onUnlink,
+  unlinking,
+}: {
+  pairs: CancelPair[] | undefined;
+  onUnlink: (pair: CancelPair) => void;
+  unlinking: boolean;
+}) {
+  return (
+    <SectionTable
+      title="Linked pairs"
+      subtitle="already cancelling each other out"
+      countLabel={`${pairs?.length ?? 0} pairs`}
+      headers={
+        <>
+          <th className="px-2 py-1.5">One side</th>
+          <th className="px-2 py-1.5">Other side</th>
+          <th className="px-2 py-1.5 w-24 text-right">Amount</th>
+          <th className="px-2 py-1.5 w-28"></th>
         </>
       }
       emptyColSpan={4}
-      emptyText="No transactions in this account/range."
-      isEmpty={!transactions || transactions.length === 0}
+      emptyText="No linked pairs in this range."
+      isEmpty={!pairs || pairs.length === 0}
     >
-      {transactions?.map((t) => (
-        <tr key={t.id} className={clsx("table-row-hover", t.is_excluded_from_totals && "opacity-50")}>
-          <td className="px-2 py-1 text-ink-600">{dateLabel(t.date)}</td>
-          <td className="px-2 py-1">
-            <div className="font-medium">{t.merchant ?? t.description_normalized ?? t.description_raw}</div>
-            <div className="text-xs text-ink-500 truncate max-w-md">{t.description_raw}</div>
-          </td>
-          <td className="px-2 py-1"><KindPill kind={t.kind} /></td>
-          <td className={clsx("px-2 py-1 text-right font-medium", Number(t.amount) < 0 ? "text-bad-600" : "text-good-600")}>
-            {currency(t.amount)}
+      {pairs?.map((p) => (
+        <tr key={`${p.a.id}-${p.b.id}`} className="table-row-hover">
+          <TxCell tx={p.a} />
+          <TxCell tx={p.b} />
+          <td className="px-2 py-1.5 text-right font-medium">{currency(Math.abs(Number(p.a.amount)))}</td>
+          <td className="px-2 py-1.5 text-right">
+            <button
+              type="button"
+              className="btn-ghost text-xs text-bad-600"
+              disabled={unlinking}
+              onClick={() => onUnlink(p)}
+            >
+              Unlink
+            </button>
           </td>
         </tr>
       ))}
@@ -350,169 +270,55 @@ function TransactionsTable({ transactions }: { transactions: Transaction[] | und
 
 export function Reconcile() {
   const qc = useQueryClient();
-  const accounts = useQuery({ queryKey: ["accounts"], queryFn: () => api.get<Account[]>("/api/accounts") });
+  const [start, setStart] = useState<string>(daysAgo(90));
+  const [end, setEnd] = useState<string>(dateInputValue(new Date()));
+  const canQuery = !!start && !!end && end >= start;
 
-  const now = new Date();
-  const [accountId, setAccountId] = useState<number | "">("");
-  const [year, setYear] = useState<number>(now.getFullYear());
-  const [month, setMonth] = useState<number>(now.getMonth() + 1); // 1..12
-  const [rangeMode, setRangeMode] = useState<RangeMode>("month");
-  const [customStart, setCustomStart] = useState<string>(dateInputValue(now.getFullYear(), now.getMonth() + 1, 1));
-  const [customEnd, setCustomEnd] = useState<string>(monthEndDate(now.getFullYear(), now.getMonth() + 1));
-  const [statementInput, setStatementInput] = useState<string>("");
-  const [statementNotes, setStatementNotes] = useState<string>("");
-
-  // Default to the most statement-like account the first time accounts load.
-  useEffect(() => {
-    if (!accountId && accounts.data) {
-      const preferred =
-        accounts.data.find(
-          (a) =>
-            !a.is_closed &&
-            a.account_category === "bank" &&
-            a.type === "checking" &&
-            /checking/i.test(a.name) &&
-            !/business/i.test(a.name),
-        ) ??
-        accounts.data.find(
-          (a) =>
-            !a.is_closed &&
-            a.account_category === "bank" &&
-            a.type === "checking" &&
-            !/business/i.test(a.name),
-        ) ??
-        accounts.data.find(
-          (a) => !a.is_closed && a.account_category === "bank" && a.type === "checking",
-        ) ??
-        accounts.data.find((a) => !a.is_closed && a.type === "checking") ??
-        accounts.data[0];
-      if (preferred) setAccountId(preferred.id);
-    }
-  }, [accounts.data, accountId]);
-
-  const startDate = dateInputValue(year, month, 1);
-  const endDate = monthEndDate(year, month);
-  const activeStart = rangeMode === "month" ? startDate : customStart;
-  const activeEnd = rangeMode === "month" ? endDate : customEnd;
-  const canQuery = !!accountId && !!activeStart && !!activeEnd && activeEnd >= activeStart;
-
-  const summary = useQuery({
-    queryKey: ["reconcile", accountId, rangeMode, year, month, activeStart, activeEnd],
-    queryFn: () =>
-      api.get<ReconcileResponse>(
-        "/api/analytics/reconcile" +
-          qs(
-            rangeMode === "month"
-              ? { account_id: accountId, year, month }
-              : { account_id: accountId, start: activeStart, end: activeEnd },
-          ),
-      ),
-    enabled: canQuery,
-  });
-
-  // Initialize the statement input from the loaded summary (whenever
-  // the (account, year, month) tuple changes — not on every refetch).
-  useEffect(() => {
-    if (summary.data && rangeMode === "month") {
-      setStatementInput(summary.data.statement_total ?? "");
-      setStatementNotes(summary.data.statement_notes ?? "");
-    }
-    if (rangeMode === "custom") {
-      setStatementInput("");
-      setStatementNotes("");
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rangeMode, summary.data?.account_id, summary.data?.year, summary.data?.month, summary.data?.start, summary.data?.end]);
-
-  const txs = useQuery({
-    queryKey: ["reconcile-tx", accountId, activeStart, activeEnd],
-    queryFn: () =>
-      api.get<Transaction[]>(
-        "/api/transactions" +
-          qs({ account_id: accountId, start: activeStart, end: activeEnd, limit: 2000 }),
-      ),
-    enabled: canQuery,
-  });
   const splits = useQuery({
-    queryKey: ["split-summary", activeStart, activeEnd],
+    queryKey: ["split-summary", start, end],
+    queryFn: () => api.get<SplitGroupSummary[]>("/api/analytics/splits" + qs({ start, end })),
+    enabled: canQuery,
+  });
+  const candidates = useQuery({
+    queryKey: ["cancel-candidates", start, end],
     queryFn: () =>
-      api.get<SplitGroupSummary[]>(
-        "/api/analytics/splits" + qs({ start: activeStart, end: activeEnd }),
-      ),
+      api.get<CancelCandidate[]>("/api/analytics/cancel-candidates" + qs({ start, end })),
+    enabled: canQuery,
+  });
+  const pairs = useQuery({
+    queryKey: ["cancel-pairs", start, end],
+    queryFn: () => api.get<CancelPair[]>("/api/analytics/cancel-pairs" + qs({ start, end })),
     enabled: canQuery,
   });
 
-  // The client wrapper doesn't have a `put` helper, so we use raw fetch.
-  const putStatement = useMutation({
-    mutationFn: async () =>
-      fetch("/api/analytics/reconcile", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          account_id: accountId,
-          year,
-          month,
-          statement_total: statementInput === "" ? null : statementInput,
-          notes: statementNotes || null,
-        }),
-      }).then((r) => r.json()),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["reconcile"] });
-    },
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ["cancel-candidates"] });
+    qc.invalidateQueries({ queryKey: ["cancel-pairs"] });
+  };
+  const link = useMutation({
+    mutationFn: (c: CancelCandidate) =>
+      api.post("/api/transactions/pair", { transaction_a_id: c.a.id, transaction_b_id: c.b.id }),
+    onSuccess: refresh,
   });
-
-  const s = summary.data;
-  const statementValue = statementInput === "" ? null : Number(statementInput);
-  const displayedDelta =
-    s && statementValue !== null
-      ? Number(s.imported_total) - statementValue
-      : s?.delta !== null && s?.delta !== undefined
-        ? Number(s.delta)
-        : null;
+  const unlink = useMutation({
+    mutationFn: (p: CancelPair) => api.post(`/api/transactions/${p.a.id}/unpair`, {}),
+    onSuccess: refresh,
+  });
 
   return (
     <div className="space-y-4">
       <div className="flex items-baseline justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight">Reconcile</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Splits & netting</h1>
         <div className="text-sm text-ink-500">
-          Compare imported transactions against your bank/CC statement total.
+          Track shared expenses, and net out refunds and reversals.
         </div>
       </div>
 
-      <ReconcileFilters
-        accounts={accounts.data}
-        accountId={accountId}
-        setAccountId={setAccountId}
-        rangeMode={rangeMode}
-        setRangeMode={setRangeMode}
-        year={year}
-        setYear={setYear}
-        month={month}
-        setMonth={setMonth}
-        customStart={customStart}
-        setCustomStart={setCustomStart}
-        customEnd={customEnd}
-        setCustomEnd={setCustomEnd}
-      />
-
-      {s && (
-        <SummaryCards
-          summary={s}
-          statementInput={statementInput}
-          setStatementInput={setStatementInput}
-          statementNotes={statementNotes}
-          setStatementNotes={setStatementNotes}
-          saveStatement={() => putStatement.mutate()}
-          isSaving={putStatement.isPending}
-          rangeMode={rangeMode}
-          displayedDelta={displayedDelta}
-        />
-      )}
-
-      {s && <ByKindBreakdown byKind={s.by_kind} />}
+      <RangeCard start={start} end={end} setStart={setStart} setEnd={setEnd} />
 
       <SplitGroupsTable groups={splits.data} />
-      <TransactionsTable transactions={txs.data} />
+      <CandidatesTable candidates={candidates.data} onLink={(c) => link.mutate(c)} linking={link.isPending} />
+      <LinkedPairsTable pairs={pairs.data} onUnlink={(p) => unlink.mutate(p)} unlinking={unlink.isPending} />
     </div>
   );
 }

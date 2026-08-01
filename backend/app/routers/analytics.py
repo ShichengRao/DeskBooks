@@ -91,52 +91,25 @@ def fire_projection(db: DbSession, max_years: int = 60):
     return a.fire_projection(db, max_years=max_years)
 
 
-@router.get("/reconcile", response_model=schemas.ReconcileResponse)
-def reconcile(
-    db: DbSession,
-    account_id: int,
-    year: int | None = None,
-    month: int | None = None,
-    start: date | None = None,
-    end: date | None = None,
-):
-    if start is not None or end is not None:
-        if start is None or end is None:
-            raise HTTPException(400, "provide both start and end")
-        if end < start:
-            raise HTTPException(400, "end must be on or after start")
-        return a.reconcile_account_period(db, account_id, start, end)
-    if year is None or month is None:
-        raise HTTPException(400, "provide either year/month or start/end")
-    return a.reconcile_account_month(db, account_id, year, month)
-
-
 @router.get("/splits", response_model=list[schemas.SplitGroupSummary])
 def split_groups(start: date, end: date, db: DbSession):
     return a.split_group_summary(db, start, end)
 
 
-@router.put("/reconcile", response_model=schemas.ReconcileResponse)
-def upsert_reconcile(body: schemas.ReconcileIn, db: DbSession):
-    existing = db.scalar(
-        select(models.MonthlyReconciliation).where(
-            models.MonthlyReconciliation.account_id == body.account_id,
-            models.MonthlyReconciliation.year == body.year,
-            models.MonthlyReconciliation.month == body.month,
-        )
-    )
-    if existing:
-        existing.statement_total = body.statement_total
-        existing.notes = body.notes
-    else:
-        db.add(
-            models.MonthlyReconciliation(
-                account_id=body.account_id,
-                year=body.year,
-                month=body.month,
-                statement_total=body.statement_total,
-                notes=body.notes,
-            )
-        )
-    db.commit()
-    return a.reconcile_account_month(db, body.account_id, body.year, body.month)
+@router.get("/cancel-candidates", response_model=list[schemas.CancelCandidateOut])
+def cancel_candidates(start: date, end: date, db: DbSession, window_days: int = 45):
+    """Unlinked transactions that come in equal-and-opposite amount pairs
+    within window_days of each other — likely refunds, reversals, or
+    reimbursements that should net out of cashflow once linked."""
+    if end < start:
+        raise HTTPException(400, "end must be on or after start")
+    return a.cancel_out_candidates(db, start, end, window_days=window_days)
+
+
+@router.get("/cancel-pairs", response_model=list[schemas.CancelPairOut])
+def cancel_pairs(start: date, end: date, db: DbSession):
+    """Pairs already linked via transfer_pair_id with at least one side in
+    the range; newest first."""
+    if end < start:
+        raise HTTPException(400, "end must be on or after start")
+    return a.linked_cancel_pairs(db, start, end)

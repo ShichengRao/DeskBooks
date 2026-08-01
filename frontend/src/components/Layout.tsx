@@ -17,7 +17,7 @@ const tabs: { to: string; label: string; end?: boolean; group?: "view" | "edit" 
   { to: "/analytics", label: "Analytics", group: "view" },
   // "Fill data" tabs — workflows optimized for data entry.
   { to: "/import", label: "Import", group: "edit" },
-  { to: "/reconcile", label: "Reconcile", group: "edit" },
+  { to: "/reconcile", label: "Splits", group: "edit" },
   { to: "/rules", label: "Rules", group: "edit" },
   { to: "/organize", label: "Organize", group: "edit" },
   { to: "/backups", label: "Backups", group: "edit" },

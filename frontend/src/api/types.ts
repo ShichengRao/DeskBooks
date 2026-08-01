@@ -419,20 +419,13 @@ export interface FireProjection {
   notes: string[];
 }
 
-export interface ReconcileResponse {
-  account_id: number;
-  year: number | null;
-  month: number | null;
-  start: string;
-  end: string;
-  transaction_count: number;
-  imported_total: string;
-  imported_inflows: string;
-  imported_outflows: string;
-  by_kind: Record<string, string>;
-  statement_total: string | null;
-  statement_notes: string | null;
-  delta: string | null;
+export interface CancelPair {
+  a: Transaction;
+  b: Transaction;
+}
+
+export interface CancelCandidate extends CancelPair {
+  gap_days: number;
 }
 
 export interface BudgetDefault {
