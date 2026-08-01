@@ -736,29 +736,46 @@ function FireCalculator() {
 
   const [form, setForm] = useState<FireSettings | null>(null);
   // Hydrate the form whenever the server's settings load; never overwrite
-  // user edits in flight.
+  // user edits in flight. Rates are stored as decimal fractions (0.0500)
+  // but edited as percentages (5.0) — converted here and again on save.
   useEffect(() => {
-    if (settingsQ.data && form === null) setForm(settingsQ.data);
+    if (settingsQ.data && form === null) {
+      const s = settingsQ.data;
+      const pct = (value: string) => String(Math.round(num(value) * 1000) / 10);
+      setForm({
+        ...s,
+        withdrawal_rate: pct(s.withdrawal_rate),
+        growth_bank: pct(s.growth_bank),
+        growth_investment: pct(s.growth_investment),
+        growth_tax_advantaged: pct(s.growth_tax_advantaged),
+        growth_nonsense: pct(s.growth_nonsense),
+        growth_cash: pct(s.growth_cash),
+        growth_credit: pct(s.growth_credit),
+      });
+    }
   }, [settingsQ.data, form]);
 
   const save = useMutation({
-    mutationFn: (s: FireSettings) =>
-      fetch("/api/analytics/fire/settings", {
+    mutationFn: (s: FireSettings) => {
+      // Form fields hold percentages; the API speaks decimal fractions.
+      const frac = (value: string) => (num(value) / 100).toFixed(4);
+      return fetch("/api/analytics/fire/settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          growth_bank: s.growth_bank,
-          growth_investment: s.growth_investment,
-          growth_tax_advantaged: s.growth_tax_advantaged,
-          growth_nonsense: s.growth_nonsense,
-          growth_cash: s.growth_cash,
-          growth_credit: s.growth_credit,
+          growth_bank: frac(s.growth_bank),
+          growth_investment: frac(s.growth_investment),
+          growth_tax_advantaged: frac(s.growth_tax_advantaged),
+          growth_nonsense: frac(s.growth_nonsense),
+          growth_cash: frac(s.growth_cash),
+          growth_credit: frac(s.growth_credit),
           annual_retirement_spending: s.annual_retirement_spending,
-          withdrawal_rate: s.withdrawal_rate,
+          withdrawal_rate: frac(s.withdrawal_rate),
           birth_year: s.birth_year,
           retirement_age: s.retirement_age,
         }),
-      }).then((r) => r.json()),
+      }).then((r) => r.json());
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["fire-settings"] });
       qc.invalidateQueries({ queryKey: ["fire-projection"] });
@@ -856,12 +873,12 @@ function FireCalculator() {
             <div className="flex items-center gap-2">
               <input
                 type="number"
-                step="0.0025"
+                step="0.1"
                 className="input tabular text-right max-w-[6rem]"
                 value={form?.withdrawal_rate ?? ""}
                 onChange={(e) => form && setForm({ ...form, withdrawal_rate: e.target.value })}
               />
-              <span className="text-xs text-ink-500">e.g. 0.04 = 4% rule</span>
+              <span className="text-xs text-ink-500">% — the 4% rule is 4</span>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-2">
@@ -899,12 +916,12 @@ function FireCalculator() {
                 <span className="text-sm w-32">{c.label}</span>
                 <input
                   type="number"
-                  step="0.005"
+                  step="0.1"
                   className="input tabular text-right max-w-[5rem]"
                   value={(form as any)?.[c.key] ?? ""}
                   onChange={(e) => form && setForm({ ...form, [c.key]: e.target.value })}
                 />
-                <span className="text-xs text-ink-400">{c.hint}</span>
+                <span className="text-xs text-ink-400">% · {c.hint}</span>
               </label>
             ))}
           </div>
