@@ -105,3 +105,39 @@ def test_listed_backups_carry_their_label(tmp_path, monkeypatch):
     listed = {b["name"]: b["label"] for b in backups.list_backups(profile)}
 
     assert sorted(listed.values(), key=lambda v: (v is None, v)) == ["pre-restore", None]
+
+
+@pytest.mark.parametrize(
+    "typed,expected",
+    [
+        ("Before tax cleanup", "before-tax-cleanup"),
+        ("  Quarterly   review!  ", "quarterly-review"),
+        ("Pre-2027 planning", "pre-2027-planning"),
+        ("", None),
+        ("   ", None),
+        ("!!!", None),
+        (None, None),
+        # An all-digits label would be read back as the collision suffix.
+        ("2027", "note-2027"),
+    ],
+)
+def test_slugify_label_makes_typed_text_filename_safe(typed, expected):
+    assert backups.slugify_label(typed) == expected
+
+
+def test_slugify_label_truncates_without_a_trailing_hyphen():
+    slug = backups.slugify_label("a" * 40 + " " + "b" * 40)
+
+    assert len(slug) <= backups.MAX_LABEL_LENGTH
+    assert not slug.endswith("-")
+    assert backups.BACKUP_NAME_RE.match(f"personal-20260812-143307-{slug}.db")
+
+
+def test_typed_name_round_trips_through_the_filename(tmp_path, monkeypatch):
+    profile = _profile(tmp_path, monkeypatch)
+
+    created = backups.create_backup(profile, label=backups.slugify_label("Before tax cleanup"))
+
+    assert created["label"] == "before-tax-cleanup"
+    assert created["name"].endswith("-before-tax-cleanup.db")
+    assert backups.list_backups(profile)[0]["label"] == "before-tax-cleanup"

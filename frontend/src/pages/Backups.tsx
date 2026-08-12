@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { api } from "../api/client";
 import type { Backup, BackupList } from "../api/types";
 
@@ -47,9 +48,15 @@ export function Backups() {
     queryFn: () => api.get<BackupList>("/api/backups"),
   });
 
+  const [newLabel, setNewLabel] = useState("");
+
   const createBackup = useMutation({
-    mutationFn: () => api.post<Backup>("/api/backups"),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["backups"] }),
+    mutationFn: (label: string) =>
+      api.post<Backup>("/api/backups", { label: label.trim() || null }),
+    onSuccess: () => {
+      setNewLabel("");
+      qc.invalidateQueries({ queryKey: ["backups"] });
+    },
   });
 
   const restoreBackup = useMutation({
@@ -80,14 +87,24 @@ export function Backups() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold tracking-tight">Backups</h1>
-        <button
-          type="button"
-          className="btn-primary"
-          onClick={() => createBackup.mutate()}
-          disabled={createBackup.isPending}
+        <form
+          className="flex items-center gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!createBackup.isPending) createBackup.mutate(newLabel);
+          }}
         >
-          Create backup
-        </button>
+          <input
+            className="input w-56"
+            placeholder="Name this backup (optional)"
+            value={newLabel}
+            maxLength={120}
+            onChange={(e) => setNewLabel(e.target.value)}
+          />
+          <button type="submit" className="btn-primary whitespace-nowrap" disabled={createBackup.isPending}>
+            Create backup
+          </button>
+        </form>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

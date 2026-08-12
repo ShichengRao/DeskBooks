@@ -71,6 +71,12 @@ class BackupOut(BaseModel):
     path: str
 
 
+class BackupCreate(BaseModel):
+    # Free text; slugified into the filename, so it comes back lowercased
+    # with punctuation as hyphens.
+    label: str | None = Field(default=None, max_length=120)
+
+
 class BackupList(BaseModel):
     profile_slug: str
     backups: list[BackupOut]
