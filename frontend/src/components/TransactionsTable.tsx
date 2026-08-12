@@ -1,6 +1,6 @@
 import clsx from "clsx";
 import type { Account, Category, Transaction } from "../api/types";
-import { currency, dateLabel } from "../lib/fmt";
+import { currency, dateLabel, monthLabel } from "../lib/fmt";
 import { KindPill } from "../lib/kinds";
 
 type CategoryGroup = { group: Category; leaves: Category[] };
@@ -132,7 +132,19 @@ function TransactionRow({
       <td className="px-2 py-1.5">
         <input type="checkbox" checked={selected} onChange={() => onToggleSelection(tx.id)} />
       </td>
-      <td className="px-2 py-1.5 text-ink-600">{dateLabel(tx.date)}</td>
+      <td className="px-2 py-1.5 text-ink-600">
+        {dateLabel(tx.date)}
+        {tx.budget_date && (
+          // A reassigned row has to say so, or the budget it feeds looks
+          // like it disagrees with the date sitting right here.
+          <div
+            className="text-xs text-ink-500"
+            title={`Counts toward ${monthLabel(tx.budget_date.slice(0, 7))} rather than its own month`}
+          >
+            counts in {monthLabel(tx.budget_date.slice(0, 7))}
+          </div>
+        )}
+      </td>
       <td className="px-2 py-1.5">
         <div className="font-medium">{tx.merchant ?? tx.description_normalized ?? tx.description_raw}</div>
         <div className="text-xs text-ink-500 truncate max-w-md">{tx.description_raw}</div>

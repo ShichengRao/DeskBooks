@@ -15,6 +15,7 @@ from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.orm import Session
 
 from . import models
+from .budgets import budget_date_column
 from .models import TransactionKind
 
 EXPENSE_KINDS = {TransactionKind.expense}
@@ -83,10 +84,15 @@ def _effective_amount(amount: Decimal, personal_share: Decimal | None) -> Decima
 def monthly_breakdown(db: Session, start: date, end: date) -> list[dict]:
     """One row per month. `by_expense_category` only contains expense-kind
     rows so the stacked-bar chart doesn't mix salary into the expense
-    breakdown. Income/donation/tax are separate fields."""
+    breakdown. Income/donation/tax are separate fields.
+
+    Buckets by `budget_date` where the user set one, matching the budget
+    report — these two are the month-attribution views, and they would
+    contradict each other otherwise."""
+    counted_on = budget_date_column()
     stmt = (
         select(
-            models.Transaction.date,
+            counted_on,
             models.Transaction.kind,
             models.Transaction.amount,
             models.TransactionSplit.personal_share,
@@ -99,8 +105,8 @@ def monthly_breakdown(db: Session, start: date, end: date) -> list[dict]:
             isouter=True,
         )
         .where(
-            models.Transaction.date >= start,
-            models.Transaction.date <= end,
+            counted_on >= start,
+            counted_on <= end,
             models.Transaction.is_excluded_from_totals.is_(False),
         )
     )

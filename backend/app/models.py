@@ -167,6 +167,11 @@ class Transaction(Base):
     account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"))
     date: Mapped[date] = mapped_column(Date, index=True)
     post_date: Mapped[date | None] = mapped_column(Date)
+    # Which month this counts toward, when that isn't the month it landed
+    # in. Rent paid on the 1st for the month just gone is the usual case:
+    # `date` stays what the bank said, budgets follow this instead. NULL
+    # (the norm) means the transaction counts in its own month.
+    budget_date: Mapped[date | None] = mapped_column(Date)
     description_raw: Mapped[str] = mapped_column(Text)
     description_normalized: Mapped[str | None] = mapped_column(Text)
     merchant: Mapped[str | None] = mapped_column(String(255))

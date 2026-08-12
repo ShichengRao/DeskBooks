@@ -190,6 +190,7 @@ type TransactionFormBody = {
   account_id: number;
   date: string;
   post_date?: string | null;
+  budget_date?: string | null;
   description_raw: string;
   description_normalized?: string | null;
   merchant?: string | null;
@@ -724,6 +725,7 @@ function TransactionEditor({
     account_id: tx ? String(tx.account_id) : accounts[0]?.id ? String(accounts[0].id) : "",
     date: tx?.date ?? today,
     post_date: tx?.post_date ?? "",
+    budget_date: tx?.budget_date ?? "",
     description_raw: tx?.description_raw ?? "",
     merchant: tx?.merchant ?? "",
     amount: tx?.amount ?? "",
@@ -747,6 +749,7 @@ function TransactionEditor({
       account_id: parseInt(form.account_id, 10),
       date: form.date,
       post_date: form.post_date || null,
+      budget_date: form.budget_date || null,
       description_raw: form.description_raw.trim(),
       merchant: form.merchant.trim() || null,
       amount: form.amount,
@@ -790,6 +793,19 @@ function TransactionEditor({
               value={form.post_date}
               onChange={(e) => setForm({ ...form, post_date: e.target.value })}
             />
+          </Field>
+          <Field label="Counts toward">
+            <input
+              type="date"
+              className="input"
+              value={form.budget_date}
+              onChange={(e) => setForm({ ...form, budget_date: e.target.value })}
+            />
+            <div className="mt-1 text-xs text-ink-500">
+              Optional. Budgets and the monthly chart count this transaction in
+              this date's month instead of its own — for rent that lands on the
+              1st but covers the month just gone. Leave empty for the norm.
+            </div>
           </Field>
           <Field label="Signed amount">
             <input

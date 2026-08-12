@@ -102,6 +102,8 @@ export interface Transaction {
   account_id: number;
   date: string;
   post_date: string | null;
+  /** Month this counts toward when it isn't the month it landed in. */
+  budget_date: string | null;
   description_raw: string;
   description_normalized: string | null;
   merchant: string | null;

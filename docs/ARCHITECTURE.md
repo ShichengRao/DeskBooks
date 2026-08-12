@@ -99,13 +99,25 @@ Category
     other_non_expense], color, sort_order, archived
 
 Transaction
-  id, account_id, date, post_date, description_raw,
-  description_normalized, merchant, amount (numeric(14,2), signed in
-  account convention), category_id (nullable), kind (mirrors
-  Category.kind but stored for fast filtering and pre-categorization),
-  notes, transfer_pair_id (nullable, FK self), import_batch_id,
-  matched_rule_id (nullable), is_user_categorized, raw (JSON),
-  is_excluded_from_totals (manual hide), created_at, updated_at
+  id, account_id, date, post_date, budget_date (nullable; see below),
+  description_raw, description_normalized, merchant, amount
+  (numeric(14,2), signed in account convention), category_id (nullable),
+  kind (mirrors Category.kind but stored for fast filtering and
+  pre-categorization), notes, transfer_pair_id (nullable, FK self),
+  import_batch_id, matched_rule_id (nullable), is_user_categorized,
+  raw (JSON), is_excluded_from_totals (manual hide), created_at,
+  updated_at
+
+  `budget_date` reassigns which month a transaction counts toward
+  without touching `date` — rent paid on the 1st for the month just
+  gone, so a ~30-day cycle stops swinging the monthly totals. It is an
+  attribution overlay, not a correction: the budget report and the
+  Analytics month chart bucket by `budgets.budget_date_column()`
+  (coalesce(budget_date, date)) and filter on that same expression, so a
+  transaction reassigned across a window boundary is counted where the
+  user put it. Everything describing when money actually moved — Sankey
+  period reconciliation against net-worth snapshots, recurrence
+  detection, cancel-pair matching — keeps using `date`.
 
 Tag, TransactionTag (m2m)
 
