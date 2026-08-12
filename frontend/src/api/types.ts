@@ -15,6 +15,8 @@ export interface ProfileList {
 export interface Backup {
   name: string;
   profile_slug: string;
+  /** Why the backup was taken, from the filename. null = manual. */
+  label: string | null;
   size_bytes: number;
   created_at: string;
   path: string;

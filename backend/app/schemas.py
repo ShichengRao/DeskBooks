@@ -64,9 +64,17 @@ class ProfileList(BaseModel):
 class BackupOut(BaseModel):
     name: str
     profile_slug: str
+    # Why this backup was taken, parsed from the filename. None = manual.
+    label: str | None = None
     size_bytes: int
     created_at: datetime
     path: str
+
+
+class BackupCreate(BaseModel):
+    # Free text; slugified into the filename, so it comes back lowercased
+    # with punctuation as hyphens.
+    label: str | None = Field(default=None, max_length=120)
 
 
 class BackupList(BaseModel):

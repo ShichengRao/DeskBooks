@@ -16,11 +16,57 @@ def backup_dir(profile_slug: str) -> Path:
     return DATA_DIR / "backups" / profile_slug
 
 
+# Long enough for a real note, short enough to keep filenames readable.
+MAX_LABEL_LENGTH = 48
+
+
+def slugify_label(text: str | None) -> str | None:
+    """Turn typed text into a label a filename can carry.
+
+    The name is stored in the filename rather than beside it, so the file
+    still says what it is when you find it in a folder months later. The
+    cost is that the text is lowercased and punctuation becomes hyphens:
+    "Before tax cleanup!" -> "before-tax-cleanup", shown back as "Before
+    tax cleanup". Returns None when nothing usable survives."""
+    if text is None:
+        return None
+    slug = re.sub(r"[^a-z0-9]+", "-", text.strip().lower()).strip("-")
+    if not slug:
+        return None
+    slug = slug[:MAX_LABEL_LENGTH].strip("-")
+    if not slug:
+        return None
+    # An all-digits label would be read back as the collision suffix.
+    return f"note-{slug}" if slug.isdigit() else slug
+
+
+def _parse_label(name: str, profile_slug: str) -> str | None:
+    """The reason slug baked into a backup filename, if it has one.
+
+    `personal-20260812-143307-pre-restore.db` -> `pre-restore`; a plain
+    `personal-20260812-143307.db` (a manual backup) -> None. Anchored on
+    the known profile slug because both the slug and the label may
+    contain hyphens, which makes splitting ambiguous."""
+    stem = name[: -len(".db")] if name.endswith(".db") else name
+    prefix = f"{profile_slug}-"
+    if not stem.startswith(prefix):
+        return None
+    match = re.fullmatch(r"\d{8}-\d{6}(?:-(?P<label>.+))?", stem[len(prefix) :])
+    if match is None:
+        return None
+    label = match.group("label")
+    # The collision fallback appends microseconds, not a reason.
+    if label is None or label.isdigit():
+        return None
+    return label
+
+
 def _metadata(path: Path, profile_slug: str) -> dict:
     stat = path.stat()
     return {
         "name": path.name,
         "profile_slug": profile_slug,
+        "label": _parse_label(path.name, profile_slug),
         "size_bytes": stat.st_size,
         "created_at": datetime.fromtimestamp(stat.st_mtime),
         "path": str(path),

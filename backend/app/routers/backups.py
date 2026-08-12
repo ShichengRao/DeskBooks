@@ -21,10 +21,11 @@ def list_profile_backups(profile: RequestProfile):
 
 
 @router.post("", response_model=schemas.BackupOut)
-def create_profile_backup(profile: RequestProfile):
+def create_profile_backup(profile: RequestProfile, body: schemas.BackupCreate | None = None):
     engine_for(profile.db_path)
+    label = backups.slugify_label(body.label if body else None)
     try:
-        return backups.create_backup(profile)
+        return backups.create_backup(profile, label=label)
     except OSError as exc:
         raise HTTPException(500, str(exc)) from exc
 
