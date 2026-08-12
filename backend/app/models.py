@@ -187,6 +187,12 @@ class Transaction(Base):
     is_excluded_from_totals: Mapped[bool] = mapped_column(Boolean, default=False)
     notes: Mapped[str | None] = mapped_column(Text)
     transfer_pair_id: Mapped[int | None] = mapped_column(ForeignKey("transactions.id"))
+    # What `kind` was before this row was linked to its pair, so unlinking
+    # can put it back instead of stranding the row as a transfer. NULL
+    # whenever the row isn't linked.
+    kind_before_pair: Mapped[TransactionKind | None] = mapped_column(
+        SAEnum(TransactionKind, name="transaction_kind")
+    )
     import_batch_id: Mapped[int | None] = mapped_column(ForeignKey("import_batches.id"))
     # Which rule (if any) was responsible for the current categorization.
     # NULL = either uncategorized, or user-categorized, or pre-rules data.

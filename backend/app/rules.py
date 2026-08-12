@@ -7,7 +7,8 @@ amount-range matches.
 Semantics:
 - Lowest priority number wins (1 before 100).
 - First match sets the suggested fields; subsequent matches are ignored.
-- Rules NEVER overwrite a transaction with `is_user_categorized=True`.
+- Rules NEVER overwrite a transaction with `is_user_categorized=True`,
+  nor one linked to a cancel-out pair (its kind belongs to the pairing).
 - A re-apply pass can be requested over already-imported transactions.
 """
 from __future__ import annotations
@@ -114,7 +115,13 @@ def reapply_to_unreviewed(db: Session) -> tuple[int, int]:
         return 0, 0
     rules_by_id = {r.id: r for r in rules}
     fires = Counter()  # rule_id -> rows changed by that rule
-    stmt = select(models.Transaction).where(models.Transaction.is_user_categorized.is_(False))
+    # Linked rows are held at kind=transfer by the pairing, not by a rule.
+    # Re-categorizing one would silently put it back into spending while
+    # its partner stayed out, so the two sides would no longer cancel.
+    stmt = select(models.Transaction).where(
+        models.Transaction.is_user_categorized.is_(False),
+        models.Transaction.transfer_pair_id.is_(None),
+    )
     for tx in db.scalars(stmt):
         ev = evaluate(
             rules,

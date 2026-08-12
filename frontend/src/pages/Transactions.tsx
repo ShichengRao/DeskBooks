@@ -68,7 +68,7 @@ export function Transactions() {
     categoryById,
     categoryGroups,
   } = useTransactionPageData(filters, page, pageSize);
-  const { updateTx, createTx, editTx, bulkUpdate, setSplit, deleteTx, bulkDelete } =
+  const { updateTx, createTx, editTx, bulkUpdate, setSplit, deleteTx, bulkDelete, pairTx } =
     useTransactionMutations({ qc, setCreatingTx, setEditingTx, setEditingSplit, setSelection });
 
   const toggleSelection = (id: number) => {
@@ -103,10 +103,13 @@ export function Transactions() {
       />
       <BulkTransactionActions
         selectedIds={selectedIds}
+        selectedTxs={txs.filter((t) => selection.has(t.id))}
         categories={categories.data ?? []}
         pendingDelete={bulkDelete.isPending}
+        pendingPair={pairTx.isPending}
         onBulkUpdate={(patch) => bulkUpdate.mutate({ ids: selectedIds, ...patch })}
         onBulkDelete={() => bulkDelete.mutate(selectedIds)}
+        onPair={() => pairTx.mutate(selectedIds)}
         onMarkSplit={() => setEditingSplit("bulk")}
         onClear={() => setSelection(new Set())}
       />
@@ -311,6 +314,20 @@ function useTransactionMutations({
     mutationFn: (id: number) => api.del(`/api/transactions/${id}`),
     onSuccess: () => invalidateTxQueries(qc),
   });
+  const pairTx = useMutation({
+    mutationFn: (ids: number[]) =>
+      api.post("/api/transactions/pair", {
+        transaction_a_id: ids[0],
+        transaction_b_id: ids[1],
+      }),
+    onSuccess: () => {
+      invalidateTxQueries(qc);
+      setSelection(new Set());
+    },
+    onError: (err: unknown) => {
+      alert(err instanceof Error ? err.message : "Could not link those two transactions.");
+    },
+  });
   const bulkDelete = useMutation({
     mutationFn: async (ids: number[]) => {
       await Promise.all(ids.map((id) => api.del(`/api/transactions/${id}`)));
@@ -322,7 +339,7 @@ function useTransactionMutations({
     },
   });
 
-  return { updateTx, createTx, editTx, bulkUpdate, setSplit, deleteTx, bulkDelete };
+  return { updateTx, createTx, editTx, bulkUpdate, setSplit, deleteTx, bulkDelete, pairTx };
 }
 
 function TransactionsHeader({
@@ -452,25 +469,59 @@ function TransactionFiltersCard({
   );
 }
 
+// Linking rewrites both rows' kind, so the button says why it is off
+// rather than failing after the click. Selection can span pages, so the
+// row-level checks only run on rows we can actually see; anything they
+// miss the API still refuses.
+function describePairability(
+  selectedIds: number[],
+  selectedTxs: Transaction[],
+): { blocked: string | null; hint: string } {
+  const hint =
+    "Mark two transactions as cancelling each other out; both become transfers and leave your spending totals.";
+  if (selectedIds.length !== 2) {
+    return { blocked: "Select exactly two transactions to link them.", hint };
+  }
+  const linked = selectedTxs.find((t) => t.transfer_pair_id !== null);
+  if (linked) {
+    return { blocked: "One of these is already linked. Unlink it first.", hint };
+  }
+  if (selectedTxs.length === 2) {
+    const sum = selectedTxs.reduce((acc, t) => acc + Number(t.amount), 0);
+    if (Math.abs(sum) > 0.005) {
+      return { blocked: null, hint: `${hint} These two do not add up to zero.` };
+    }
+  }
+  return { blocked: null, hint };
+}
+
 function BulkTransactionActions({
   selectedIds,
+  selectedTxs,
   categories,
   pendingDelete,
+  pendingPair,
   onBulkUpdate,
   onBulkDelete,
+  onPair,
   onMarkSplit,
   onClear,
 }: {
   selectedIds: number[];
+  selectedTxs: Transaction[];
   categories: Category[];
   pendingDelete: boolean;
+  pendingPair: boolean;
   onBulkUpdate: (patch: Record<string, unknown>) => void;
   onBulkDelete: () => void;
+  onPair: () => void;
   onMarkSplit: () => void;
   onClear: () => void;
 }) {
   const visibleKinds = useVisibleKinds();
   if (selectedIds.length === 0) return null;
+
+  const pairability = describePairability(selectedIds, selectedTxs);
 
   return (
     <div className="card p-3 flex items-center gap-3 bg-brand-50 border-brand-200">
@@ -514,6 +565,14 @@ function BulkTransactionActions({
       </select>
       <button className="btn" onClick={() => onBulkUpdate({ is_excluded_from_totals: true })}>Exclude from totals</button>
       <button className="btn" onClick={() => onBulkUpdate({ is_excluded_from_totals: false })}>Include in totals</button>
+      <button
+        className="btn"
+        onClick={onPair}
+        disabled={pendingPair || pairability.blocked !== null}
+        title={pairability.blocked ?? pairability.hint}
+      >
+        Link as pair
+      </button>
       <button className="btn" onClick={onMarkSplit}>Mark split</button>
       <button className="btn" onClick={() => onBulkUpdate({ clear_split: true })}>Clear split</button>
       <button
