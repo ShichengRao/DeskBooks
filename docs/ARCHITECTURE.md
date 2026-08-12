@@ -379,6 +379,11 @@ turns a recurring merchant into a rule.
   otherwise the parent uses its own direct target. Overall planned and actual
   totals count each category tree once, so parent and child display rows do
   not inflate the summary cards.
+- A category with no default and no override is planned at zero, so its row
+  reports the full spend as overspend rather than a blank. "Nothing budgeted
+  anywhere in this subtree" stays a distinct internal state, which is what
+  lets a parent fall back to its own target and what keeps
+  `unbudgeted_actual_total` meaningful.
 
 ## Backups
 

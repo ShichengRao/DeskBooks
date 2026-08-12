@@ -42,6 +42,14 @@ FOCUS_ROW_TOTALS = {
         "actual_amount": Decimal("0"),
         "delta": Decimal("80.00"),
     },
+    # Groceries is unbudgeted, so it plans at zero — and that zero must not
+    # drag its parent Food's own default down with it.
+    "Groceries": {
+        "default_amount": None,
+        "target_amount": Decimal("0"),
+        "actual_amount": Decimal("0"),
+        "delta": Decimal("0"),
+    },
     "Housing": {
         "default_amount": Decimal("999.00"),
         "target_amount": Decimal("250.00"),
@@ -60,6 +68,11 @@ RANGE_ROW_TOTALS = {
     "Food": {
         "target_amount": Decimal("160.00"),
         "actual_amount": Decimal("50.000000"),
+    },
+    "Groceries": {
+        "target_amount": Decimal("0"),
+        "actual_amount": Decimal("50.000000"),
+        "delta": Decimal("-50.000000"),
     },
     "Housing": {
         "target_amount": Decimal("430.00"),
@@ -167,7 +180,6 @@ def test_budget_report_applies_defaults_and_monthly_overrides_to_actual_spending
     assert result["focus_month"] == date(2026, 7, 1)
     _assert_named_values(months, FOCUS_MONTH_TOTALS)
     _assert_values(result, FOCUS_REPORT_TOTALS)
-    assert rows["Groceries"]["target_amount"] is None
     _assert_named_values(rows, FOCUS_ROW_TOTALS)
 
     range_result = budget_report(db, date(2026, 6, 24), date(2026, 7, 20))

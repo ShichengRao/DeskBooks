@@ -648,7 +648,7 @@ function BudgetRow({
   onSaveDefault: (row: BudgetReportRow) => void;
   onSaveOverride: (row: BudgetReportRow) => void;
 }) {
-  const rowDelta = row.delta === null ? null : num(row.delta);
+  const rowDelta = num(row.delta);
   return (
     <tr className="table-row-hover">
       <td className="px-3 py-2">
@@ -662,15 +662,15 @@ function BudgetRow({
         )}
       </td>
       {!isRangeView && (
-        <BudgetAmountInput value={defaultDraft} changed={defaultChanged} onChange={(value) => onDefaultDraft(row, value)} />
+        <BudgetAmountInput value={defaultDraft} changed={defaultChanged} placeholder="0.00" onChange={(value) => onDefaultDraft(row, value)} />
       )}
       {!isRangeView && (
         <BudgetAmountInput value={overrideDraft} changed={overrideChanged} placeholder="inherit" onChange={(value) => onOverrideDraft(row, value)} />
       )}
       <td className="px-3 py-2 text-right font-medium">{currency(row.target_amount)}</td>
       <td className="px-3 py-2 text-right">{currency(row.actual_amount)}</td>
-      <td className={clsx("px-3 py-2 text-right font-medium", rowDelta === null ? "text-ink-400" : rowDelta >= 0 ? "text-good-600" : "text-bad-600")}>
-        {row.delta === null ? "—" : currency(row.delta, { showSign: true })}
+      <td className={clsx("px-3 py-2 text-right font-medium", rowDelta >= 0 ? "text-good-600" : "text-bad-600")}>
+        {currency(row.delta, { showSign: true })}
       </td>
       <td className="px-3 py-2 text-right text-ink-500">{row.transaction_count}</td>
       {!isRangeView && (
