@@ -168,6 +168,12 @@ def budget_report(
     rollup_cache: dict[tuple[date, int], Decimal | None] = {}
 
     def rollup_target_for(month: date, category_id: int) -> Decimal | None:
+        """Planned amount for a subtree, or None when nothing in it is budgeted.
+
+        None is kept distinct from zero here (rows render it as zero) so a
+        parent whose children are all unbudgeted still falls back to its own
+        direct target instead of rolling up a pile of zeroes.
+        """
         key = (month, category_id)
         if key in rollup_cache:
             return rollup_cache[key]
@@ -227,7 +233,10 @@ def budget_report(
             for month in row_months
             if (target := rollup_target_for(month, category.id)) is not None
         ]
-        target = sum(row_targets, Decimal("0")) if row_targets else None
+        explicit_target = sum(row_targets, Decimal("0")) if row_targets else None
+        # An unbudgeted category is planned at zero, so its overspend shows on
+        # its own row instead of only surfacing in the parent's delta.
+        target = explicit_target if explicit_target is not None else Decimal("0")
         # Archived categories only earn a row while they still have
         # something to show in the window (history must not vanish, but an
         # empty archived category is just noise).
@@ -235,7 +244,7 @@ def budget_report(
             category.archived
             and not transaction_count
             and actual == 0
-            and target is None
+            and explicit_target is None
             and default is None
             and override is None
         ):
@@ -255,7 +264,7 @@ def budget_report(
                 "override_amount": override.amount if override else None,
                 "target_amount": target,
                 "actual_amount": actual,
-                "delta": target - actual if target is not None else None,
+                "delta": target - actual,
                 "transaction_count": transaction_count,
                 "default_notes": default.notes if default else None,
                 "override_notes": override.notes if override else None,

@@ -742,9 +742,9 @@ class BudgetReportRow(BaseModel):
     default_amount: Decimal | None
     override_budget_id: int | None
     override_amount: Decimal | None
-    target_amount: Decimal | None
+    target_amount: Decimal
     actual_amount: Decimal
-    delta: Decimal | None
+    delta: Decimal
     transaction_count: int
     default_notes: str | None
     override_notes: str | None

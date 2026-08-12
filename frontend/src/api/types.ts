@@ -468,9 +468,9 @@ export interface BudgetReportRow {
   default_amount: string | null;
   override_budget_id: number | null;
   override_amount: string | null;
-  target_amount: string | null;
+  target_amount: string;
   actual_amount: string;
-  delta: string | null;
+  delta: string;
   transaction_count: number;
   default_notes: string | null;
   override_notes: string | null;
