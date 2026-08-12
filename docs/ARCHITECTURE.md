@@ -104,6 +104,7 @@ Transaction
   (numeric(14,2), signed in account convention), category_id (nullable),
   kind (mirrors Category.kind but stored for fast filtering and
   pre-categorization), notes, transfer_pair_id (nullable, FK self),
+  kind_before_pair (nullable; the kind to restore on unlink),
   import_batch_id, matched_rule_id (nullable), is_user_categorized,
   raw (JSON), is_excluded_from_totals (manual hide), created_at,
   updated_at
@@ -198,6 +199,15 @@ Key invariants:
   `transfer_pair_id`. Analytics that compute "spend" exclude rows whose
   `kind` is one of: transfer, investment, cc_payment, refund,
   reimbursement, donation (configurable), tax (configurable).
+- The same link nets out a refund or reversal against its original
+  charge, either from a suggestion on the Splits page or by selecting
+  two rows on Transactions and choosing **Link as pair**. Linking sets
+  both sides to `kind=transfer` — that, not the link itself, is what
+  drops them out of spending — and stashes each row's previous kind in
+  `kind_before_pair` so unlinking (or deleting one side) restores it
+  rather than stranding the survivor as a transfer. While linked, the
+  rule engine skips the rows: their kind belongs to the pairing, and
+  re-categorizing one side alone would break the cancellation.
 - A transaction can be in any category, but `Transaction.kind` is a
   denormalized copy of `Category.kind` — written explicitly by the rule
   engine, manual PATCH, and the category-update cascade. Every analytic

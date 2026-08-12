@@ -42,6 +42,7 @@ _ADDITIVE_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("fire_settings", "retirement_age", "INTEGER NOT NULL DEFAULT 65"),
     ("fire_settings", "growth_property", "NUMERIC NOT NULL DEFAULT 0.0100"),
     ("transactions", "budget_date", "DATE"),
+    ("transactions", "kind_before_pair", "VARCHAR"),
 )
 
 

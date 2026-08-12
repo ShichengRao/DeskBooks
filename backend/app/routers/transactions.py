@@ -369,12 +369,18 @@ def pair_transactions(body: schemas.TransactionPair, db: Session = DB_DEP):
     b = db.get(models.Transaction, body.transaction_b_id)
     if not a or not b:
         raise HTTPException(404, "transactions not found")
+    if a.id == b.id:
+        raise HTTPException(400, "a transaction cannot be paired with itself")
+    # Re-pairing one side would leave its old partner pointing at a row
+    # that no longer points back. Make the caller unlink first.
+    for tx in (a, b):
+        if tx.transfer_pair_id is not None:
+            raise HTTPException(400, "already linked to another transaction; unlink it first")
+    for tx in (a, b):
+        tx.kind_before_pair = tx.kind
+        tx.kind = models.TransactionKind.transfer
     a.transfer_pair_id = b.id
     b.transfer_pair_id = a.id
-    a.kind = models.TransactionKind.transfer
-    b.kind = models.TransactionKind.transfer
-    a.is_user_categorized = True
-    b.is_user_categorized = True
     db.commit()
     return {"status": "paired"}
 
@@ -385,9 +391,15 @@ def unpair_transaction(tx_id: int, db: Session = DB_DEP):
     if not a or a.transfer_pair_id is None:
         raise HTTPException(404)
     other = db.get(models.Transaction, a.transfer_pair_id)
-    if other:
-        other.transfer_pair_id = None
-    a.transfer_pair_id = None
+    for tx in (a, other):
+        if tx is None:
+            continue
+        # Rows linked before kind_before_pair existed have nothing stored;
+        # leave those as they are rather than guessing at a kind.
+        if tx.kind_before_pair is not None:
+            tx.kind = tx.kind_before_pair
+            tx.kind_before_pair = None
+        tx.transfer_pair_id = None
     db.commit()
     return {"status": "unpaired"}
 
@@ -400,6 +412,11 @@ def delete_transaction(tx_id: int, db: Session = DB_DEP):
     if tx.transfer_pair_id is not None:
         other = db.get(models.Transaction, tx.transfer_pair_id)
         if other:
+            # The survivor has nothing left to cancel against, so give it
+            # back the kind it had before the pairing.
+            if other.kind_before_pair is not None:
+                other.kind = other.kind_before_pair
+                other.kind_before_pair = None
             other.transfer_pair_id = None
     db.delete(tx)
     db.commit()
