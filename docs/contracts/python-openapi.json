@@ -4676,6 +4676,18 @@
             ],
             "title": "Amount"
           },
+          "budget_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Budget Date"
+          },
           "category_id": {
             "anyOf": [
               {
@@ -4787,6 +4799,18 @@
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Amount",
             "type": "string"
+          },
+          "budget_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Budget Date"
           },
           "category_id": {
             "anyOf": [
@@ -4925,6 +4949,7 @@
           "account_id",
           "date",
           "post_date",
+          "budget_date",
           "description_raw",
           "description_normalized",
           "merchant",
@@ -5052,6 +5077,18 @@
               }
             ],
             "title": "Amount"
+          },
+          "budget_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Budget Date"
           },
           "category_id": {
             "anyOf": [

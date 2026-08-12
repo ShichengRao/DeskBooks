@@ -4,10 +4,20 @@ from collections import defaultdict
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from . import models
+
+
+def budget_date_column():
+    """The date a transaction counts under, for month bucketing.
+
+    `budget_date` when the user has reassigned the transaction, its real
+    `date` otherwise. Use this anywhere a total is attributed to a month;
+    keep `Transaction.date` for anything describing when money actually
+    moved (net-worth reconciliation, recurrence detection, statements)."""
+    return func.coalesce(models.Transaction.budget_date, models.Transaction.date)
 
 
 def normalize_month(value: date) -> date:
@@ -127,9 +137,13 @@ def budget_report(
     transaction_rows_by_month: dict[date, list[tuple[int | None, Decimal]]] = defaultdict(list)
     uncategorized_by_month: dict[date, Decimal] = defaultdict(lambda: Decimal("0"))
 
+    # Filter on the same expression we bucket by, or a transaction
+    # reassigned into this window from outside it would never be selected
+    # (and one reassigned out would still be counted).
+    counted_on = budget_date_column()
     stmt = (
         select(
-            models.Transaction.date,
+            counted_on,
             models.Transaction.category_id,
             models.Transaction.amount,
             models.TransactionSplit.personal_share,
@@ -140,8 +154,8 @@ def budget_report(
             isouter=True,
         )
         .where(
-            models.Transaction.date >= months[0],
-            models.Transaction.date < month_end_exclusive(months[-1]),
+            counted_on >= months[0],
+            counted_on < month_end_exclusive(months[-1]),
             models.Transaction.kind == models.TransactionKind.expense,
             models.Transaction.is_excluded_from_totals.is_(False),
         )

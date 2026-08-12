@@ -207,6 +207,7 @@ class TransactionOut(ORMBase):
     account_id: int
     date: _date
     post_date: _date | None
+    budget_date: _date | None
     description_raw: str
     description_normalized: str | None
     merchant: str | None
@@ -233,6 +234,7 @@ class TransactionIn(BaseModel):
     account_id: int
     date: _date
     post_date: _date | None = None
+    budget_date: _date | None = None
     description_raw: str
     description_normalized: str | None = None
     merchant: str | None = None
@@ -246,6 +248,7 @@ class TransactionIn(BaseModel):
 class TransactionUpdate(BaseModel):
     date: _date | None = None
     post_date: _date | None = None
+    budget_date: _date | None = None
     description_raw: str | None = None
     description_normalized: str | None = None
     merchant: str | None = None

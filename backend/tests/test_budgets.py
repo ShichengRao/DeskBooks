@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
+from app.analytics import monthly_breakdown, recurring_merchants
 from app.budgets import budget_report
 from app.models import (
     Account,
@@ -110,10 +111,12 @@ def _expense(
     amount: str,
     *,
     excluded: bool = False,
+    budget_date: date | None = None,
 ) -> Transaction:
     tx = Transaction(
         account_id=account.id,
         date=txn_date,
+        budget_date=budget_date,
         description_raw=category.name.upper(),
         amount=Decimal(amount),
         category_id=category.id,
@@ -212,3 +215,106 @@ def test_budget_report_hides_archived_categories_without_activity(db):
     assert rows["Legacy Dining (archived)"]["actual_amount"] == Decimal("-25.00") * -1
     assert rows["Legacy Plan (archived)"]["default_amount"] == Decimal("40.00")
     assert "Food" in rows
+
+
+def _rent_setup(db):
+    account = _checking_account(db)
+    housing = _category(db, "Housing")
+    rent = _category(db, "Rent", parent=housing)
+    return account, rent
+
+
+def _actual_by_month(report: dict) -> dict[date, Decimal]:
+    return {m["month"]: m["actual_total"] for m in report["months"]}
+
+
+def test_budget_date_moves_spending_to_the_month_it_is_assigned(db):
+    """Rent paid Aug 1 for July counts in July, not August."""
+    account, rent = _rent_setup(db)
+    _expense(db, account, rent, date(2026, 7, 1), "-1500.00", budget_date=date(2026, 6, 30))
+    _expense(db, account, rent, date(2026, 8, 1), "-1500.00", budget_date=date(2026, 7, 31))
+    db.commit()
+
+    report = budget_report(db, date(2026, 6, 1), date(2026, 8, 31))
+    actual = _actual_by_month(report)
+
+    assert actual[date(2026, 6, 1)] == Decimal("1500.00")
+    assert actual[date(2026, 7, 1)] == Decimal("1500.00")
+    assert actual[date(2026, 8, 1)] == Decimal("0")
+
+
+def test_untouched_transactions_still_count_in_their_own_month(db):
+    account, rent = _rent_setup(db)
+    _expense(db, account, rent, date(2026, 7, 1), "-1500.00")
+    db.commit()
+
+    actual = _actual_by_month(budget_report(db, date(2026, 6, 1), date(2026, 8, 31)))
+
+    assert actual[date(2026, 7, 1)] == Decimal("1500.00")
+    assert actual[date(2026, 6, 1)] == Decimal("0")
+
+
+def test_transaction_reassigned_into_the_window_from_outside_is_counted(db):
+    """The row's own date sits past the window end; only budget_date puts
+    it in range, so the query must filter on the same expression."""
+    account, rent = _rent_setup(db)
+    _expense(db, account, rent, date(2026, 9, 1), "-1500.00", budget_date=date(2026, 8, 31))
+    db.commit()
+
+    actual = _actual_by_month(budget_report(db, date(2026, 8, 1), date(2026, 8, 31)))
+
+    assert actual[date(2026, 8, 1)] == Decimal("1500.00")
+
+
+def test_transaction_reassigned_out_of_the_window_is_not_counted(db):
+    account, rent = _rent_setup(db)
+    _expense(db, account, rent, date(2026, 8, 2), "-1500.00", budget_date=date(2026, 7, 31))
+    db.commit()
+
+    actual = _actual_by_month(budget_report(db, date(2026, 8, 1), date(2026, 8, 31)))
+
+    assert actual[date(2026, 8, 1)] == Decimal("0")
+
+
+def test_reassigned_spending_lands_on_the_category_row_for_that_month(db):
+    account, rent = _rent_setup(db)
+    _expense(db, account, rent, date(2026, 8, 1), "-1500.00", budget_date=date(2026, 7, 31))
+    db.commit()
+
+    report = budget_report(db, date(2026, 7, 1), date(2026, 8, 31), date(2026, 7, 1))
+    rows = {r["category_name"]: r for r in report["rows"]}
+
+    assert rows["Rent"]["actual_amount"] == Decimal("1500.00")
+    assert rows["Rent"]["transaction_count"] == 1
+
+
+def test_monthly_breakdown_follows_the_same_attribution(db):
+    """The Analytics month chart and the budget report must not disagree."""
+    account, rent = _rent_setup(db)
+    _expense(db, account, rent, date(2026, 8, 1), "-1500.00", budget_date=date(2026, 7, 31))
+    db.commit()
+
+    months = {m["month"]: m for m in monthly_breakdown(db, date(2026, 7, 1), date(2026, 8, 31))}
+
+    assert months["2026-07"]["expenses_total"] == Decimal("1500.00")
+    assert "2026-08" not in months or months["2026-08"]["expenses_total"] == Decimal("0")
+
+
+def test_recurrence_detection_still_sees_the_real_dates(db):
+    """budget_date is an attribution overlay, not a rewrite of history —
+    anything describing when money actually moved keeps using `date`."""
+    account, rent = _rent_setup(db)
+    paid = [
+        _expense(db, account, rent, date(2026, 6, 1), "-1500.00"),
+        _expense(db, account, rent, date(2026, 7, 1), "-1500.00"),
+        _expense(db, account, rent, date(2026, 8, 1), "-1500.00", budget_date=date(2026, 7, 31)),
+    ]
+    for tx in paid:
+        tx.merchant = "RENT"  # the key recurrence groups on
+    db.commit()
+
+    rows = recurring_merchants(db, start=date(2026, 6, 1), end=date(2026, 8, 31))
+    row = next(r for r in rows if r["merchant"] == "RENT")
+
+    assert row["last_seen"] == date(2026, 8, 1)
+    assert row["occurrences"] == 3

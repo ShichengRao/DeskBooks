@@ -58,6 +58,17 @@ Amounts are decimal **strings**, outflow-negative. Rows with
 row is preserved on each imported transaction (`Transaction.raw`), including
 the provider transaction id.
 
+That id is what duplicate detection matches on, and it matters: a
+provider may revise a transaction's date after you have already imported
+it (Plaid backfills `authorized_date` a day or three after a card
+transaction posts, which moves the reported date earlier). Matching on
+date + amount + description alone would read the revised row as a new
+transaction and import it a second time. Rows from sources that carry no
+id — CSV and XLSX — still match on that key, counted so that genuine
+same-day, same-amount repeats (several identical transit fares) are kept
+rather than collapsed. A re-import keeps the row you already have; it
+does not rewrite its date with the provider's revision.
+
 ```jsonc
 // deskbooks.staged-balances/v1 — one file per run
 {

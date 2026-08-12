@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 from collections import Counter
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, NamedTuple
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import select
@@ -39,22 +39,92 @@ def _dup_key(d, amount, description_normalized) -> tuple:
     return (d, amount, description_normalized or "")
 
 
-def _existing_key_counts(db: Session, account_id: int) -> Counter:
-    """Counter-based: how many rows for each (date, amount, desc) key are
-    already in the DB. Lets us correctly handle multiple same-day same-
-    merchant rows (e.g., several $2.90 subway swipes) without collapsing
-    them into one."""
+def _provider_id(raw) -> str | None:
+    """The source's own transaction id, when it supplies one.
+
+    Connector-staged rows (deskbooks.staged-transactions/v1) carry the
+    provider's id; CSV/XLSX rows carry only positional/column data."""
+    if not isinstance(raw, dict):
+        return None
+    value = raw.get("id")
+    return value if isinstance(value, str) and value else None
+
+
+class _ExistingRows(NamedTuple):
+    key_counts: Counter
+    unidentified_key_counts: Counter
+    provider_ids: set[str]
+
+
+def _existing_rows(db: Session, account_id: int) -> _ExistingRows:
+    """What this account already holds, in both dedup currencies.
+
+    `key_counts` is counter-based: how many rows for each (date, amount,
+    desc) key are already in the DB. Lets us correctly handle multiple
+    same-day same-merchant rows (e.g., several $2.90 subway swipes)
+    without collapsing them into one. `unidentified_key_counts` is the
+    same tally over only the rows that carry no provider id.
+
+    `provider_ids` is every source transaction id already stored, so a
+    refetch of the same transaction is recognized even when the key
+    changed underneath it."""
     rows = db.execute(
         select(
             models.Transaction.date,
             models.Transaction.amount,
             models.Transaction.description_normalized,
+            models.Transaction.raw,
         ).where(models.Transaction.account_id == account_id)
     ).all()
     counts: Counter = Counter()
-    for d, a, s in rows:
+    unidentified: Counter = Counter()
+    provider_ids: set[str] = set()
+    for d, a, s, raw in rows:
         counts[_dup_key(d, a, s)] += 1
-    return counts
+        pid = _provider_id(raw)
+        if pid is not None:
+            provider_ids.add(pid)
+        else:
+            unidentified[_dup_key(d, a, s)] += 1
+    return _ExistingRows(counts, unidentified, provider_ids)
+
+
+def _mark_duplicates(rows, existing: _ExistingRows) -> None:
+    """Flag rows already present in the account.
+
+    A provider id is stable across refetches; the (date, amount, desc)
+    key is not. Plaid, for one, backfills `authorized_date` a few days
+    after a card transaction posts, which moves the reported date 1-3
+    days earlier — under key-only matching every such row re-imports as
+    new. So prefer the id whenever the source gives us one."""
+    file_idx: Counter = Counter()
+    fallback_idx: Counter = Counter()
+    seen_provider_ids: set[str] = set()
+    for r in rows:
+        key = _dup_key(r.date, r.amount, r.description_normalized)
+        pid = _provider_id(r.raw)
+        if pid is None:
+            # This row is the (position+1)-th in the file with this key.
+            # It's a dup only if the DB already has at least that many.
+            position = file_idx[key]
+            file_idx[key] += 1
+            r.is_duplicate = position < existing.key_counts.get(key, 0)
+            continue
+        if pid in existing.provider_ids or pid in seen_provider_ids:
+            # Repeats within one file count too — a provider id names one
+            # transaction, not a class of them.
+            seen_provider_ids.add(pid)
+            r.is_duplicate = True
+            continue
+        seen_provider_ids.add(pid)
+        # An id we've never seen. The transaction may still be here from
+        # before this account was connected (CSV/XLSX history carries no
+        # ids), so fall back to the positional key — but only against rows
+        # we can't identify. An existing row bearing a *different* id is a
+        # different transaction, however alike it looks.
+        position = fallback_idx[key]
+        fallback_idx[key] += 1
+        r.is_duplicate = position < existing.unidentified_key_counts.get(key, 0)
 
 
 @router.get("/importers")
@@ -112,10 +182,6 @@ def _preview_from_bytes(
     # All importers already produce outflow-negative output, so we don't flip
     # unless the source convention says otherwise (Amex flips internally).
 
-    # Duplicate detection (counter-based; see _existing_key_counts).
-    existing_counts = _existing_key_counts(db, account_id)
-    file_idx: Counter = Counter()
-
     active_rules = rules_engine.load_active_rules(db)
     for r in rows:
         # Auto-suggest via rules
@@ -135,13 +201,8 @@ def _preview_from_bytes(
             r.suggested_tags = ev.tags
         if ev.matched_rule_id:
             r.suggested_matched_rule_id = ev.matched_rule_id
-        key = _dup_key(r.date, r.amount, r.description_normalized)
-        position = file_idx[key]
-        file_idx[key] += 1
-        # This row is the (position+1)-th in the file with this key. It's
-        # a dup only if the DB already has at least (position+1) of them.
-        if position < existing_counts.get(key, 0):
-            r.is_duplicate = True
+
+    _mark_duplicates(rows, _existing_rows(db, account_id))
 
     return schemas.ImportPreview(
         importer_name=chosen_name,
@@ -194,22 +255,15 @@ def apply(body: schemas.ImportApplyRequest, db: DbSession):
     )
     db.add(batch)
     db.flush()
-    # Re-check duplicates against current DB state — preview may be stale if another
-    # batch landed between preview and apply. Counter-based so we don't
-    # collapse legit same-day same-merchant rows.
-    existing_counts = _existing_key_counts(db, body.account_id)
-    file_idx: Counter = Counter()
+    # Re-derive duplicates freshly against current DB state — the preview's
+    # is_duplicate flags may be stale if another batch landed between
+    # preview and apply.
+    _mark_duplicates(body.rows, _existing_rows(db, body.account_id))
     applied = 0
     dups = 0
     rule_fires: list[int] = []
     for r in body.rows:
-        key = _dup_key(r.date, r.amount, r.description_normalized)
-        position = file_idx[key]
-        file_idx[key] += 1
-        # Re-derive freshly against current DB state — the preview's
-        # is_duplicate flag may be stale if another batch landed between.
-        is_dup = position < existing_counts.get(key, 0)
-        if is_dup and body.skip_duplicates:
+        if r.is_duplicate and body.skip_duplicates:
             dups += 1
             continue
         tx = models.Transaction(
