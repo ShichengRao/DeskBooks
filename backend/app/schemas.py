@@ -64,6 +64,8 @@ class ProfileList(BaseModel):
 class BackupOut(BaseModel):
     name: str
     profile_slug: str
+    # Why this backup was taken, parsed from the filename. None = manual.
+    label: str | None = None
     size_bytes: int
     created_at: datetime
     path: str

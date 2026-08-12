@@ -16,11 +16,33 @@ def backup_dir(profile_slug: str) -> Path:
     return DATA_DIR / "backups" / profile_slug
 
 
+def _parse_label(name: str, profile_slug: str) -> str | None:
+    """The reason slug baked into a backup filename, if it has one.
+
+    `personal-20260812-143307-pre-restore.db` -> `pre-restore`; a plain
+    `personal-20260812-143307.db` (a manual backup) -> None. Anchored on
+    the known profile slug because both the slug and the label may
+    contain hyphens, which makes splitting ambiguous."""
+    stem = name[: -len(".db")] if name.endswith(".db") else name
+    prefix = f"{profile_slug}-"
+    if not stem.startswith(prefix):
+        return None
+    match = re.fullmatch(r"\d{8}-\d{6}(?:-(?P<label>.+))?", stem[len(prefix) :])
+    if match is None:
+        return None
+    label = match.group("label")
+    # The collision fallback appends microseconds, not a reason.
+    if label is None or label.isdigit():
+        return None
+    return label
+
+
 def _metadata(path: Path, profile_slug: str) -> dict:
     stat = path.stat()
     return {
         "name": path.name,
         "profile_slug": profile_slug,
+        "label": _parse_label(path.name, profile_slug),
         "size_bytes": stat.st_size,
         "created_at": datetime.fromtimestamp(stat.st_mtime),
         "path": str(path),

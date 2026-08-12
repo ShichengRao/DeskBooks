@@ -496,6 +496,17 @@
             "title": "Created At",
             "type": "string"
           },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
           "name": {
             "title": "Name",
             "type": "string"
