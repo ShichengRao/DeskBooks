@@ -1,4 +1,5 @@
 """Pydantic v2 request/response schemas."""
+
 # Note: `date` is aliased to `_date` because a field literally named `date`
 # shadows the imported type once Pydantic re-resolves hints via
 # get_type_hints (which sees the class attribute set by the default value).
@@ -400,6 +401,33 @@ class RuleProposalBacktestIn(BaseModel):
 
 class RuleProposalRejectIn(RuleProposalBacktestIn):
     pass
+
+
+class PairProposalExample(BaseModel):
+    source_transaction_id: int
+    target_transaction_id: int
+    date: _date
+    amount: Decimal
+    description: str
+    day_gap: int
+
+
+class PairProposalOut(BaseModel):
+    key: str
+    name: str
+    match_account_id: int
+    match_description_pattern: str
+    pair_with_account_id: int
+    pair_within_days: int
+    support: int
+    # Replaying the candidate over the links made by hand: same partner
+    # chosen, or a different one. A conflict means the window is too wide
+    # or the pattern too loose.
+    reproduces: int
+    conflicts: int
+    # What promoting it actually buys: rows not linked yet that it pairs.
+    would_link: int
+    examples: list[PairProposalExample]
 
 
 class RuleCoverageOut(BaseModel):

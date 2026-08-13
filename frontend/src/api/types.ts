@@ -176,6 +176,29 @@ export interface RuleProposalExample {
   correct: boolean;
 }
 
+export interface PairProposalExample {
+  source_transaction_id: number;
+  target_transaction_id: number;
+  date: string;
+  amount: string;
+  description: string;
+  day_gap: number;
+}
+
+export interface PairProposal {
+  key: string;
+  name: string;
+  match_account_id: number;
+  match_description_pattern: string;
+  pair_with_account_id: number;
+  pair_within_days: number;
+  support: number;
+  reproduces: number;
+  conflicts: number;
+  would_link: number;
+  examples: PairProposalExample[];
+}
+
 export interface RuleProposal {
   key: string;
   name: string;

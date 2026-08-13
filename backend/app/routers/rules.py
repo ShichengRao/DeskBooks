@@ -24,6 +24,11 @@ def list_rule_proposals(
     return rules_engine.generate_rule_proposals(db, min_support=min_support, limit=limit)
 
 
+@router.get("/pair-proposals", response_model=list[schemas.PairProposalOut])
+def list_pair_proposals(db: DbSession, min_support: int = 2, limit: int = 20):
+    return rules_engine.generate_pair_proposals(db, min_support=min_support, limit=limit)
+
+
 @router.get("/coverage", response_model=schemas.RuleCoverageOut)
 def get_rule_coverage(db: DbSession):
     return rules_engine.coverage_summary(db)
