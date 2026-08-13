@@ -153,6 +153,8 @@ export interface Rule {
   set_merchant: string | null;
   set_tags: string[] | null;
   set_is_excluded_from_totals: boolean | null;
+  pair_with_account_id: number | null;
+  pair_within_days: number | null;
   notes: string | null;
   apply_count: number;
   last_applied_at: string | null;

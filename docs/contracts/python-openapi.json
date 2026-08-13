@@ -3413,6 +3413,28 @@
             ],
             "title": "Notes"
           },
+          "pair_with_account_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pair With Account Id"
+          },
+          "pair_within_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pair Within Days"
+          },
           "priority": {
             "default": 100,
             "title": "Priority",
@@ -3569,6 +3591,28 @@
             ],
             "title": "Notes"
           },
+          "pair_with_account_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pair With Account Id"
+          },
+          "pair_within_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pair Within Days"
+          },
           "priority": {
             "title": "Priority",
             "type": "integer"
@@ -3645,6 +3689,8 @@
           "set_merchant",
           "set_tags",
           "set_is_excluded_from_totals",
+          "pair_with_account_id",
+          "pair_within_days",
           "notes",
           "apply_count",
           "last_applied_at"
@@ -4067,6 +4113,28 @@
               }
             ],
             "title": "Notes"
+          },
+          "pair_with_account_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pair With Account Id"
+          },
+          "pair_within_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pair Within Days"
           },
           "priority": {
             "anyOf": [
@@ -8091,6 +8159,25 @@
           }
         },
         "summary": "Get Rule Coverage",
+        "tags": [
+          "rules"
+        ]
+      }
+    },
+    "/api/rules/link-transfers": {
+      "post": {
+        "operationId": "link_transfers_api_rules_link_transfers_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Link Transfers",
         "tags": [
           "rules"
         ]

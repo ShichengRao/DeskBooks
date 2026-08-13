@@ -44,6 +44,8 @@ _ADDITIVE_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("transactions", "budget_date", "DATE"),
     ("transactions", "kind_before_pair", "VARCHAR"),
     ("rules", "set_is_excluded_from_totals", "BOOLEAN"),
+    ("rules", "pair_with_account_id", "INTEGER"),
+    ("rules", "pair_within_days", "INTEGER"),
 )
 
 

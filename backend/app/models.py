@@ -2,6 +2,7 @@
 
 Mirrors the data model described in docs/ARCHITECTURE.md.
 """
+
 from __future__ import annotations
 
 import enum
@@ -206,7 +207,9 @@ class Transaction(Base):
     account: Mapped[Account] = relationship(back_populates="transactions")
     category: Mapped[Category | None] = relationship(back_populates="transactions")
     batch: Mapped[ImportBatch | None] = relationship(back_populates="transactions")
-    tags: Mapped[list[Tag]] = relationship(secondary="transaction_tags", back_populates="transactions")
+    tags: Mapped[list[Tag]] = relationship(
+        secondary="transaction_tags", back_populates="transactions"
+    )
     split: Mapped[TransactionSplit | None] = relationship(
         back_populates="transaction", cascade="all, delete-orphan", uselist=False
     )
@@ -275,6 +278,12 @@ class Rule(Base):
     # but never want counted — a donor-advised fund, where the giving was
     # already counted on the way in and the grants out would double it.
     set_is_excluded_from_totals: Mapped[bool | None] = mapped_column(Boolean)
+    # Pairing action: look for this row's other half in another account
+    # and link the two, the same way linking them by hand does. Money
+    # moved between your own accounts leaves one and arrives in the other,
+    # and counting both is double-counting — a pair cancels out.
+    pair_with_account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"))
+    pair_within_days: Mapped[int | None] = mapped_column(Integer)
     notes: Mapped[str | None] = mapped_column(Text)
     last_applied_at: Mapped[datetime | None] = mapped_column(DateTime)
     apply_count: Mapped[int] = mapped_column(Integer, default=0)
@@ -291,7 +300,9 @@ class RuleProposalRejection(Base):
     match_account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"))
     match_description_pattern: Mapped[str] = mapped_column(Text)
     set_category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id"))
-    set_kind: Mapped[TransactionKind] = mapped_column(SAEnum(TransactionKind, name="proposal_rejection_kind"))
+    set_kind: Mapped[TransactionKind] = mapped_column(
+        SAEnum(TransactionKind, name="proposal_rejection_kind")
+    )
     set_merchant: Mapped[str | None] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
@@ -333,7 +344,9 @@ class Goal(Base):
     title: Mapped[str] = mapped_column(String(255))
     target_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
     target_date: Mapped[date | None] = mapped_column(Date)
-    kind: Mapped[GoalKind] = mapped_column(SAEnum(GoalKind, name="goal_kind"), default=GoalKind.savings)
+    kind: Mapped[GoalKind] = mapped_column(
+        SAEnum(GoalKind, name="goal_kind"), default=GoalKind.savings
+    )
     status: Mapped[GoalStatus] = mapped_column(
         SAEnum(GoalStatus, name="goal_status"), default=GoalStatus.active
     )
@@ -380,7 +393,9 @@ class JournalEntry(Base):
     )
 
     revisions: Mapped[list[JournalEntryRevision]] = relationship(
-        back_populates="entry", cascade="all, delete-orphan", order_by="JournalEntryRevision.changed_at"
+        back_populates="entry",
+        cascade="all, delete-orphan",
+        order_by="JournalEntryRevision.changed_at",
     )
 
 
@@ -477,7 +492,9 @@ class BudgetOverride(BudgetPlanMixin, Base):
     # Positive planned spending for this category in this month only.
     category: Mapped[Category] = relationship(back_populates="budget_overrides")
 
-    __table_args__ = (UniqueConstraint("month", "category_id", name="uq_budget_override_month_category"),)
+    __table_args__ = (
+        UniqueConstraint("month", "category_id", name="uq_budget_override_month_category"),
+    )
 
 
 class ImportBatch(Base):
