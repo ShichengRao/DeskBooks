@@ -7,7 +7,12 @@ import {
   STAGED_BALANCES_FORMAT,
   STAGED_TRANSACTIONS_FORMAT,
 } from "../src/staged-formats.mjs";
-import { groupMappings, normalizePlaidBalances, normalizePlaidTransactions } from "../fetchers/plaid.mjs";
+import {
+  groupMappings,
+  normalizePlaidBalances,
+  normalizePlaidInvestmentTransactions,
+  normalizePlaidTransactions,
+} from "../fetchers/plaid.mjs";
 
 test("buildStagedTransactions normalizes and validates rows", () => {
   const staged = buildStagedTransactions({
@@ -146,6 +151,81 @@ test("normalizePlaidBalances sums provider accounts that share a DeskBooks accou
   ]);
 });
 
+test("normalizePlaidInvestmentTransactions keeps Plaid's outflow-positive convention", () => {
+  const rows = normalizePlaidInvestmentTransactions({
+    transactions: [
+      {
+        investment_transaction_id: "inv_buy",
+        account_id: "acc_1",
+        security_id: "sec_1",
+        date: "2026-07-01",
+        name: "BUY",
+        amount: 250.5,
+      },
+      {
+        investment_transaction_id: "inv_sell",
+        account_id: "acc_1",
+        security_id: "sec_1",
+        date: "2026-07-02",
+        name: "SELL",
+        amount: -100,
+      },
+    ],
+    securities: [{ security_id: "sec_1", ticker_symbol: "ACME", name: "Acme Inc" }],
+  });
+  // Cash debited (a purchase) is money out; cash credited is money in.
+  assert.equal(rows[0].amount, "-250.5");
+  assert.equal(rows[1].amount, "100");
+  assert.equal(rows[0].id, "inv_buy");
+  assert.equal(rows[0].description, "BUY (ACME)");
+  // No pending state and no separate posting date on this endpoint.
+  assert.equal(rows[0].pending, false);
+  assert.equal(rows[0].post_date, null);
+});
+
+test("normalizePlaidInvestmentTransactions does not repeat a ticker already in the name", () => {
+  const [row] = normalizePlaidInvestmentTransactions({
+    transactions: [
+      {
+        investment_transaction_id: "inv_1",
+        security_id: "sec_1",
+        date: "2026-07-01",
+        name: "Bought 3 ACME @ 12.10",
+        amount: 36.3,
+      },
+    ],
+    securities: [{ security_id: "sec_1", ticker_symbol: "ACME" }],
+  });
+  assert.equal(row.description, "Bought 3 ACME @ 12.10");
+});
+
+test("normalizePlaidInvestmentTransactions copes with an unknown security", () => {
+  const [row] = normalizePlaidInvestmentTransactions({
+    transactions: [
+      {
+        investment_transaction_id: "inv_cash",
+        security_id: null,
+        date: "2026-07-01",
+        name: "Contribution",
+        amount: -500,
+      },
+    ],
+    securities: [],
+  });
+  assert.equal(row.description, "Contribution");
+  assert.equal(row.amount, "500");
+});
+
+test("normalizePlaidInvestmentTransactions honors invertAmounts", () => {
+  const [row] = normalizePlaidInvestmentTransactions({
+    transactions: [
+      { investment_transaction_id: "inv_1", date: "2026-07-01", name: "BUY", amount: 10 },
+    ],
+    invertAmounts: true,
+  });
+  assert.equal(row.amount, "10");
+});
+
 test("normalizePlaidBalances skips mappings marked balances:false", () => {
   const rows = normalizePlaidBalances({
     mappings: [
@@ -168,6 +248,33 @@ test("normalizePlaidBalances keeps mappings that set balances:true", () => {
     accountsById: { sav: { balances: { current: 55.55 } } },
   });
   assert.deepEqual(rows, [{ accountId: 6, balance: "55.55" }]);
+});
+
+test("groupMappings drives staging off whichever mappings it is handed", () => {
+  // The fetcher filters mappings before grouping — "balances": false out
+  // of the balances pass, "transactions": false out of the staging pass —
+  // so an account can be balance-only or rows-only without either flag
+  // leaking into the other.
+  const mappings = [
+    { plaidAccountId: "a", deskbooksAccountId: 1 },
+    { plaidAccountId: "b", deskbooksAccountId: 2, transactions: false },
+    { plaidAccountId: "c", deskbooksAccountId: 3, balances: false },
+  ];
+  const staged = groupMappings(mappings.filter((m) => m.transactions !== false));
+  assert.deepEqual([...staged.keys()], [1, 3]);
+
+  const balances = normalizePlaidBalances({
+    mappings,
+    accountsById: {
+      a: { balances: { current: 1 } },
+      b: { balances: { current: 2 } },
+      c: { balances: { current: 3 } },
+    },
+  });
+  assert.deepEqual(balances, [
+    { accountId: 1, balance: "1.00" },
+    { accountId: 2, balance: "2.00" },
+  ]);
 });
 
 test("groupMappings folds many provider accounts into one DeskBooks account", () => {
