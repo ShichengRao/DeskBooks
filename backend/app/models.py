@@ -270,6 +270,11 @@ class Rule(Base):
     )
     set_merchant: Mapped[str | None] = mapped_column(String(255))
     set_tags: Mapped[list | None] = mapped_column(JSON)
+    # Stamps matched rows out of every total while leaving them in the
+    # ledger. The motivating case is an account you hold for the record
+    # but never want counted — a donor-advised fund, where the giving was
+    # already counted on the way in and the grants out would double it.
+    set_is_excluded_from_totals: Mapped[bool | None] = mapped_column(Boolean)
     notes: Mapped[str | None] = mapped_column(Text)
     last_applied_at: Mapped[datetime | None] = mapped_column(DateTime)
     apply_count: Mapped[int] = mapped_column(Integer, default=0)

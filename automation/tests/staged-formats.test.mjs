@@ -146,6 +146,30 @@ test("normalizePlaidBalances sums provider accounts that share a DeskBooks accou
   ]);
 });
 
+test("normalizePlaidBalances skips mappings marked balances:false", () => {
+  const rows = normalizePlaidBalances({
+    mappings: [
+      { plaidAccountId: "taxable", deskbooksAccountId: 3 },
+      { plaidAccountId: "daf", deskbooksAccountId: 9, balances: false },
+    ],
+    accountsById: {
+      taxable: { balances: { current: 100.25 } },
+      daf: { balances: { current: 5000 } },
+    },
+  });
+  // The DAF reports a balance and is still omitted entirely — not even a
+  // null row, which would read as "account did not exist yet".
+  assert.deepEqual(rows, [{ accountId: 3, balance: "100.25" }]);
+});
+
+test("normalizePlaidBalances keeps mappings that set balances:true", () => {
+  const rows = normalizePlaidBalances({
+    mappings: [{ plaidAccountId: "sav", deskbooksAccountId: 6, balances: true }],
+    accountsById: { sav: { balances: { current: 55.55 } } },
+  });
+  assert.deepEqual(rows, [{ accountId: 6, balance: "55.55" }]);
+});
+
 test("groupMappings folds many provider accounts into one DeskBooks account", () => {
   const grouped = groupMappings([
     { plaidAccountId: "a", deskbooksAccountId: 1 },

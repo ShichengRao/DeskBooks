@@ -152,6 +152,7 @@ export interface Rule {
   set_kind: TransactionKind | null;
   set_merchant: string | null;
   set_tags: string[] | null;
+  set_is_excluded_from_totals: boolean | null;
   notes: string | null;
   apply_count: number;
   last_applied_at: string | null;
@@ -317,6 +318,7 @@ export interface ImportDraftRow {
   suggested_category_id: number | null;
   suggested_kind: TransactionKind;
   suggested_tags: string[];
+  suggested_is_excluded_from_totals: boolean;
   is_duplicate: boolean;
   raw: Record<string, unknown> | null;
 }

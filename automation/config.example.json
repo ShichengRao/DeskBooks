@@ -13,7 +13,8 @@
       "lookbackDays": 90,
       "invertAmounts": false,
       "accounts": [
-        { "plaidAccountId": "acc_example", "deskbooksAccountId": 1 }
+        { "plaidAccountId": "acc_example", "deskbooksAccountId": 1 },
+        { "plaidAccountId": "acc_example_2", "deskbooksAccountId": 2, "balances": false }
       ]
     },
     {
