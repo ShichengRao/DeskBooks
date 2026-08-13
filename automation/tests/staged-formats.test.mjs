@@ -216,6 +216,21 @@ test("normalizePlaidInvestmentTransactions copes with an unknown security", () =
   assert.equal(row.amount, "500");
 });
 
+test("normalizePlaidInvestmentTransactions rounds share-price precision to cents", () => {
+  // A dollar-amount purchase buys a fractional share, so Plaid reports
+  // these to five decimals; the ledger stores cents.
+  const rows = normalizePlaidInvestmentTransactions({
+    transactions: [
+      { investment_transaction_id: "a", date: "2026-02-19", name: "Contribution", amount: -10159.01981 },
+      { investment_transaction_id: "b", date: "2026-02-20", name: "Grant", amount: 10000.00021 },
+      { investment_transaction_id: "c", date: "2026-02-21", name: "Buy", amount: 0.005 },
+    ],
+  });
+  assert.equal(rows[0].amount, "10159.02");
+  assert.equal(rows[1].amount, "-10000");
+  assert.equal(rows[2].amount, "-0.01");
+});
+
 test("normalizePlaidInvestmentTransactions honors invertAmounts", () => {
   const [row] = normalizePlaidInvestmentTransactions({
     transactions: [
