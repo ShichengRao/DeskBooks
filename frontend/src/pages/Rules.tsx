@@ -34,6 +34,10 @@ export function Rules() {
     () => Object.fromEntries((categories.data ?? []).map((c) => [c.id, c])),
     [categories.data],
   );
+  const accountById = useMemo(
+    () => new Map((accounts.data ?? []).map((a) => [a.id, a])),
+    [accounts.data],
+  );
   const visibleRules = (rules.data ?? []).filter((r) => r.is_active);
 
   const reapply = useMutation({
@@ -44,6 +48,16 @@ export function Rules() {
       qc.invalidateQueries({ queryKey: ["rule-coverage"] });
       qc.invalidateQueries({ queryKey: ["rule-proposals"] });
       alert(`Reapplied rules. ${data.rows_changed} transaction(s) changed.`);
+    },
+  });
+
+  const linkTransfers = useMutation({
+    mutationFn: () => api.post<{ pairs_linked: number }>("/api/rules/link-transfers"),
+    onSuccess: (data) => {
+      invalidateTxQueries(qc);
+      qc.invalidateQueries({ queryKey: ["rules"] });
+      qc.invalidateQueries({ queryKey: ["rule-coverage"] });
+      alert(`Linked ${data.pairs_linked} transfer pair(s).`);
     },
   });
 
@@ -115,8 +129,11 @@ export function Rules() {
       <RulesHeader
         showProposals={showProposals}
         reapplyPending={reapply.isPending}
+        linkTransfersPending={linkTransfers.isPending}
+        hasPairingRule={visibleRules.some((r) => r.pair_with_account_id !== null)}
         onShowProposals={setShowProposals}
         onReapply={() => reapply.mutate()}
+        onLinkTransfers={() => linkTransfers.mutate()}
         onCreate={() => setEditing("new")}
       />
 
@@ -126,6 +143,7 @@ export function Rules() {
       <ActiveRulesTable
         rules={visibleRules}
         categoryById={categoryById}
+        accountById={accountById}
         selectedRuleIds={selectedRuleIds}
         bulkDeletePending={bulkDelete.isPending}
         onSelectAll={(ids) => setSelectedRuleIds(new Set(ids))}
@@ -175,14 +193,20 @@ export function Rules() {
 function RulesHeader({
   showProposals,
   reapplyPending,
+  linkTransfersPending,
+  hasPairingRule,
   onShowProposals,
   onReapply,
+  onLinkTransfers,
   onCreate,
 }: {
   showProposals: boolean;
   reapplyPending: boolean;
+  linkTransfersPending: boolean;
+  hasPairingRule: boolean;
   onShowProposals: (value: boolean) => void;
   onReapply: () => void;
+  onLinkTransfers: () => void;
   onCreate: () => void;
 }) {
   return (
@@ -194,6 +218,18 @@ function RulesHeader({
           show proposals
         </label>
         <button className="btn" onClick={onReapply} disabled={reapplyPending}>Re-apply to unreviewed</button>
+        <button
+          className="btn"
+          onClick={onLinkTransfers}
+          disabled={linkTransfersPending || !hasPairingRule}
+          title={
+            hasPairingRule
+              ? "Link each side of a transfer to the other, for rules that name a counterpart account."
+              : "No rule pairs accounts yet. Set “Pair with” on a rule first."
+          }
+        >
+          Link transfers
+        </button>
         <button className="btn-primary" onClick={onCreate}>+ New rule</button>
       </div>
     </div>
@@ -203,6 +239,7 @@ function RulesHeader({
 function ActiveRulesTable({
   rules,
   categoryById,
+  accountById,
   selectedRuleIds,
   bulkDeletePending,
   onSelectAll,
@@ -214,6 +251,7 @@ function ActiveRulesTable({
 }: {
   rules: Rule[];
   categoryById: Record<number, Category>;
+  accountById: Map<number, Account>;
   selectedRuleIds: Set<number>;
   bulkDeletePending: boolean;
   onSelectAll: (ids: number[]) => void;
@@ -259,6 +297,7 @@ function ActiveRulesTable({
               key={rule.id}
               rule={rule}
               category={rule.set_category_id ? categoryById[rule.set_category_id] : null}
+              accountById={accountById}
               selected={selectedRuleIds.has(rule.id)}
               onToggleSelected={onToggleSelected}
               onEdit={onEdit}
@@ -314,6 +353,7 @@ function ActiveRulesSelectionActions({
 function ActiveRuleRow({
   rule,
   category,
+  accountById,
   selected,
   onToggleSelected,
   onEdit,
@@ -321,6 +361,7 @@ function ActiveRuleRow({
 }: {
   rule: Rule;
   category: Category | null;
+  accountById: Map<number, Account>;
   selected: boolean;
   onToggleSelected: (ruleId: number) => void;
   onEdit: (rule: Rule) => void;
@@ -344,6 +385,14 @@ function ActiveRuleRow({
           {rule.set_is_excluded_from_totals && (
             <span className="pill bg-ink-200/60 text-ink-700" title="Matched rows stay in the ledger but out of every total.">
               excluded from totals
+            </span>
+          )}
+          {rule.pair_with_account_id !== null && (
+            <span
+              className="pill bg-ink-200/60 text-ink-700"
+              title={`Links matched rows to their other half, within ${rule.pair_within_days ?? 3} day(s). Run "Link transfers".`}
+            >
+              pairs with {accountById.get(rule.pair_with_account_id)?.name ?? "another account"}
             </span>
           )}
         </div>
@@ -746,6 +795,33 @@ function RuleEditor({
               keep matched rows in the ledger but out of every total
             </label>
           </Field>
+          <Field label="Pair with: account holding the other side (optional)">
+            <select
+              className="input"
+              value={r.pair_with_account_id ?? ""}
+              onChange={(e) =>
+                setR({
+                  ...r,
+                  pair_with_account_id: e.target.value ? parseInt(e.target.value, 10) : null,
+                  pair_within_days: e.target.value ? (r.pair_within_days ?? 3) : null,
+                })
+              }
+            >
+              <option value="">— don't pair</option>
+              {accounts.map((a) => (<option key={a.id} value={a.id}>{a.name}</option>))}
+            </select>
+          </Field>
+          {r.pair_with_account_id != null && (
+            <Field label="Pair with: how many days apart the two sides can be">
+              <input
+                type="number"
+                min={0}
+                className="input"
+                value={r.pair_within_days ?? 3}
+                onChange={(e) => setR({ ...r, pair_within_days: parseInt(e.target.value, 10) || 0 })}
+              />
+            </Field>
+          )}
           <Field label="Notes"><textarea className="input min-h-[5rem]" value={r.notes ?? ""} onChange={(e) => setR({ ...r, notes: e.target.value })} /></Field>
         </div>
         <div className="sticky bottom-0 z-10 -mx-6 mt-4 flex items-center gap-2 border-t border-ink-100 bg-white px-6 py-3">

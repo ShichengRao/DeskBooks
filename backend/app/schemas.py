@@ -302,6 +302,8 @@ class RuleIn(BaseModel):
     set_merchant: str | None = None
     set_tags: list[str] | None = None
     set_is_excluded_from_totals: bool | None = None
+    pair_with_account_id: int | None = None
+    pair_within_days: int | None = None
     notes: str | None = None
 
 
@@ -318,6 +320,8 @@ class RuleUpdate(BaseModel):
     set_merchant: str | None = None
     set_tags: list[str] | None = None
     set_is_excluded_from_totals: bool | None = None
+    pair_with_account_id: int | None = None
+    pair_within_days: int | None = None
     notes: str | None = None
 
 
@@ -339,6 +343,8 @@ class RuleOut(ORMBase):
     set_merchant: str | None
     set_tags: list[str] | None
     set_is_excluded_from_totals: bool | None
+    pair_with_account_id: int | None
+    pair_within_days: int | None
     notes: str | None
     apply_count: int
     last_applied_at: datetime | None

@@ -93,3 +93,9 @@ def delete_rule(rule_id: int, db: DbSession):
 def reapply_rules(db: DbSession):
     rows_changed, rules_fired = rules_engine.reapply_to_unreviewed(db)
     return {"rows_changed": rows_changed, "rules_fired": rules_fired}
+
+
+@router.post("/link-transfers")
+def link_transfers(db: DbSession):
+    pairs_linked, rules_fired = rules_engine.link_transfers(db)
+    return {"pairs_linked": pairs_linked, "rules_fired": rules_fired}

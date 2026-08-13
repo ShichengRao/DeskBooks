@@ -10,13 +10,20 @@ Semantics:
 - Rules NEVER overwrite a transaction with `is_user_categorized=True`,
   nor one linked to a cancel-out pair (its kind belongs to the pairing).
 - A re-apply pass can be requested over already-imported transactions.
+
+A rule can also carry a pairing action: name another account, and a
+matched row is linked to its other half there — the same link you would
+make by hand. That runs as its own pass rather than at import, because
+the two sides usually arrive in different files, and often on different
+days.
 """
+
 from __future__ import annotations
 
 import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from functools import lru_cache
 
@@ -89,7 +96,11 @@ def _matches(rule: models.Rule, *, account_id: int, description: str, amount: De
 
 
 def load_active_rules(db: Session) -> list[models.Rule]:
-    stmt = select(models.Rule).where(models.Rule.is_active.is_(True)).order_by(models.Rule.priority.asc())
+    stmt = (
+        select(models.Rule)
+        .where(models.Rule.is_active.is_(True))
+        .order_by(models.Rule.priority.asc())
+    )
     return list(db.scalars(stmt))
 
 
@@ -164,6 +175,97 @@ def reapply_to_unreviewed(db: Session) -> tuple[int, int]:
     return rows_changed, len(fires)
 
 
+DEFAULT_PAIR_WITHIN_DAYS = 3
+
+
+def _link_pair(a: models.Transaction, b: models.Transaction) -> None:
+    """Link two rows exactly as linking them by hand does, so that
+    unlinking restores both kinds the same way."""
+    for tx in (a, b):
+        tx.kind_before_pair = tx.kind
+        tx.kind = models.TransactionKind.transfer
+    a.transfer_pair_id = b.id
+    b.transfer_pair_id = a.id
+
+
+def link_transfers(db: Session) -> tuple[int, int]:
+    """Link each side of a transfer to the other, for rules that name a
+    counterpart account. Returns (pairs_linked, rules_applied).
+
+    Runs on demand rather than at import: the two sides of a transfer
+    usually arrive in different files, so at import time the other half
+    often does not exist yet.
+    """
+    rules = [r for r in load_active_rules(db) if r.pair_with_account_id is not None]
+    if not rules:
+        return 0, 0
+    rules_by_id = {r.id: r for r in rules}
+
+    # Only unpaired rows can be linked; re-pairing one side would leave
+    # its old partner pointing at a row that no longer points back.
+    unpaired = list(
+        db.scalars(
+            select(models.Transaction)
+            .where(models.Transaction.transfer_pair_id.is_(None))
+            .order_by(models.Transaction.date.asc(), models.Transaction.id.asc())
+        )
+    )
+    by_account: dict[int, list[models.Transaction]] = defaultdict(list)
+    for tx in unpaired:
+        by_account[tx.account_id].append(tx)
+
+    claimed: set[int] = set()
+    fires = Counter()
+    for tx in unpaired:
+        if tx.id in claimed:
+            continue
+        rule = next(
+            (
+                r
+                for r in rules
+                if _matches(
+                    r,
+                    account_id=tx.account_id,
+                    description=tx.description_normalized or tx.description_raw or "",
+                    amount=tx.amount,
+                )
+            ),
+            None,
+        )
+        if rule is None or rule.pair_with_account_id == tx.account_id:
+            continue
+        window = timedelta(days=rule.pair_within_days or DEFAULT_PAIR_WITHIN_DAYS)
+        candidates = [
+            other
+            for other in by_account.get(rule.pair_with_account_id, [])
+            if other.id not in claimed
+            and other.id != tx.id
+            # The other half of a movement is its exact opposite: same
+            # size, other direction. A same-signed row is a different
+            # transaction that merely happens to cost the same.
+            and other.amount == -tx.amount
+            and abs(other.date - tx.date) <= window
+        ]
+        if not candidates:
+            continue
+        # Nearest in time wins, then lowest id, so a run over the same
+        # data always produces the same pairs.
+        partner = min(candidates, key=lambda o: (abs(o.date - tx.date), o.id))
+        _link_pair(tx, partner)
+        claimed.update({tx.id, partner.id})
+        fires[rule.id] += 1
+
+    now = datetime.now(UTC)
+    for rule_id, n in fires.items():
+        rule = rules_by_id[rule_id]
+        rule.apply_count = (rule.apply_count or 0) + n
+        rule.last_applied_at = now
+    pairs = sum(fires.values())
+    if pairs:
+        db.commit()
+    return pairs, len(fires)
+
+
 def coverage_summary(db: Session) -> dict:
     rules = load_active_rules(db)
     txs = list(db.scalars(select(models.Transaction)))
@@ -197,9 +299,7 @@ def coverage_summary(db: Session) -> dict:
             else:
                 labeled_incorrect += 1
 
-    labeled_accuracy = (
-        labeled_correct / labeled_matched if labeled_matched else None
-    )
+    labeled_accuracy = labeled_correct / labeled_matched if labeled_matched else None
     return {
         "active_rule_count": len(rules),
         "total_transactions": total,
@@ -239,7 +339,9 @@ def _proposal_key(tx: models.Transaction) -> str:
     inventing fuzzy NLP here: the proposal UI is meant to show obvious
     automation candidates and let the user decide.
     """
-    return _generalize_description(tx.merchant or tx.description_normalized or tx.description_raw or "")
+    return _generalize_description(
+        tx.merchant or tx.description_normalized or tx.description_raw or ""
+    )
 
 
 def _raw_proposal_text(tx: models.Transaction) -> str:
@@ -257,9 +359,7 @@ def _generalize_description(value: str) -> str:
     s = (value or "").strip()
     if not s:
         return ""
-    had_long_reference = bool(
-        re.search(r"\b(?:X+X*\d{3,}|[Xx]{2,}\d{3,}|\d{10,})\b", s)
-    )
+    had_long_reference = bool(re.search(r"\b(?:X+X*\d{3,}|[Xx]{2,}\d{3,}|\d{10,})\b", s))
     # Masked account suffixes and long transfer/reference numbers are almost
     # never useful for a future rule.
     s = re.sub(r"\bX+X*\d{3,}\b", "", s, flags=re.IGNORECASE)
@@ -329,7 +429,9 @@ def _proposal_pattern(key: str) -> str:
     return r".*".join(re.escape(t) for t in tokens)
 
 
-def _rule_signature(rule: models.Rule) -> tuple[str | None, int | None, int | None, models.TransactionKind | None]:
+def _rule_signature(
+    rule: models.Rule,
+) -> tuple[str | None, int | None, int | None, models.TransactionKind | None]:
     return (
         rule.match_description_pattern,
         rule.match_account_id,
@@ -487,9 +589,7 @@ def backtest_rule_proposal(
         if account_ok(tx) and _proposal_matches(match_description_pattern, tx)
     ]
     all_matches = sum(
-        1
-        for tx in all_txs
-        if account_ok(tx) and _proposal_matches(match_description_pattern, tx)
+        1 for tx in all_txs if account_ok(tx) and _proposal_matches(match_description_pattern, tx)
     )
     added_matches = sum(
         1
@@ -504,16 +604,8 @@ def backtest_rule_proposal(
         ).matched_rule_id
         is None
     )
-    correct = [
-        tx
-        for tx in matches
-        if tx.category_id == set_category_id and tx.kind == set_kind
-    ]
-    incorrect = [
-        tx
-        for tx in matches
-        if tx.category_id != set_category_id or tx.kind != set_kind
-    ]
+    correct = [tx for tx in matches if tx.category_id == set_category_id and tx.kind == set_kind]
+    incorrect = [tx for tx in matches if tx.category_id != set_category_id or tx.kind != set_kind]
     breakdown_counts = Counter((tx.category_id, tx.kind) for tx in matches)
     return {
         "key": key,
@@ -531,8 +623,12 @@ def backtest_rule_proposal(
         "incorrect_matches": len(incorrect),
         "accuracy": len(correct) / len(matches) if matches else 0.0,
         "labeled_coverage_percent": len(matches) / total_labeled * 100 if total_labeled else 0.0,
-        "all_coverage_percent": all_matches / total_transactions * 100 if total_transactions else 0.0,
-        "added_coverage_percent": added_matches / total_transactions * 100 if total_transactions else 0.0,
+        "all_coverage_percent": all_matches / total_transactions * 100
+        if total_transactions
+        else 0.0,
+        "added_coverage_percent": added_matches / total_transactions * 100
+        if total_transactions
+        else 0.0,
         "breakdown": [
             {"category_id": cat_id, "kind": tx_kind, "count": count}
             for (cat_id, tx_kind), count in breakdown_counts.most_common()
@@ -675,7 +771,9 @@ def _build_rule_proposal(
     pattern = _proposal_pattern(key)
     if not _valid_proposal_pattern(pattern):
         return None
-    if not _candidate_is_available(context, key=key, pattern=pattern, category_id=category_id, kind=kind):
+    if not _candidate_is_available(
+        context, key=key, pattern=pattern, category_id=category_id, kind=kind
+    ):
         return None
 
     matches = _proposal_matches_for(pattern, context.labeled_txs)
@@ -707,8 +805,12 @@ def _build_rule_proposal(
         "incorrect_matches": len(incorrect),
         "accuracy": accuracy,
         "labeled_coverage_percent": len(matches) / context.total_labeled * 100,
-        "all_coverage_percent": all_matches / context.total_transactions * 100 if context.total_transactions else 0.0,
-        "added_coverage_percent": added_matches / context.total_transactions * 100 if context.total_transactions else 0.0,
+        "all_coverage_percent": all_matches / context.total_transactions * 100
+        if context.total_transactions
+        else 0.0,
+        "added_coverage_percent": added_matches / context.total_transactions * 100
+        if context.total_transactions
+        else 0.0,
         "breakdown": [
             {"category_id": cat_id, "kind": tx_kind, "count": count}
             for (cat_id, tx_kind), count in breakdown_counts.most_common()
