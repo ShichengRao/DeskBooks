@@ -141,7 +141,13 @@ def test_staged_listing_reports_status_per_entry(db, tmp_path):
     # every row of this one already exists in the profile (the seeded txn)
     dup_payload = _transactions_payload(account.id, rows=1)
     dup_payload["transactions"][0]["id"] = "txn_dup"
-    duplicated = _stage(staging_dir, "duplicated.json", dup_payload, account_id=account.id, importer_name="staged_json")
+    duplicated = _stage(
+        staging_dir,
+        "duplicated.json",
+        dup_payload,
+        account_id=account.id,
+        importer_name="staged_json",
+    )
 
     # The shared state file says fresh.json was imported (by some other
     # profile). This profile's database has no such batch, so the listing
@@ -169,7 +175,9 @@ def test_staged_listing_reports_status_per_entry(db, tmp_path):
     assert rows["duplicated.json"].status == "imported"
     assert "already in this profile" in rows["duplicated.json"].detail
     # newest-first ordering: manifest order reversed
-    assert [r.file_name for r in _staged_listing(db, staging_dir, state_path, ACTIVE)][0] == "duplicated.json"
+    assert [r.file_name for r in _staged_listing(db, staging_dir, state_path, ACTIVE)][
+        0
+    ] == "duplicated.json"
 
 
 def test_apply_staged_imports_statements_and_balances_once(db, tmp_path):
@@ -211,9 +219,18 @@ def test_apply_staged_imports_statements_and_balances_once(db, tmp_path):
     assert set(outcomes) == {"statement.json", "balances.json"}
     assert outcomes["statement.json"].status == "imported"
     assert outcomes["statement.json"].rows_applied == 2
-    assert outcomes["balances.json"].status == "imported"
-    assert outcomes["balances.json"].rows_applied == 1
+    # A sweep leaves balances alone. A snapshot describes every account at
+    # once, so one must not appear as a side effect of importing whichever
+    # connections happened to run — a snapshot holding only those accounts
+    # reads as a collapse in net worth.
+    assert outcomes["balances.json"].status == "skipped_balances"
+    assert db.query(NetWorthSnapshot).count() == 0
     assert result.backup_name is None  # no profile_info given, no backup
+
+    # Naming the file is a choice about that file, so it still applies.
+    named = _apply_staged(db, staging_dir, state_path, ACTIVE, [balances["sha256"]])
+    assert named.outcomes[0].status == "imported"
+    assert named.outcomes[0].rows_applied == 1
 
     batch = db.query(ImportBatch).one()  # the empty file created no batch
     assert batch.notes == f"automation_sha256={statement['sha256']}"
@@ -230,7 +247,11 @@ def test_apply_staged_imports_statements_and_balances_once(db, tmp_path):
     # imported via this profile's batch (statement) and via the balances
     # matching the snapshot, not via the shared state file
     statuses = {r.file_name: r.status for r in _staged_listing(db, staging_dir, state_path, ACTIVE)}
-    assert statuses == {"statement.json": "imported", "balances.json": "imported", "empty.json": "empty"}
+    assert statuses == {
+        "statement.json": "imported",
+        "balances.json": "imported",
+        "empty.json": "empty",
+    }
     again = _apply_staged(db, staging_dir, state_path, ACTIVE, [statement["sha256"]])
     assert again.outcomes[0].status == "skipped_imported"
     assert db.query(Transaction).count() == 2
