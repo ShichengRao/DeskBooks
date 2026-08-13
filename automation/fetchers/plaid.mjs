@@ -26,6 +26,7 @@
  *     "accessTokenPath": "~/.config/deskbooks/plaid/access-token-mybank",
  *     "lookbackDays": 90,
  *     "invertAmounts": false,
+ *     "investments": false,
  *     "accounts": [
  *       { "plaidAccountId": "acc_...", "deskbooksAccountId": 3 },
  *       { "plaidAccountId": "acc_...", "deskbooksAccountId": 9, "balances": false }
@@ -33,7 +34,15 @@
  *   }
  *
  * "balances": false stages the account's transactions but never its
- * balance, keeping it out of the net-worth series.
+ * balance, keeping it out of the net-worth series. "transactions": false
+ * is the mirror — balance only, no rows.
+ *
+ * "investments": true additionally reads /investments/transactions/get,
+ * which is where brokerages, IRAs, 401(k)s and donor-advised funds report
+ * their activity. Without it those accounts stage zero transactions —
+ * /transactions/get returns an empty list for them rather than an error.
+ * The Item must have consented to the investments product; see
+ * docs/AUTOMATED_IMPORTS.md.
  */
 import { readFile } from "node:fs/promises";
 import { httpsPostJson } from "../src/connector-http.mjs";
@@ -47,6 +56,14 @@ import {
 export const PLAID_HOSTS = ["sandbox.plaid.com", "production.plaid.com"];
 const PAGE_SIZE = 500;
 const MAX_TRANSACTIONS = 10_000;
+
+// Plaid splits transaction history across two endpoints by account type.
+// /transactions/get covers depository and credit accounts and returns
+// nothing at all for an investment account — no error, just an empty
+// list, which reads exactly like a quiet quarter. Brokerages, IRAs,
+// 401(k)s and donor-advised funds report through
+// /investments/transactions/get instead, behind its own product.
+const INVESTMENTS_CONSENT_ERRORS = ["ADDITIONAL_CONSENT_REQUIRED", "PRODUCTS_NOT_SUPPORTED"];
 
 export function plaidHost(environment) {
   const host = `${environment}.plaid.com`;
@@ -91,9 +108,46 @@ export function normalizePlaidTransactions({ transactions, invertAmounts = false
   });
 }
 
+function investmentDescription(txn, securitiesById) {
+  const name = txn.name ?? "";
+  const ticker = securitiesById.get(txn.security_id)?.ticker_symbol;
+  // A ticker earns its place only when the name doesn't already carry it —
+  // Plaid's names run from "BUY" to "Bought 3 ACME @ 12.10".
+  if (!ticker || name.toUpperCase().includes(ticker.toUpperCase())) {
+    return name;
+  }
+  return name ? `${name} (${ticker})` : ticker;
+}
+
+export function normalizePlaidInvestmentTransactions({
+  transactions,
+  securities = [],
+  invertAmounts = false,
+}) {
+  const securitiesById = new Map((securities ?? []).map((s) => [s.security_id, s]));
+  return transactions.map((txn, index) => {
+    let amount = negatedAmountString(txn.amount, `investment_transactions[${index}]`);
+    if (invertAmounts) {
+      amount = amount.startsWith("-") ? amount.slice(1) : `-${amount}`;
+    }
+    // Investment transactions carry no pending state and no
+    // authorized/posted pair — Plaid reports one settled date — so the
+    // fields the card path uses to straddle posting stay null here.
+    return {
+      id: txn.investment_transaction_id,
+      date: txn.date,
+      description: investmentDescription(txn, securitiesById),
+      amount,
+      pending: false,
+      post_date: null,
+      merchant: null,
+    };
+  });
+}
+
 export function groupMappings(mappings) {
   // Several provider accounts may roll up into one DeskBooks account
-  // (e.g. nine CDs tracked as a single "Marcus CDs" account).
+  // (e.g. a ladder of CDs tracked as a single savings account).
   const byDeskbooksId = new Map();
   for (const mapping of mappings) {
     const ids = byDeskbooksId.get(mapping.deskbooksAccountId) ?? [];
@@ -149,6 +203,11 @@ function validateSource(source) {
       throw new Error(`${source.name}: ${field} is required`);
     }
   }
+  if ("investments" in source && typeof source.investments !== "boolean") {
+    throw new Error(
+      `${source.name}: "investments" must be true or false, got: ${JSON.stringify(source.investments)}`,
+    );
+  }
   const accounts = source.accounts ?? [];
   if (!accounts.length) {
     throw new Error(
@@ -161,13 +220,72 @@ function validateSource(source) {
     }
     // Fail loud rather than silently staging a balance the mapping meant
     // to suppress — a typo here quietly lands money in net worth.
-    if ("balances" in mapping && typeof mapping.balances !== "boolean") {
+    for (const field of ["balances", "transactions"]) {
+      if (field in mapping && typeof mapping[field] !== "boolean") {
+        throw new Error(
+          `${source.name}: account ${mapping.plaidAccountId}: "${field}" must be true or false, got: ${JSON.stringify(mapping[field])}`,
+        );
+      }
+    }
+    if (mapping.balances === false && mapping.transactions === false) {
       throw new Error(
-        `${source.name}: account ${mapping.plaidAccountId}: "balances" must be true or false, got: ${JSON.stringify(mapping.balances)}`,
+        `${source.name}: account ${mapping.plaidAccountId} maps to DeskBooks account ${mapping.deskbooksAccountId} with both "balances" and "transactions" false, which fetches nothing — remove the mapping instead`,
       );
     }
   }
   return accounts;
+}
+
+async function fetchInvestmentTransactions({ base, auth, http, startDate, endDate, sourceName }) {
+  const transactions = [];
+  const securities = new Map();
+  let total = Infinity;
+  while (transactions.length < total && transactions.length < MAX_TRANSACTIONS) {
+    let page;
+    try {
+      page = await httpsPostJson(
+        `${base}/investments/transactions/get`,
+        {
+          ...auth,
+          start_date: startDate,
+          end_date: endDate,
+          options: { count: PAGE_SIZE, offset: transactions.length },
+        },
+        http,
+      );
+    } catch (error) {
+      const message = String(error.message);
+      if (INVESTMENTS_CONSENT_ERRORS.some((code) => message.includes(code))) {
+        // Worth its own message: the config asked for investments, and
+        // the fix is a browser round-trip, not a config edit. Failing the
+        // source is deliberate — quietly staging without the investment
+        // rows would look like an account with no activity.
+        throw new Error(
+          `${sourceName}: this Item has not consented to the investments product, so investment ` +
+            "transactions cannot be read. Re-consent with " +
+            "`node bin/plaid-link-setup.mjs --products transactions,investments --access-token <path>` " +
+            "(update mode keeps the Item, so your account mappings stay valid), or set " +
+            `"investments": false on the source. Plaid said: ${message}`,
+        );
+      }
+      throw error;
+    }
+    for (const security of page.securities ?? []) {
+      securities.set(security.security_id, security);
+    }
+    const batch = page.investment_transactions ?? [];
+    total = page.total_investment_transactions ?? batch.length;
+    transactions.push(...batch);
+    if (batch.length === 0) {
+      break;
+    }
+  }
+  if (transactions.length >= MAX_TRANSACTIONS && transactions.length < total) {
+    console.warn(
+      `[plaid] ${sourceName}: capped at ${MAX_TRANSACTIONS} of ${total} investment transactions; shorten lookbackDays to cover the rest`,
+    );
+  }
+  return { transactions, securities: [...securities.values()] };
 }
 
 async function readSecretFile(configDir, rawPath) {
@@ -215,6 +333,18 @@ export async function fetch({ source, config, profile = null, downloadsDir }) {
     );
   }
 
+  let investments = { transactions: [], securities: [] };
+  if (source.investments === true) {
+    investments = await fetchInvestmentTransactions({
+      base,
+      auth,
+      http,
+      startDate,
+      endDate: today,
+      sourceName: source.name,
+    });
+  }
+
   const balancesResponse = await httpsPostJson(`${base}/accounts/balance/get`, { ...auth }, http);
   const accountsById = {};
   for (const account of balancesResponse.accounts ?? []) {
@@ -231,16 +361,32 @@ export async function fetch({ source, config, profile = null, downloadsDir }) {
   }
 
   const entries = [];
-  for (const [deskbooksAccountId, plaidIds] of groupMappings(mappings)) {
+  // "transactions": false is the mirror of "balances": false — take an
+  // account's balance for net worth without its row-by-row activity.
+  // Turning investments on covers every account in the Item, and a
+  // retirement plan's dividend reinvestments are rarely worth importing
+  // just to reach the one account whose activity you wanted.
+  const stagedMappings = mappings.filter((mapping) => mapping.transactions !== false);
+  for (const [deskbooksAccountId, plaidIds] of groupMappings(stagedMappings)) {
     const idSet = new Set(plaidIds);
-    const accountTxns = transactions.filter((t) => idSet.has(t.account_id));
+    const invertAmounts = source.invertAmounts === true;
+    // One DeskBooks account draws from whichever endpoint its provider
+    // accounts report through; an Item holding both a checking account and
+    // a brokerage contributes to each side separately.
     const staged = buildStagedTransactions({
       accountId: deskbooksAccountId,
       profile,
-      transactions: normalizePlaidTransactions({
-        transactions: accountTxns,
-        invertAmounts: source.invertAmounts === true,
-      }),
+      transactions: [
+        ...normalizePlaidTransactions({
+          transactions: transactions.filter((t) => idSet.has(t.account_id)),
+          invertAmounts,
+        }),
+        ...normalizePlaidInvestmentTransactions({
+          transactions: investments.transactions.filter((t) => idSet.has(t.account_id)),
+          securities: investments.securities,
+          invertAmounts,
+        }),
+      ],
     });
     const filePath = await writeStagedFile(
       downloadsDir,

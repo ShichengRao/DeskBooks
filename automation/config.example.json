@@ -12,6 +12,7 @@
       "accessTokenPath": "~/.config/deskbooks/plaid/access-token-mybank",
       "lookbackDays": 90,
       "invertAmounts": false,
+      "investments": false,
       "accounts": [
         { "plaidAccountId": "acc_example", "deskbooksAccountId": 1 },
         { "plaidAccountId": "acc_example_2", "deskbooksAccountId": 2, "balances": false }

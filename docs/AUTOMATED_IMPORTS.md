@@ -168,6 +168,11 @@ misreport against Plaid's own convention.
    Sandbox tip: pick any institution and log in with `user_good` /
    `pass_good`.
 
+   Add `--products transactions,investments` if the login holds a
+   brokerage, IRA, 401(k), or donor-advised fund — see
+   [Investment accounts](#investment-accounts). Consent is far cheaper to
+   grant now than to add later.
+
 3. Discover account ids and map them to DeskBooks accounts:
 
    ```sh
@@ -187,7 +192,7 @@ misreport against Plaid's own convention.
 Each run stages one transactions file per mapped account plus one balances
 file, so runs keep both your transactions and your net-worth series current.
 
-Two per-source knobs are worth knowing:
+These knobs are worth knowing:
 
 - `lookbackDays` is the whole history control — the fetcher asks Plaid for
   `[today - lookbackDays, today]`, with no cursor, so nothing older than
@@ -201,6 +206,51 @@ Two per-source knobs are worth knowing:
   net-worth series (net worth is the sum of snapshot balance rows).
   Donor-advised funds are the motivating case: the giving belongs in your
   spending history, the balance is money you no longer own.
+- `"transactions": false` is the mirror: the account's balance keeps
+  feeding net worth, but none of its rows are staged. Useful once
+  `investments` is on, since that switch covers every account in the Item
+  and a retirement plan's dividend reinvestments are rarely worth
+  importing to reach the one account whose activity you wanted. Setting
+  both to `false` on the same mapping is an error — it would fetch
+  nothing.
+
+## Investment accounts
+
+Plaid splits transaction history across two endpoints by account type, and
+this is the single most confusing thing about the connector:
+`/transactions/get` covers depository and credit accounts and returns an
+**empty list, not an error**, for a brokerage, IRA, 401(k), or
+donor-advised fund. An investment account left on the default settings
+therefore stages zero rows on every run and looks exactly like an account
+with no activity.
+
+Set `"investments": true` on the source to additionally read
+`/investments/transactions/get`, which is where those accounts report.
+Rows from both endpoints merge into the same per-account staged files, so
+an Item holding a checking account beside a brokerage needs nothing
+special. Buys arrive outflow-negative and sells positive, the same
+convention as everything else; where Plaid names a security whose ticker
+is not already in the description, the ticker is appended.
+
+The Item must have consented to the `investments` product. Consent is
+granted at link time, so an Item linked without it fails with
+`ADDITIONAL_CONSENT_REQUIRED` until you re-consent. Do that in **update
+mode**, which keeps the Item and its provider account ids so the mappings
+in `config.local.json` stay valid:
+
+```sh
+node bin/plaid-link-setup.mjs \
+  --client-id ~/.config/deskbooks/plaid/client-id \
+  --secret ~/.config/deskbooks/plaid/secret-production \
+  --env production \
+  --products transactions,investments \
+  --access-token ~/.config/deskbooks/plaid/access-token-mybank
+```
+
+Re-linking from scratch instead (`--out`) issues a new Item with fresh
+provider account ids, silently orphaning every mapping that referenced the
+old ones — and spends another of your ten Trial Items. New Items can take
+`--products transactions,investments` up front to avoid the round trip.
 
 ## Running
 
