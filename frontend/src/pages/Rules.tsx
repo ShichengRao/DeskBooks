@@ -6,7 +6,7 @@ import { invalidateTxQueries } from "../api/invalidate";
 import { Field } from "../components/Field";
 import { SidePanel } from "../components/SidePanel";
 import { ALL_KINDS, useVisibleKinds } from "../lib/kinds";
-import type { Account, Category, Rule, RuleCoverage, RuleProposal, RuleProposalBacktestInput, TransactionKind } from "../api/types";
+import type { Account, Category, PairProposal, Rule, RuleCoverage, RuleProposal, RuleProposalBacktestInput, TransactionKind } from "../api/types";
 import { transactionKindLabel } from "../lib/labels";
 import { currency, dateLabel } from "../lib/fmt";
 
@@ -27,6 +27,11 @@ export function Rules() {
   const proposals = useQuery({
     queryKey: ["rule-proposals"],
     queryFn: () => api.get<RuleProposal[]>("/api/rules/proposals?min_support=3&limit=50"),
+    enabled: showProposals,
+  });
+  const pairProposals = useQuery({
+    queryKey: ["pair-proposals"],
+    queryFn: () => api.get<PairProposal[]>("/api/rules/pair-proposals?min_support=2&limit=20"),
     enabled: showProposals,
   });
 
@@ -116,6 +121,25 @@ export function Rules() {
     },
   });
 
+  const promotePair = useMutation({
+    mutationFn: (proposal: PairProposal) =>
+      api.post<Rule>("/api/rules", {
+        name: `Pair: ${proposal.name}`.slice(0, 120),
+        priority: 50,
+        is_active: true,
+        match_account_id: proposal.match_account_id,
+        match_description_pattern: proposal.match_description_pattern,
+        pair_with_account_id: proposal.pair_with_account_id,
+        pair_within_days: proposal.pair_within_days,
+        notes: `Promoted from ${proposal.support} link(s) made by hand; reproduces ${proposal.reproduces}, conflicts ${proposal.conflicts}.`,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["rules"] });
+      qc.invalidateQueries({ queryKey: ["pair-proposals"] });
+      qc.invalidateQueries({ queryKey: ["rule-coverage"] });
+    },
+  });
+
   const rejectProposal = useMutation({
     mutationFn: (proposal: RuleProposalBacktestInput) =>
       api.post<{ status: string; created: boolean }>("/api/rules/proposals/reject", proposal),
@@ -162,6 +186,14 @@ export function Rules() {
       />
 
       {showProposals && (
+        <div className="space-y-4">
+        <PairProposals
+          proposals={pairProposals.data ?? []}
+          loading={pairProposals.isLoading}
+          accountById={accountById}
+          onPromote={(proposal) => promotePair.mutate(proposal)}
+          promoting={promotePair.isPending}
+        />
         <RuleProposals
           proposals={proposals.data ?? []}
           loading={proposals.isLoading}
@@ -174,6 +206,7 @@ export function Rules() {
           promoting={promote.isPending}
           rejecting={rejectProposal.isPending}
         />
+        </div>
       )}
       </div>
 
@@ -470,6 +503,118 @@ function RuleCoverageSummary({
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function PairProposals({
+  proposals,
+  loading,
+  accountById,
+  onPromote,
+  promoting,
+}: {
+  proposals: PairProposal[];
+  loading: boolean;
+  accountById: Map<number, Account>;
+  onPromote: (proposal: PairProposal) => void;
+  promoting: boolean;
+}) {
+  return (
+    <div className="card">
+      <div className="flex items-baseline justify-between px-4 py-3 border-b border-ink-100">
+        <div>
+          <h2 className="font-medium">Transfer pairing proposals</h2>
+          <p className="text-xs text-ink-500">
+            Generated from links you made by hand; promote the ones that reproduce your choices.
+          </p>
+        </div>
+        <span className="text-xs text-ink-500">{proposals.length} candidates</span>
+      </div>
+      {loading && <p className="px-4 py-6 text-sm text-ink-500">Looking at your links…</p>}
+      {!loading && proposals.length === 0 && (
+        <p className="px-4 py-6 text-sm text-ink-500">
+          None yet. Link a few transfers by hand — on the Splits page, or from a transaction — and
+          repeated links between the same two accounts turn into a rule you can promote here.
+        </p>
+      )}
+      {proposals.map((p) => {
+        const source = accountById.get(p.match_account_id)?.name ?? `account ${p.match_account_id}`;
+        const target =
+          accountById.get(p.pair_with_account_id)?.name ?? `account ${p.pair_with_account_id}`;
+        const clean = p.conflicts === 0;
+        return (
+          <div key={p.key} className="px-4 py-3 border-b border-ink-100 last:border-0">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-sm">
+                  <span className="font-medium">{source}</span>
+                  <span className="text-ink-400"> → </span>
+                  <span className="font-medium">{target}</span>
+                  {p.match_account_id === p.pair_with_account_id && (
+                    <span className="pill bg-ink-200/60 text-ink-700 ml-2">within one account</span>
+                  )}
+                </div>
+                <div className="font-mono text-xs text-ink-600 mt-1 truncate">
+                  {p.match_description_pattern || "(any description)"}
+                </div>
+                <div className="text-xs text-ink-500 mt-1">
+                  within {p.pair_within_days} day{p.pair_within_days === 1 ? "" : "s"} · learned from{" "}
+                  {p.support} hand-made link{p.support === 1 ? "" : "s"}
+                </div>
+              </div>
+              <div className="text-right shrink-0">
+                <div
+                  className={clsx("text-sm font-semibold", clean ? "text-good-600" : "text-bad-600")}
+                  title={
+                    clean
+                      ? "Replaying this rule reaches the same partner you picked, every time."
+                      : "Replaying this rule picks a different partner than you did — the window is probably too wide, or the pattern too loose."
+                  }
+                >
+                  {p.reproduces}/{p.support} reproduced
+                </div>
+                <div className="text-xs text-ink-500">
+                  {p.conflicts > 0 ? `${p.conflicts} conflict${p.conflicts === 1 ? "" : "s"} · ` : ""}
+                  links {p.would_link} more
+                </div>
+              </div>
+            </div>
+            {p.examples.length > 0 && (
+              <div className="mt-2 text-xs text-ink-500 space-y-0.5">
+                {p.examples.slice(0, 3).map((e) => (
+                  <div key={e.source_transaction_id} className="truncate">
+                    {dateLabel(e.date)} · {currency(e.amount)} · {e.description}
+                    <span className="text-ink-400">
+                      {" "}
+                      ({e.day_gap === 0 ? "same day" : `${e.day_gap}d apart`})
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="mt-2 flex items-center gap-2">
+              <button
+                className={clean ? "btn-primary" : "btn"}
+                onClick={() => onPromote(p)}
+                disabled={promoting}
+                title={
+                  clean
+                    ? undefined
+                    : "Promoting this will pair rows differently than you did by hand. Narrow the window after promoting, or link these by hand instead."
+                }
+              >
+                Promote
+              </button>
+              {!clean && (
+                <span className="text-xs text-bad-600">
+                  disagrees with {p.conflicts} of your own links
+                </span>
+              )}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

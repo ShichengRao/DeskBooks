@@ -164,8 +164,9 @@ def test_rules_without_a_pairing_action_do_nothing_here(db):
     assert link_transfers(db) == (0, 0)
 
 
-def test_a_rule_pointing_at_its_own_account_is_inert(db):
-    """Otherwise two unrelated same-account rows could cancel each other."""
+def test_a_rule_pointing_at_its_own_account_needs_a_pattern(db):
+    """Without one, two unrelated same-account rows could cancel each
+    other out purely because they happen to offset."""
     checking = _account(db, "Checking")
     out = _tx(db, checking, date(2026, 3, 2), "-2000")
     _tx(db, checking, date(2026, 3, 3), "2000")
@@ -173,6 +174,22 @@ def test_a_rule_pointing_at_its_own_account_is_inert(db):
 
     assert link_transfers(db) == (0, 0)
     assert out.transfer_pair_id is None
+
+
+def test_pairs_within_one_account_when_a_pattern_says_which_rows(db):
+    """A dividend and its reinvestment, or a cash sweep out and back,
+    cancel inside a single brokerage account."""
+    brokerage = _account(db, "Brokerage")
+    dividend = _tx(db, brokerage, date(2026, 7, 10), "193.82", "FUND - DIVIDEND RECEIVED")
+    reinvest = _tx(db, brokerage, date(2026, 7, 10), "-193.82", "FUND - REINVESTMENT")
+    unrelated = _tx(db, brokerage, date(2026, 7, 11), "-193.82", "SOMETHING ELSE")
+    _pairing_rule(db, brokerage, brokerage, match_description_pattern="DIVIDEND RECEIVED")
+
+    pairs, _ = link_transfers(db)
+
+    assert pairs == 1
+    assert dividend.transfer_pair_id == reinvest.id
+    assert unrelated.transfer_pair_id is None
 
 
 def test_counts_fire_against_the_rule(db):

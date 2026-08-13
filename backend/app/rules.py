@@ -188,6 +188,69 @@ def _link_pair(a: models.Transaction, b: models.Transaction) -> None:
     b.transfer_pair_id = a.id
 
 
+def plan_transfer_links(
+    rules: list[models.Rule], transactions: list[models.Transaction]
+) -> list[tuple[models.Transaction, models.Transaction, models.Rule]]:
+    """Work out which rows would be linked to which, without touching
+    anything. The runner applies the result; the proposal backtest counts
+    it, so a candidate rule is judged by exactly the matching that would
+    run for real.
+
+    `transactions` must already be ordered (date, id) — the greedy claim
+    below makes the order part of the answer.
+    """
+    by_account: dict[int, list[models.Transaction]] = defaultdict(list)
+    for tx in transactions:
+        by_account[tx.account_id].append(tx)
+
+    claimed: set[int] = set()
+    plan: list[tuple[models.Transaction, models.Transaction, models.Rule]] = []
+    for tx in transactions:
+        if tx.id in claimed:
+            continue
+        rule = next(
+            (
+                r
+                for r in rules
+                if _matches(
+                    r,
+                    account_id=tx.account_id,
+                    description=tx.description_normalized or tx.description_raw or "",
+                    amount=tx.amount,
+                )
+            ),
+            None,
+        )
+        if rule is None:
+            continue
+        # Pairing inside one account is legitimate — a dividend and its
+        # reinvestment, a cash sweep out and back — but there the pattern
+        # is the only thing separating a real cancel-out from two
+        # unrelated rows that happen to offset, so require one.
+        if rule.pair_with_account_id == tx.account_id and not rule.match_description_pattern:
+            continue
+        window = timedelta(days=rule.pair_within_days or DEFAULT_PAIR_WITHIN_DAYS)
+        candidates = [
+            other
+            for other in by_account.get(rule.pair_with_account_id, [])
+            if other.id not in claimed
+            and other.id != tx.id
+            # The other half of a movement is its exact opposite: same
+            # size, other direction. A same-signed row is a different
+            # transaction that merely happens to cost the same.
+            and other.amount == -tx.amount
+            and abs(other.date - tx.date) <= window
+        ]
+        if not candidates:
+            continue
+        # Nearest in time wins, then lowest id, so a run over the same
+        # data always produces the same pairs.
+        partner = min(candidates, key=lambda o: (abs(o.date - tx.date), o.id))
+        plan.append((tx, partner, rule))
+        claimed.update({tx.id, partner.id})
+    return plan
+
+
 def link_transfers(db: Session) -> tuple[int, int]:
     """Link each side of a transfer to the other, for rules that name a
     counterpart account. Returns (pairs_linked, rules_applied).
@@ -210,49 +273,10 @@ def link_transfers(db: Session) -> tuple[int, int]:
             .order_by(models.Transaction.date.asc(), models.Transaction.id.asc())
         )
     )
-    by_account: dict[int, list[models.Transaction]] = defaultdict(list)
-    for tx in unpaired:
-        by_account[tx.account_id].append(tx)
 
-    claimed: set[int] = set()
     fires = Counter()
-    for tx in unpaired:
-        if tx.id in claimed:
-            continue
-        rule = next(
-            (
-                r
-                for r in rules
-                if _matches(
-                    r,
-                    account_id=tx.account_id,
-                    description=tx.description_normalized or tx.description_raw or "",
-                    amount=tx.amount,
-                )
-            ),
-            None,
-        )
-        if rule is None or rule.pair_with_account_id == tx.account_id:
-            continue
-        window = timedelta(days=rule.pair_within_days or DEFAULT_PAIR_WITHIN_DAYS)
-        candidates = [
-            other
-            for other in by_account.get(rule.pair_with_account_id, [])
-            if other.id not in claimed
-            and other.id != tx.id
-            # The other half of a movement is its exact opposite: same
-            # size, other direction. A same-signed row is a different
-            # transaction that merely happens to cost the same.
-            and other.amount == -tx.amount
-            and abs(other.date - tx.date) <= window
-        ]
-        if not candidates:
-            continue
-        # Nearest in time wins, then lowest id, so a run over the same
-        # data always produces the same pairs.
-        partner = min(candidates, key=lambda o: (abs(o.date - tx.date), o.id))
+    for tx, partner, rule in plan_transfer_links(rules, unpaired):
         _link_pair(tx, partner)
-        claimed.update({tx.id, partner.id})
         fires[rule.id] += 1
 
     now = datetime.now(UTC)
@@ -853,4 +877,194 @@ def generate_rule_proposals(
         ),
         reverse=True,
     )
+    return proposals[:limit]
+
+
+def _pair_source_side(
+    tx: models.Transaction, partner: models.Transaction
+) -> tuple[models.Transaction, models.Transaction] | None:
+    """Orient a linked pair as (money out, money in).
+
+    A pair is stored on both rows, so it would otherwise be counted twice
+    and produce a proposal in each direction. Two rows of the same sign
+    are not a movement at all.
+    """
+    if tx.amount < 0 and partner.amount > 0:
+        return tx, partner
+    if partner.amount < 0 and tx.amount > 0:
+        return partner, tx
+    return None
+
+
+def _common_token_prefix(descriptions: list[str]) -> str:
+    """The leading words every description shares.
+
+    Grouping pairing candidates by merchant key does not work: a transfer
+    description usually carries a date stamp or a reference number, so
+    every occurrence is its own key and nothing ever reaches support. What
+    repeats is the front of the string — "FID BKG SVC LLC MONEYLINE" — so
+    that is what becomes the pattern.
+    """
+    token_lists = [[t for t in re.split(r"\s+", d.strip()) if t] for d in descriptions if d]
+    if not token_lists:
+        return ""
+    shared: list[str] = []
+    for position in range(min(len(t) for t in token_lists)):
+        token = token_lists[0][position]
+        if any(t[position].casefold() != token.casefold() for t in token_lists):
+            break
+        # A token that is only digits is a date stamp or a reference, not
+        # part of the name — and it stops being shared right after anyway.
+        if token.isdigit():
+            break
+        shared.append(token)
+    return " ".join(shared)
+
+
+def _existing_pair_signatures(rules: list[models.Rule]) -> set[tuple[int | None, int]]:
+    return {
+        (r.match_account_id, r.pair_with_account_id)
+        for r in rules
+        if r.pair_with_account_id is not None
+    }
+
+
+def generate_pair_proposals(
+    db: Session,
+    *,
+    min_support: int = 2,
+    limit: int = 20,
+) -> list[dict]:
+    """Propose pairing rules from links made by hand.
+
+    Categorization proposals learn from rows you categorized; this learns
+    from rows you linked. Links between the same two accounts are grouped
+    together — the account pair is the signal, the description only has to
+    be specific enough not to catch unrelated rows — and each candidate is
+    then judged by replaying the real matcher.
+
+    Two numbers decide whether a candidate is trustworthy:
+
+    - `reproduces` / `conflicts`: replaying the rule over the rows you
+      linked by hand, does it reach the same partner you chose? A conflict
+      means the window is too wide or the pattern too loose, which is the
+      normal failure when the same amount recurs on a schedule.
+    - `would_link`: how many currently-unlinked rows it would newly pair,
+      which is what promoting it actually buys.
+
+    The suggested window is the widest gap among the supporting links, so
+    it covers what you have already accepted and no more.
+    """
+    linked = list(
+        db.scalars(
+            select(models.Transaction)
+            .where(models.Transaction.transfer_pair_id.is_not(None))
+            .order_by(models.Transaction.date.asc(), models.Transaction.id.asc())
+        )
+    )
+    if not linked:
+        return []
+    by_id = {tx.id: tx for tx in linked}
+
+    seen_pairs: set[frozenset[int]] = set()
+    groups: dict[tuple[int, int], list[tuple[models.Transaction, models.Transaction]]] = (
+        defaultdict(list)
+    )
+    for tx in linked:
+        partner = by_id.get(tx.transfer_pair_id)
+        if partner is None:
+            continue  # half a link, or the partner sits outside this query
+        key_ids = frozenset({tx.id, partner.id})
+        if key_ids in seen_pairs:
+            continue
+        seen_pairs.add(key_ids)
+        oriented = _pair_source_side(tx, partner)
+        if oriented is None:
+            continue
+        source, target = oriented
+        groups[(source.account_id, target.account_id)].append((source, target))
+
+    active_rules = load_active_rules(db)
+    covered = _existing_pair_signatures(active_rules)
+    all_transactions = list(
+        db.scalars(
+            select(models.Transaction).order_by(
+                models.Transaction.date.asc(), models.Transaction.id.asc()
+            )
+        )
+    )
+    unlinked = [tx for tx in all_transactions if tx.transfer_pair_id is None]
+
+    proposals: list[dict] = []
+    for (source_account_id, target_account_id), pairs in groups.items():
+        if len(pairs) < min_support:
+            continue
+        # A rule already covering this direction would win the match
+        # anyway, so proposing it again is noise.
+        if (source_account_id, target_account_id) in covered or (
+            None,
+            target_account_id,
+        ) in covered:
+            continue
+        key = _common_token_prefix(
+            [(s.description_normalized or s.description_raw or "") for s, _ in pairs]
+        )
+        pattern = _proposal_pattern(key)
+        # Within one account a pattern is the only thing separating a real
+        # cancel-out from two unrelated rows that happen to offset, so it
+        # is required there.
+        if not pattern and source_account_id == target_account_id:
+            continue
+        window_days = max((abs((t.date - s.date).days) for s, t in pairs), default=0)
+        candidate = models.Rule(
+            name=key or "transfers",
+            priority=50,
+            is_active=True,
+            match_account_id=source_account_id,
+            match_description_pattern=pattern or None,
+            pair_with_account_id=target_account_id,
+            pair_within_days=window_days,
+        )
+
+        # Replay over every row, not just the linked ones. Replaying
+        # against the manual pairs alone only proves they are consistent
+        # with each other; the failure that matters is an unlinked row
+        # sitting nearer than the partner you chose, which is what happens
+        # when the same amount recurs on a schedule.
+        replayed = {
+            source.id: partner.id
+            for source, partner, _ in plan_transfer_links([candidate], all_transactions)
+        }
+        reproduces = sum(1 for s, t in pairs if replayed.get(s.id) == t.id)
+        conflicts = len(pairs) - reproduces
+
+        would_link = len(plan_transfer_links([candidate], unlinked))
+
+        proposals.append(
+            {
+                "key": f"{source_account_id}->{target_account_id}:{key}",
+                "name": (key or "Transfers")[:120],
+                "match_account_id": source_account_id,
+                "match_description_pattern": pattern,
+                "pair_with_account_id": target_account_id,
+                "pair_within_days": window_days,
+                "support": len(pairs),
+                "reproduces": reproduces,
+                "conflicts": conflicts,
+                "would_link": would_link,
+                "examples": [
+                    {
+                        "source_transaction_id": s.id,
+                        "target_transaction_id": t.id,
+                        "date": s.date,
+                        "amount": s.amount,
+                        "description": (s.description_normalized or s.description_raw or "")[:120],
+                        "day_gap": abs((t.date - s.date).days),
+                    }
+                    for s, t in sorted(pairs, key=lambda p: p[0].date, reverse=True)[:5]
+                ],
+            }
+        )
+
+    proposals.sort(key=lambda p: (p["conflicts"] == 0, p["would_link"], p["support"]), reverse=True)
     return proposals[:limit]

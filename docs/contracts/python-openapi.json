@@ -3089,6 +3089,112 @@
         "title": "NetWorthWorkbookImportResult",
         "type": "object"
       },
+      "PairProposalExample": {
+        "properties": {
+          "amount": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Amount",
+            "type": "string"
+          },
+          "date": {
+            "format": "date",
+            "title": "Date",
+            "type": "string"
+          },
+          "day_gap": {
+            "title": "Day Gap",
+            "type": "integer"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "source_transaction_id": {
+            "title": "Source Transaction Id",
+            "type": "integer"
+          },
+          "target_transaction_id": {
+            "title": "Target Transaction Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "source_transaction_id",
+          "target_transaction_id",
+          "date",
+          "amount",
+          "description",
+          "day_gap"
+        ],
+        "title": "PairProposalExample",
+        "type": "object"
+      },
+      "PairProposalOut": {
+        "properties": {
+          "conflicts": {
+            "title": "Conflicts",
+            "type": "integer"
+          },
+          "examples": {
+            "items": {
+              "$ref": "#/components/schemas/PairProposalExample"
+            },
+            "title": "Examples",
+            "type": "array"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "match_account_id": {
+            "title": "Match Account Id",
+            "type": "integer"
+          },
+          "match_description_pattern": {
+            "title": "Match Description Pattern",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "pair_with_account_id": {
+            "title": "Pair With Account Id",
+            "type": "integer"
+          },
+          "pair_within_days": {
+            "title": "Pair Within Days",
+            "type": "integer"
+          },
+          "reproduces": {
+            "title": "Reproduces",
+            "type": "integer"
+          },
+          "support": {
+            "title": "Support",
+            "type": "integer"
+          },
+          "would_link": {
+            "title": "Would Link",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "key",
+          "name",
+          "match_account_id",
+          "match_description_pattern",
+          "pair_with_account_id",
+          "pair_within_days",
+          "support",
+          "reproduces",
+          "conflicts",
+          "would_link",
+          "examples"
+        ],
+        "title": "PairProposalOut",
+        "type": "object"
+      },
       "ProfileActivate": {
         "properties": {
           "slug": {
@@ -8178,6 +8284,63 @@
           }
         },
         "summary": "Link Transfers",
+        "tags": [
+          "rules"
+        ]
+      }
+    },
+    "/api/rules/pair-proposals": {
+      "get": {
+        "operationId": "list_pair_proposals_api_rules_pair_proposals_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "min_support",
+            "required": false,
+            "schema": {
+              "default": 2,
+              "title": "Min Support",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PairProposalOut"
+                  },
+                  "title": "Response List Pair Proposals Api Rules Pair Proposals Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Pair Proposals",
         "tags": [
           "rules"
         ]
