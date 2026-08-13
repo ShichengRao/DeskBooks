@@ -16,6 +16,17 @@ export function Import() {
   });
   const [stagedResult, setStagedResult] = useState<StagedApplyResult | null>(null);
 
+  const stagedDismissMut = useMutation({
+    mutationFn: ({ sha256s, dismissed }: { sha256s: string[]; dismissed: boolean }) =>
+      api.post<{ dismissed: number; changed: number }>("/api/imports/staged/dismiss", {
+        sha256s,
+        dismissed,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["staged-imports"] });
+    },
+  });
+
   const stagedApplyMut = useMutation({
     mutationFn: (sha256s: string[]) =>
       api.post<StagedApplyResult>("/api/imports/staged/apply", { sha256s }),
@@ -87,6 +98,7 @@ export function Import() {
         pending={stagedApplyMut.isPending}
         error={stagedApplyMut.isError ? String((stagedApplyMut.error as Error).message) : null}
         onImport={(sha256s) => stagedApplyMut.mutate(sha256s)}
+          onDismiss={(sha256s, dismissed) => stagedDismissMut.mutate({ sha256s, dismissed })}
       />
       <ImportUploadPanel
         accounts={accounts.data ?? []}
@@ -128,6 +140,7 @@ const STAGED_STATUS_LABEL: Record<StagedEntry["status"], string> = {
   unknown_account: "unknown account",
   missing_file: "file missing",
   invalid: "invalid",
+  dismissed: "ignored",
 };
 
 function StagedImportsPanel({
@@ -136,12 +149,14 @@ function StagedImportsPanel({
   pending,
   error,
   onImport,
+  onDismiss,
 }: {
   entries: StagedEntry[];
   result: StagedApplyResult | null;
   pending: boolean;
   error: string | null;
   onImport: (sha256s: string[]) => void;
+  onDismiss: (sha256s: string[], dismissed: boolean) => void;
 }) {
   // Fully hidden until a connector has staged something — a CSV-only setup
   // never sees this panel.
@@ -193,7 +208,7 @@ function StagedImportsPanel({
           </thead>
           <tbody className="divide-y divide-ink-100">
             {actionable.map((entry) => (
-              <StagedImportRow key={entry.sha256} entry={entry} pending={pending} onImport={onImport} />
+              <StagedImportRow key={entry.sha256} entry={entry} pending={pending} onImport={onImport} onDismiss={onDismiss} />
             ))}
           </tbody>
         </table>
@@ -217,10 +232,12 @@ function StagedImportRow({
   entry,
   pending,
   onImport,
+  onDismiss,
 }: {
   entry: StagedEntry;
   pending: boolean;
   onImport: (sha256s: string[]) => void;
+  onDismiss: (sha256s: string[], dismissed: boolean) => void;
 }) {
   const problem = ["unknown_account", "missing_file", "invalid"].includes(entry.status);
   const rows =
@@ -247,10 +264,25 @@ function StagedImportRow({
       >
         {STAGED_STATUS_LABEL[entry.status] ?? entry.status}
       </td>
-      <td className="px-3 py-1.5 text-right">
+      <td className="px-3 py-1.5 text-right whitespace-nowrap">
         {entry.status === "new" && (
-          <button className="btn-ghost text-xs" disabled={pending} onClick={() => onImport([entry.sha256])}>
-            Import
+          <>
+            <button className="btn-ghost text-xs" disabled={pending} onClick={() => onImport([entry.sha256])}>
+              Import
+            </button>
+            <button
+              className="btn-ghost text-xs text-ink-500"
+              disabled={pending}
+              title="Never import this file. It stays on disk; you can put it back."
+              onClick={() => onDismiss([entry.sha256], true)}
+            >
+              Ignore
+            </button>
+          </>
+        )}
+        {entry.status === "dismissed" && (
+          <button className="btn-ghost text-xs" disabled={pending} onClick={() => onDismiss([entry.sha256], false)}>
+            Un-ignore
           </button>
         )}
       </td>

@@ -4613,6 +4613,46 @@
         "title": "StagedApplyResult",
         "type": "object"
       },
+      "StagedDismissRequest": {
+        "properties": {
+          "dismissed": {
+            "default": true,
+            "title": "Dismissed",
+            "type": "boolean"
+          },
+          "sha256s": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Sha256S",
+            "type": "array"
+          }
+        },
+        "required": [
+          "sha256s"
+        ],
+        "title": "StagedDismissRequest",
+        "type": "object"
+      },
+      "StagedDismissResult": {
+        "properties": {
+          "changed": {
+            "title": "Changed",
+            "type": "integer"
+          },
+          "dismissed": {
+            "title": "Dismissed",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "dismissed",
+          "changed"
+        ],
+        "title": "StagedDismissResult",
+        "type": "object"
+      },
       "StagedEntryOut": {
         "description": "One connector-staged file from the staging manifest, as the Import\npage sees it: what it is, which account it maps to, and whether it can\nbe imported into the active profile right now.",
         "properties": {
@@ -7557,6 +7597,48 @@
           }
         },
         "summary": "Staged Apply",
+        "tags": [
+          "imports"
+        ]
+      }
+    },
+    "/api/imports/staged/dismiss": {
+      "post": {
+        "description": "Mark staged files as never-to-import, or put them back.\n\nA fetch leaves files behind that will never be wanted \u2014 a connection\nyou have since set to balance-only, a window you widened once. They\nstay \"ready\" forever, and a list where most rows are noise is a list\nnobody reads, so the ones that matter get missed too.",
+        "operationId": "staged_dismiss_api_imports_staged_dismiss_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StagedDismissRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StagedDismissResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Staged Dismiss",
         "tags": [
           "imports"
         ]

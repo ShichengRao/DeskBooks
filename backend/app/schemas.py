@@ -704,6 +704,18 @@ class StagedApplyRequest(BaseModel):
     sha256s: list[str] = Field(default_factory=list)
 
 
+class StagedDismissRequest(BaseModel):
+    sha256s: list[str] = Field(min_length=1)
+    # False puts them back on the list, so a dismissal is never a one-way
+    # door.
+    dismissed: bool = True
+
+
+class StagedDismissResult(BaseModel):
+    dismissed: int
+    changed: int
+
+
 class StagedApplyOutcome(BaseModel):
     sha256: str
     file_name: str

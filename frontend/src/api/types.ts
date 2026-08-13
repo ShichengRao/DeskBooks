@@ -390,7 +390,8 @@ export interface StagedEntry {
     | "other_profile"
     | "unknown_account"
     | "missing_file"
-    | "invalid";
+    | "invalid"
+    | "dismissed";
   detail: string | null;
 }
 
