@@ -64,6 +64,12 @@ const MAX_TRANSACTIONS = 10_000;
 // 401(k)s and donor-advised funds report through
 // /investments/transactions/get instead, behind its own product.
 const INVESTMENTS_CONSENT_ERRORS = ["ADDITIONAL_CONSENT_REQUIRED", "PRODUCTS_NOT_SUPPORTED"];
+// The first investments call on an Item is slow: Plaid pulls the history
+// from the institution while holding the request open, which overruns the
+// 30s default and fails the run right after consent is granted — the one
+// moment you are certain to be watching. Later calls return in under a
+// second.
+const INVESTMENTS_TIMEOUT_MS = 180_000;
 
 export function plaidHost(environment) {
   const host = `${environment}.plaid.com`;
@@ -71,6 +77,12 @@ export function plaidHost(environment) {
     throw new Error(`environment must be sandbox or production, got: ${environment}`);
   }
   return `https://${host}`;
+}
+
+// For values already in DeskBooks' own sign convention (outflow-negative),
+// where the caller has worked out the direction itself.
+function signedAmountString(value) {
+  return value === 0 ? "0.00" : String(value);
 }
 
 function negatedAmountString(value, label) {
@@ -126,7 +138,23 @@ export function normalizePlaidInvestmentTransactions({
 }) {
   const securitiesById = new Map((securities ?? []).map((s) => [s.security_id, s]));
   return transactions.map((txn, index) => {
-    let amount = negatedAmountString(txn.amount, `investment_transactions[${index}]`);
+    // Investment amounts arrive at share-price precision (five decimals
+    // is common, since a dollar amount buys a fractional share), while
+    // the ledger stores cents. Round here rather than letting sub-cent
+    // values into the database, where they would never round-trip and
+    // would not match the same transaction seen from another source.
+    const cents = Math.round(Number(txn.amount) * 100) / 100;
+    // Plaid's sign convention is about cash: positive when cash is
+    // debited, negative when credited, which is why every other type
+    // negates cleanly. A securities transfer moves no cash, so that
+    // convention cannot apply and the sign tracks the shares instead —
+    // negating it would report a donation of stock as money arriving.
+    // Direction comes from the quantity for those; a transfer with no
+    // quantity is a cash movement and follows the usual rule.
+    const isSecurityTransfer = txn.type === "transfer" && Number(txn.quantity) !== 0;
+    let amount = isSecurityTransfer
+      ? signedAmountString(Math.sign(Number(txn.quantity)) * Math.abs(cents))
+      : negatedAmountString(cents, `investment_transactions[${index}]`);
     if (invertAmounts) {
       amount = amount.startsWith("-") ? amount.slice(1) : `-${amount}`;
     }
@@ -251,7 +279,7 @@ async function fetchInvestmentTransactions({ base, auth, http, startDate, endDat
           end_date: endDate,
           options: { count: PAGE_SIZE, offset: transactions.length },
         },
-        http,
+        { ...http, timeoutMs: INVESTMENTS_TIMEOUT_MS },
       );
     } catch (error) {
       const message = String(error.message);
