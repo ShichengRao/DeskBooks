@@ -50,7 +50,7 @@ def write_preview_report(
         f"<td>{escape(str(row.date))}</td>"
         f"<td>{escape(row.description_raw)}</td>"
         f"<td>{escape(row.suggested_kind.value)}</td>"
-        f"<td class=\"amount\">{escape(str(row.amount))}</td>"
+        f'<td class="amount">{escape(str(row.amount))}</td>'
         f"<td>{'yes' if row.is_duplicate else ''}</td>"
         "</tr>"
         for row in shown_rows
@@ -96,6 +96,16 @@ def main() -> None:
     parser.add_argument("--state", type=Path, default=default_staging_dir() / "import-state.json")
     parser.add_argument("--apply", action="store_true", help="apply rows after previewing")
     parser.add_argument("--source", help="only process manifest entries from this source")
+    parser.add_argument(
+        "--apply-balances",
+        action="store_true",
+        help=(
+            "also write staged balances into net-worth snapshots. Off by default: a run "
+            "that covers only some connections would otherwise create a snapshot holding "
+            "only those accounts, which reads as a collapse in net worth. Leave it off and "
+            "fill a snapshot from the Net Worth page instead, where every account is in view."
+        ),
+    )
     parser.add_argument("--no-backup", action="store_true", help="skip pre-apply SQLite backup")
     args = parser.parse_args()
 
@@ -154,7 +164,11 @@ def main() -> None:
                     f"unchanged={plan.unchanged} skipped_null={plan.skipped_null} "
                     f"unknown_accounts={plan.unknown_account_ids or 'none'}"
                 )
-                if not args.apply:
+                if not args.apply or not args.apply_balances:
+                    # Previewed, never written. A snapshot is a statement
+                    # about every account at once, so it should not be a
+                    # side effect of importing whichever connections
+                    # happened to run.
                     continue
                 if not did_backup and not args.no_backup:
                     backup = backups.create_backup(get_active_profile(), label="pre-auto-import")

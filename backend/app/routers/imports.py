@@ -299,9 +299,7 @@ def apply(body: schemas.ImportApplyRequest, db: DbSession):
 @router.get("", response_model=list[schemas.ImportBatchOut])
 def list_batches(db: DbSession):
     return list(
-        db.scalars(
-            select(models.ImportBatch).order_by(models.ImportBatch.imported_at.desc())
-        )
+        db.scalars(select(models.ImportBatch).order_by(models.ImportBatch.imported_at.desc()))
     )
 
 
@@ -439,7 +437,15 @@ def _apply_staged(
     sha256s: list[str],
     profile_info: ProfileInfo | None = None,
 ) -> schemas.StagedApplyResult:
-    listing = {row.sha256: row for row in _staged_listing(db, staging_dir, state_path, active_profile)}
+    listing = {
+        row.sha256: row for row in _staged_listing(db, staging_dir, state_path, active_profile)
+    }
+    # Naming files is a choice about those files; sweeping up everything
+    # new is not. A snapshot is a statement about every account at once,
+    # so a sweep that happened to cover one connection must not write one
+    # holding only that connection's accounts — it reads as a collapse in
+    # net worth. Balances still import when asked for by name.
+    swept = not sha256s
     targets = sha256s or [sha for sha, row in listing.items() if row.status == "new"]
 
     state = staging.load_state(state_path)
@@ -458,7 +464,10 @@ def _apply_staged(
         if row is None:
             outcomes.append(
                 schemas.StagedApplyOutcome(
-                    sha256=sha256, file_name="?", status="error", detail="not in the staging manifest"
+                    sha256=sha256,
+                    file_name="?",
+                    status="error",
+                    detail="not in the staging manifest",
                 )
             )
             continue
@@ -507,6 +516,13 @@ def _apply_staged(
             outcome.rows_applied = batch.row_count_applied
             outcome.duplicates = batch.row_count_duplicate
         else:
+            if swept:
+                outcome.status = "skipped_balances"
+                outcome.detail = (
+                    "balances are left out of a bulk import — build the snapshot from the "
+                    "Net Worth page, where every account is in view, or import this file by itself"
+                )
+                continue
             try:
                 staged = balance_snapshots.parse_staged_balances_bytes(data)
             except ValueError as exc:
@@ -551,9 +567,7 @@ def rollback(batch_id: int, db: DbSession):
     if batch.status != models.ImportStatus.applied:
         raise HTTPException(400, "batch is not in 'applied' state")
     db.execute(
-        models.Transaction.__table__.delete().where(
-            models.Transaction.import_batch_id == batch_id
-        )
+        models.Transaction.__table__.delete().where(models.Transaction.import_batch_id == batch_id)
     )
     batch.status = models.ImportStatus.rolled_back
     db.commit()
