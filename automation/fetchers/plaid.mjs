@@ -79,6 +79,12 @@ export function plaidHost(environment) {
   return `https://${host}`;
 }
 
+// For values already in DeskBooks' own sign convention (outflow-negative),
+// where the caller has worked out the direction itself.
+function signedAmountString(value) {
+  return value === 0 ? "0.00" : String(value);
+}
+
 function negatedAmountString(value, label) {
   const n = Number(value);
   if (!Number.isFinite(n)) {
@@ -137,10 +143,18 @@ export function normalizePlaidInvestmentTransactions({
     // the ledger stores cents. Round here rather than letting sub-cent
     // values into the database, where they would never round-trip and
     // would not match the same transaction seen from another source.
-    let amount = negatedAmountString(
-      Math.round(Number(txn.amount) * 100) / 100,
-      `investment_transactions[${index}]`,
-    );
+    const cents = Math.round(Number(txn.amount) * 100) / 100;
+    // Plaid's sign convention is about cash: positive when cash is
+    // debited, negative when credited, which is why every other type
+    // negates cleanly. A securities transfer moves no cash, so that
+    // convention cannot apply and the sign tracks the shares instead —
+    // negating it would report a donation of stock as money arriving.
+    // Direction comes from the quantity for those; a transfer with no
+    // quantity is a cash movement and follows the usual rule.
+    const isSecurityTransfer = txn.type === "transfer" && Number(txn.quantity) !== 0;
+    let amount = isSecurityTransfer
+      ? signedAmountString(Math.sign(Number(txn.quantity)) * Math.abs(cents))
+      : negatedAmountString(cents, `investment_transactions[${index}]`);
     if (invertAmounts) {
       amount = amount.startsWith("-") ? amount.slice(1) : `-${amount}`;
     }

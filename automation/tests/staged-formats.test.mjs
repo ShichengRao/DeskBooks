@@ -231,6 +231,63 @@ test("normalizePlaidInvestmentTransactions rounds share-price precision to cents
   assert.equal(rows[2].amount, "-0.01");
 });
 
+test("normalizePlaidInvestmentTransactions takes security transfers' direction from the quantity", () => {
+  // A securities transfer moves no cash, so Plaid's cash-based sign
+  // convention does not apply to it and the sign tracks the shares.
+  // Donating stock away must not read as money arriving.
+  const rows = normalizePlaidInvestmentTransactions({
+    transactions: [
+      {
+        investment_transaction_id: "out",
+        type: "transfer",
+        subtype: "transfer",
+        date: "2026-02-17",
+        name: "UNITS - CONTRIBUTED TO A CHARITY",
+        amount: -10242.75,
+        quantity: -15,
+      },
+      {
+        investment_transaction_id: "in",
+        type: "transfer",
+        subtype: "transfer",
+        date: "2026-02-18",
+        name: "UNITS - RECEIVED",
+        amount: 500,
+        quantity: 4,
+      },
+      // A transfer carrying no shares is a cash movement, so the ordinary
+      // convention still applies: cash debited is money out.
+      {
+        investment_transaction_id: "cash",
+        type: "transfer",
+        subtype: "transfer",
+        date: "2026-02-19",
+        name: "CASH TRANSFER",
+        amount: 250,
+        quantity: 0,
+      },
+    ],
+  });
+  assert.equal(rows[0].amount, "-10242.75");
+  assert.equal(rows[1].amount, "500");
+  assert.equal(rows[2].amount, "-250");
+});
+
+test("normalizePlaidInvestmentTransactions still negates the cash-settled types", () => {
+  // Regression guard: only transfers are special. A buy debits cash, a
+  // sell credits it, and both must keep following Plaid's convention.
+  const rows = normalizePlaidInvestmentTransactions({
+    transactions: [
+      { investment_transaction_id: "b", type: "buy", subtype: "buy", date: "2026-02-01", name: "BUY", amount: 100, quantity: 2 },
+      { investment_transaction_id: "s", type: "sell", subtype: "sell", date: "2026-02-02", name: "SELL", amount: -100, quantity: -2 },
+      { investment_transaction_id: "d", type: "cash", subtype: "dividend", date: "2026-02-03", name: "DIV", amount: -5, quantity: 0 },
+    ],
+  });
+  assert.equal(rows[0].amount, "-100");
+  assert.equal(rows[1].amount, "100");
+  assert.equal(rows[2].amount, "5");
+});
+
 test("normalizePlaidInvestmentTransactions honors invertAmounts", () => {
   const [row] = normalizePlaidInvestmentTransactions({
     transactions: [
