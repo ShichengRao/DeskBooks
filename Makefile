@@ -1,7 +1,7 @@
 PORT ?= $(or $(FRONTEND_PORT),5173)
 API_PORT ?= $(or $(BACKEND_PORT),$(if $(filter 5173,$(PORT)),8765,8766))
 
-.PHONY: dev backend frontend open bootstrap install fetch-preview fetch-apply test test-automation api-contract-python api-contract-check typecheck build clean reset-db
+.PHONY: dev backend frontend open bootstrap install fetch-preview fetch-apply test test-automation api-contract-python api-contract-check lint format typecheck build clean reset-db
 
 dev:
 	./run.sh --port "$(PORT)" --api-port "$(API_PORT)" $(if $(DATA_DIR),--data-dir "$(DATA_DIR)")
@@ -24,6 +24,16 @@ test:
 
 test-automation:
 	cd automation && npm test
+
+# Same directories, and the same two commands, that CI gates on. `format`
+# is the fixer for what `lint` reports.
+lint:
+	cd backend && uv run ruff check app tests ../scripts ../api
+	cd backend && uv run ruff format --check app tests ../scripts ../api
+
+format:
+	cd backend && uv run ruff check --fix app tests ../scripts ../api
+	cd backend && uv run ruff format app tests ../scripts ../api
 
 api-contract-python:
 	cd backend && uv run python ../scripts/export-python-openapi.py
