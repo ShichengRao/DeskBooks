@@ -43,17 +43,36 @@ _ADDITIVE_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("fire_settings", "growth_property", "NUMERIC NOT NULL DEFAULT 0.0100"),
     ("transactions", "budget_date", "DATE"),
     ("transactions", "kind_before_pair", "VARCHAR"),
+    ("rules", "set_is_excluded_from_totals", "BOOLEAN"),
 )
 
 
 def _apply_additive_columns(engine: Engine) -> None:
     with engine.begin() as conn:
         for table, column, ddl in _ADDITIVE_COLUMNS:
-            existing = {
-                row[1] for row in conn.exec_driver_sql(f"PRAGMA table_info({table})")
-            }
+            existing = {row[1] for row in conn.exec_driver_sql(f"PRAGMA table_info({table})")}
             if existing and column not in existing:
                 conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
+
+
+# The mirror image: columns dropped from the models. create_all never
+# removes anything, so a database created before the removal keeps them —
+# and a leftover NOT NULL column with no default makes every INSERT into
+# that table fail, since nothing supplies a value any more. Databases
+# created after the removal never had the column, so this is a no-op for
+# them. Only list columns no model or query references.
+_DROPPED_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("accounts", "is_liquid"),
+    ("accounts", "is_taxable"),
+)
+
+
+def _drop_removed_columns(engine: Engine) -> None:
+    with engine.begin() as conn:
+        for table, column in _DROPPED_COLUMNS:
+            existing = {row[1] for row in conn.exec_driver_sql(f"PRAGMA table_info({table})")}
+            if column in existing:
+                conn.exec_driver_sql(f"ALTER TABLE {table} DROP COLUMN {column}")
 
 
 def engine_for(db_path: Path) -> Engine:
@@ -76,6 +95,7 @@ def engine_for(db_path: Path) -> Engine:
         # the engine before its tables exist.
         models.Base.metadata.create_all(bind=engine)
         _apply_additive_columns(engine)
+        _drop_removed_columns(engine)
         _engines[db_path] = engine
         _factories[db_path] = sessionmaker(
             bind=engine,

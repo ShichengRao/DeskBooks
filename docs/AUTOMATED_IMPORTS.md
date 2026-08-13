@@ -187,6 +187,21 @@ misreport against Plaid's own convention.
 Each run stages one transactions file per mapped account plus one balances
 file, so runs keep both your transactions and your net-worth series current.
 
+Two per-source knobs are worth knowing:
+
+- `lookbackDays` is the whole history control — the fetcher asks Plaid for
+  `[today - lookbackDays, today]`, with no cursor, so nothing older than
+  that window is ever staged. Set it to `0` on a first run to start an
+  account from today with no back history, then raise it to at least your
+  run cadence (a window shorter than the gap between runs silently drops
+  the days in between). Re-fetching an overlapping window is safe:
+  duplicate detection matches on the provider transaction id.
+- `"balances": false` on an individual account mapping stages that
+  account's transactions but never its balance, keeping it out of the
+  net-worth series (net worth is the sum of snapshot balance rows).
+  Donor-advised funds are the motivating case: the giving belongs in your
+  spending history, the balance is money you no longer own.
+
 ## Running
 
 ```sh

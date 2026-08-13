@@ -199,6 +199,8 @@ def _preview_from_bytes(
             r.merchant = ev.merchant
         if ev.tags:
             r.suggested_tags = ev.tags
+        if ev.is_excluded_from_totals is not None:
+            r.suggested_is_excluded_from_totals = ev.is_excluded_from_totals
         if ev.matched_rule_id:
             r.suggested_matched_rule_id = ev.matched_rule_id
 
@@ -276,6 +278,7 @@ def apply(body: schemas.ImportApplyRequest, db: DbSession):
             amount=r.amount,
             category_id=r.suggested_category_id,
             kind=r.suggested_kind,
+            is_excluded_from_totals=r.suggested_is_excluded_from_totals,
             is_user_categorized=False,
             matched_rule_id=r.suggested_matched_rule_id,
             import_batch_id=batch.id,

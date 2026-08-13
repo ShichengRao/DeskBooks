@@ -2262,6 +2262,11 @@
             ],
             "title": "Suggested Category Id"
           },
+          "suggested_is_excluded_from_totals": {
+            "default": false,
+            "title": "Suggested Is Excluded From Totals",
+            "type": "boolean"
+          },
           "suggested_kind": {
             "$ref": "#/components/schemas/TransactionKind",
             "default": "uncategorized"
@@ -2376,6 +2381,11 @@
               }
             ],
             "title": "Suggested Category Id"
+          },
+          "suggested_is_excluded_from_totals": {
+            "default": false,
+            "title": "Suggested Is Excluded From Totals",
+            "type": "boolean"
           },
           "suggested_kind": {
             "$ref": "#/components/schemas/TransactionKind",
@@ -3419,6 +3429,17 @@
             ],
             "title": "Set Category Id"
           },
+          "set_is_excluded_from_totals": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Set Is Excluded From Totals"
+          },
           "set_kind": {
             "anyOf": [
               {
@@ -3563,6 +3584,17 @@
             ],
             "title": "Set Category Id"
           },
+          "set_is_excluded_from_totals": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Set Is Excluded From Totals"
+          },
           "set_kind": {
             "anyOf": [
               {
@@ -3612,6 +3644,7 @@
           "set_kind",
           "set_merchant",
           "set_tags",
+          "set_is_excluded_from_totals",
           "notes",
           "apply_count",
           "last_applied_at"
@@ -4056,6 +4089,17 @@
               }
             ],
             "title": "Set Category Id"
+          },
+          "set_is_excluded_from_totals": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Set Is Excluded From Totals"
           },
           "set_kind": {
             "anyOf": [

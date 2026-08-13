@@ -301,6 +301,7 @@ class RuleIn(BaseModel):
     set_kind: TransactionKind | None = None
     set_merchant: str | None = None
     set_tags: list[str] | None = None
+    set_is_excluded_from_totals: bool | None = None
     notes: str | None = None
 
 
@@ -316,6 +317,7 @@ class RuleUpdate(BaseModel):
     set_kind: TransactionKind | None = None
     set_merchant: str | None = None
     set_tags: list[str] | None = None
+    set_is_excluded_from_totals: bool | None = None
     notes: str | None = None
 
 
@@ -336,6 +338,7 @@ class RuleOut(ORMBase):
     set_kind: TransactionKind | None
     set_merchant: str | None
     set_tags: list[str] | None
+    set_is_excluded_from_totals: bool | None
     notes: str | None
     apply_count: int
     last_applied_at: datetime | None
@@ -595,6 +598,7 @@ class ImportDraftRow(BaseModel):
     suggested_category_id: int | None = None
     suggested_kind: TransactionKind = TransactionKind.uncategorized
     suggested_tags: list[str] = []
+    suggested_is_excluded_from_totals: bool = False
     suggested_matched_rule_id: int | None = None
     is_duplicate: bool = False
     raw: dict | None = None

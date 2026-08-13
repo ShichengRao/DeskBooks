@@ -56,6 +56,7 @@ class RuleEval:
     kind: models.TransactionKind | None = None
     merchant: str | None = None
     tags: list[str] | None = None
+    is_excluded_from_totals: bool | None = None
     matched_rule_id: int | None = None
 
 
@@ -102,6 +103,7 @@ def evaluate(
                 kind=r.set_kind,
                 merchant=r.set_merchant,
                 tags=list(r.set_tags) if r.set_tags else None,
+                is_excluded_from_totals=r.set_is_excluded_from_totals,
                 matched_rule_id=r.id,
             )
     return RuleEval()
@@ -138,6 +140,12 @@ def reapply_to_unreviewed(db: Session) -> tuple[int, int]:
             changed = True
         if ev.merchant and tx.merchant != ev.merchant:
             tx.merchant = ev.merchant
+            changed = True
+        if (
+            ev.is_excluded_from_totals is not None
+            and tx.is_excluded_from_totals != ev.is_excluded_from_totals
+        ):
+            tx.is_excluded_from_totals = ev.is_excluded_from_totals
             changed = True
         if changed and ev.matched_rule_id is not None:
             tx.matched_rule_id = ev.matched_rule_id

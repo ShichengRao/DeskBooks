@@ -341,6 +341,11 @@ function ActiveRuleRow({
           {category && <span className="pill bg-brand-100 text-brand-700">{category.name}</span>}
           {category && rule.set_kind && <span className="text-ink-400">·</span>}
           {rule.set_kind && <span className="pill bg-ink-200/60 text-ink-700">{transactionKindLabel(rule.set_kind)}</span>}
+          {rule.set_is_excluded_from_totals && (
+            <span className="pill bg-ink-200/60 text-ink-700" title="Matched rows stay in the ledger but out of every total.">
+              excluded from totals
+            </span>
+          )}
         </div>
       </td>
       <td className="px-3 py-1.5 text-right tabular text-xs">
@@ -731,6 +736,16 @@ function RuleEditor({
             </select>
           </Field>
           <Field label="Set: merchant override"><input className="input" value={r.set_merchant ?? ""} onChange={(e) => setR({ ...r, set_merchant: e.target.value || null })} /></Field>
+          <Field label="Set: exclude from totals">
+            <label className="flex items-center gap-2 mt-2">
+              <input
+                type="checkbox"
+                checked={r.set_is_excluded_from_totals === true}
+                onChange={(e) => setR({ ...r, set_is_excluded_from_totals: e.target.checked ? true : null })}
+              />
+              keep matched rows in the ledger but out of every total
+            </label>
+          </Field>
           <Field label="Notes"><textarea className="input min-h-[5rem]" value={r.notes ?? ""} onChange={(e) => setR({ ...r, notes: e.target.value })} /></Field>
         </div>
         <div className="sticky bottom-0 z-10 -mx-6 mt-4 flex items-center gap-2 border-t border-ink-100 bg-white px-6 py-3">

@@ -27,9 +27,13 @@
  *     "lookbackDays": 90,
  *     "invertAmounts": false,
  *     "accounts": [
- *       { "plaidAccountId": "acc_...", "deskbooksAccountId": 3 }
+ *       { "plaidAccountId": "acc_...", "deskbooksAccountId": 3 },
+ *       { "plaidAccountId": "acc_...", "deskbooksAccountId": 9, "balances": false }
  *     ]
  *   }
+ *
+ * "balances": false stages the account's transactions but never its
+ * balance, keeping it out of the net-worth series.
  */
 import { readFile } from "node:fs/promises";
 import { httpsPostJson } from "../src/connector-http.mjs";
@@ -103,8 +107,16 @@ export function normalizePlaidBalances({ mappings, accountsById }) {
   // Balances of provider accounts sharing a DeskBooks account are summed
   // (integer-cent math). A row is emitted as null only when every mapped
   // provider account reports a null balance.
+  //
+  // "balances": false opts a mapping out entirely: its transactions still
+  // import, but no balance row is ever staged, so the account stays out of
+  // the net-worth series (net worth is the sum of snapshot balance rows).
+  // Donor-advised funds are the motivating case — the giving is worth
+  // tracking, the balance is money you no longer own.
   const rows = [];
-  for (const [deskbooksAccountId, plaidIds] of groupMappings(mappings)) {
+  for (const [deskbooksAccountId, plaidIds] of groupMappings(
+    mappings.filter((mapping) => mapping.balances !== false),
+  )) {
     let cents = 0;
     let seen = 0;
     for (const plaidId of plaidIds) {
@@ -146,6 +158,13 @@ function validateSource(source) {
   for (const mapping of accounts) {
     if (!mapping.plaidAccountId || !Number.isInteger(mapping.deskbooksAccountId)) {
       throw new Error(`${source.name}: each account needs plaidAccountId and integer deskbooksAccountId`);
+    }
+    // Fail loud rather than silently staging a balance the mapping meant
+    // to suppress — a typo here quietly lands money in net worth.
+    if ("balances" in mapping && typeof mapping.balances !== "boolean") {
+      throw new Error(
+        `${source.name}: account ${mapping.plaidAccountId}: "balances" must be true or false, got: ${JSON.stringify(mapping.balances)}`,
+      );
     }
   }
   return accounts;
