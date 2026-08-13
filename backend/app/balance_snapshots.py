@@ -10,6 +10,7 @@ Merging rules:
   assert implicitly.
 - Re-applying the same file is a no-op (same values compare equal).
 """
+
 from __future__ import annotations
 
 import json
@@ -98,7 +99,9 @@ def _run(db: Session, staged: StagedBalances, *, apply: bool) -> BalanceApplyRes
         skipped_null=0,
     )
     if snapshot is None and apply:
-        snapshot = models.NetWorthSnapshot(snapshot_date=staged.as_of, notes=AUTOMATION_SNAPSHOT_NOTE)
+        snapshot = models.NetWorthSnapshot(
+            snapshot_date=staged.as_of, notes=AUTOMATION_SNAPSHOT_NOTE
+        )
         db.add(snapshot)
         db.flush()
         result.snapshot_id = snapshot.id
@@ -125,7 +128,9 @@ def _run(db: Session, staged: StagedBalances, *, apply: bool) -> BalanceApplyRes
             current.balance = balance
         else:
             db.add(
-                models.AccountBalance(snapshot_id=snapshot.id, account_id=account_id, balance=balance)
+                models.AccountBalance(
+                    snapshot_id=snapshot.id, account_id=account_id, balance=balance
+                )
             )
     if apply:
         db.commit()
@@ -173,7 +178,11 @@ def collect_staged_prefill(
             staged = parse_staged_balances_bytes(path.read_bytes())
         except ValueError:
             continue
-        if staged.profile is not None and active_profile is not None and staged.profile != active_profile:
+        if (
+            staged.profile is not None
+            and active_profile is not None
+            and staged.profile != active_profile
+        ):
             continue
         source = str(entry.get("source") or "connector")
         for account_id, balance in staged.rows:

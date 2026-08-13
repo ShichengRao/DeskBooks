@@ -7,7 +7,6 @@ import json
 import sys
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUTPUT = ROOT / "docs" / "contracts" / "python-openapi.json"
 
@@ -21,7 +20,9 @@ def rendered_contract() -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Export the legacy Python API contract.")
-    parser.add_argument("--check", action="store_true", help="fail if the committed contract is stale")
+    parser.add_argument(
+        "--check", action="store_true", help="fail if the committed contract is stale"
+    )
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     args = parser.parse_args()
 

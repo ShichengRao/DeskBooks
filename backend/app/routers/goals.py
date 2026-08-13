@@ -39,9 +39,7 @@ def create_goal(body: schemas.GoalIn, db: DbSession):
     db.add(obj)
     db.flush()
     db.add(
-        models.GoalRevision(
-            goal_id=obj.id, snapshot=_goal_to_dict(obj), change_summary="created"
-        )
+        models.GoalRevision(goal_id=obj.id, snapshot=_goal_to_dict(obj), change_summary="created")
     )
     db.commit()
     db.refresh(obj)
@@ -81,9 +79,7 @@ def archive_goal(goal_id: int, db: DbSession):
     obj = get_or_404(db, models.Goal, goal_id)
     obj.archived = True
     db.add(
-        models.GoalRevision(
-            goal_id=obj.id, snapshot=_goal_to_dict(obj), change_summary="archived"
-        )
+        models.GoalRevision(goal_id=obj.id, snapshot=_goal_to_dict(obj), change_summary="archived")
     )
     db.commit()
     return {"status": "archived"}

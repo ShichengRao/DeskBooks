@@ -9,6 +9,7 @@ endpoints in `routers/imports.py` don't have to import each other.
 Everything here raises ValueError on bad input; the CLI converts to
 SystemExit at its boundary and the router converts to HTTP errors.
 """
+
 from __future__ import annotations
 
 import json

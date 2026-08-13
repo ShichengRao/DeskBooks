@@ -1,4 +1,5 @@
 """Import side-effecting modules so importers register themselves."""
+
 from . import amex, chase_credit, contribution_history, us_banks, wells_fargo_checking  # noqa: F401
 from .base import (
     CsvImporter,

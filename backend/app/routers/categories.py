@@ -97,7 +97,11 @@ def merge_category(category_id: int, body: schemas.CategoryMergeIn, db: DbSessio
             f"kinds differ ({source.kind.value} vs {target.kind.value}); "
             "change one of them first so analytics stay consistent",
         )
-    if db.scalar(select(func.count()).select_from(models.Category).where(models.Category.parent_id == source.id)):
+    if db.scalar(
+        select(func.count())
+        .select_from(models.Category)
+        .where(models.Category.parent_id == source.id)
+    ):
         raise HTTPException(400, "category has subcategories; move them first")
 
     transactions_moved = db.execute(
@@ -119,7 +123,9 @@ def merge_category(category_id: int, body: schemas.CategoryMergeIn, db: DbSessio
     target_default = db.scalar(
         select(models.BudgetDefault).where(models.BudgetDefault.category_id == target.id)
     )
-    for row in db.scalars(select(models.BudgetDefault).where(models.BudgetDefault.category_id == source.id)):
+    for row in db.scalars(
+        select(models.BudgetDefault).where(models.BudgetDefault.category_id == source.id)
+    ):
         if target_default is not None:
             db.delete(row)
         else:
@@ -128,10 +134,14 @@ def merge_category(category_id: int, body: schemas.CategoryMergeIn, db: DbSessio
     target_override_months = {
         month
         for month in db.scalars(
-            select(models.BudgetOverride.month).where(models.BudgetOverride.category_id == target.id)
+            select(models.BudgetOverride.month).where(
+                models.BudgetOverride.category_id == target.id
+            )
         )
     }
-    for row in db.scalars(select(models.BudgetOverride).where(models.BudgetOverride.category_id == source.id)):
+    for row in db.scalars(
+        select(models.BudgetOverride).where(models.BudgetOverride.category_id == source.id)
+    ):
         if row.month in target_override_months:
             db.delete(row)
         else:

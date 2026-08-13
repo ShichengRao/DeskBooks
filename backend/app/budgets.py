@@ -81,7 +81,11 @@ def _category_context(db: Session) -> dict:
         current = category
         count = 0
         seen: set[int] = set()
-        while current.parent_id and current.parent_id in category_by_id and current.parent_id not in seen:
+        while (
+            current.parent_id
+            and current.parent_id in category_by_id
+            and current.parent_id not in seen
+        ):
             seen.add(current.parent_id)
             count += 1
             current = category_by_id[current.parent_id]
@@ -212,7 +216,9 @@ def budget_report(
             planned_total += target
             covered_category_ids.update(descendants(root.id))
 
-        actual_total = sum((spending for _, spending in transaction_rows_by_month[month]), Decimal("0"))
+        actual_total = sum(
+            (spending for _, spending in transaction_rows_by_month[month]), Decimal("0")
+        )
         budgeted_actual_total = Decimal("0")
         for category_id, spending in transaction_rows_by_month[month]:
             if category_id in covered_category_ids:
@@ -235,7 +241,9 @@ def budget_report(
             (actual_by_month_exact[month][cid] for month in row_months for cid in ids),
             Decimal("0"),
         )
-        transaction_count = sum((count_by_month_exact[month][cid] for month in row_months for cid in ids), 0)
+        transaction_count = sum(
+            (count_by_month_exact[month][cid] for month in row_months for cid in ids), 0
+        )
         default = default_by_category.get(category.id)
         override = (
             override_by_month_category.get((focus_month, category.id))

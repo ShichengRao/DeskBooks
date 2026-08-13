@@ -83,7 +83,9 @@ def test_rules_without_the_action_leave_the_flag_alone(db):
     db.add(Rule(name="tag it", match_account_id=account.id, set_merchant="Somebody"))
     db.flush()
 
-    ev = evaluate(load_active_rules(db), account_id=account.id, description="X", amount=Decimal("-1"))
+    ev = evaluate(
+        load_active_rules(db), account_id=account.id, description="X", amount=Decimal("-1")
+    )
     assert ev.is_excluded_from_totals is None
 
 

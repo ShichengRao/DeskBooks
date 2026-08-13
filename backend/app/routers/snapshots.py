@@ -48,7 +48,9 @@ def list_snapshots(db: DbSession):
 @router.post("", response_model=schemas.NetWorthSnapshotOut)
 def create_snapshot(body: schemas.NetWorthSnapshotIn, db: DbSession):
     existing = db.scalar(
-        select(models.NetWorthSnapshot).where(models.NetWorthSnapshot.snapshot_date == body.snapshot_date)
+        select(models.NetWorthSnapshot).where(
+            models.NetWorthSnapshot.snapshot_date == body.snapshot_date
+        )
     )
     if existing:
         raise HTTPException(409, "snapshot for this date already exists")
@@ -76,7 +78,9 @@ def import_workbook(body: schemas.NetWorthWorkbookImportRequest, db: DbSession):
     if "Dates" not in wb.sheetnames:
         raise HTTPException(400, "workbook is missing a Dates sheet")
 
-    account_by_name = {account.name: account for account in db.scalars(select(models.Account)).all()}
+    account_by_name = {
+        account.name: account for account in db.scalars(select(models.Account)).all()
+    }
     workbook_rows, missing = _mapped_workbook_rows(wb, body.account_map, account_by_name)
     if missing:
         return schemas.NetWorthWorkbookImportResult(
@@ -123,7 +127,9 @@ def import_workbook(body: schemas.NetWorthWorkbookImportRequest, db: DbSession):
     )
 
 
-def _mapped_workbook_rows(wb, account_map: dict[str, str], account_by_name: dict[str, models.Account]):
+def _mapped_workbook_rows(
+    wb, account_map: dict[str, str], account_by_name: dict[str, models.Account]
+):
     if account_map:
         rows = []
         missing_accounts = set()
@@ -146,7 +152,9 @@ def _mapped_workbook_rows(wb, account_map: dict[str, str], account_by_name: dict
                 continue
             rows.append((sheet_name, row, account_name))
         if invalid_keys:
-            raise HTTPException(400, f"invalid account_map row key(s): {', '.join(sorted(invalid_keys))}")
+            raise HTTPException(
+                400, f"invalid account_map row key(s): {', '.join(sorted(invalid_keys))}"
+            )
         return rows, sorted(missing_accounts)
 
     rows = []
@@ -161,7 +169,7 @@ def _mapped_workbook_rows(wb, account_map: dict[str, str], account_by_name: dict
     if not rows:
         raise HTTPException(
             400,
-            "No account rows were found. Add a JSON account map using keys like \"Sheet name!12\" and account names as values.",
+            'No account rows were found. Add a JSON account map using keys like "Sheet name!12" and account names as values.',
         )
     return rows, []
 

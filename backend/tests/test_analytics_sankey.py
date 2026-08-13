@@ -108,8 +108,12 @@ def test_sankey_for_period_balances_cashflow_growth_and_account_deltas(db):
 
     for seed in [
         _TransactionSeed(salary, date(2026, 1, 15), "5000.00", TransactionKind.income, "Employer"),
-        _TransactionSeed(groceries, date(2026, 1, 16), "-100.00", TransactionKind.expense, "Market"),
-        _TransactionSeed(None, date(2026, 1, 17), "-50.00", TransactionKind.donation, "Local Charity"),
+        _TransactionSeed(
+            groceries, date(2026, 1, 16), "-100.00", TransactionKind.expense, "Market"
+        ),
+        _TransactionSeed(
+            None, date(2026, 1, 17), "-50.00", TransactionKind.donation, "Local Charity"
+        ),
         _TransactionSeed(None, date(2026, 1, 18), "-500.00", TransactionKind.tax, "IRS"),
     ]:
         _transaction(db, checking, seed)
@@ -172,15 +176,27 @@ def test_cashflow_sankey_excludes_transfers_and_balances_residual(db):
 
     for seed in [
         _TransactionSeed(salary, date(2026, 5, 15), "5000.00", TransactionKind.income, "Employer"),
-        _TransactionSeed(groceries, date(2026, 5, 16), "-100.00", TransactionKind.expense, "Market"),
+        _TransactionSeed(
+            groceries, date(2026, 5, 16), "-100.00", TransactionKind.expense, "Market"
+        ),
         _TransactionSeed(None, date(2026, 5, 17), "-50.00", TransactionKind.donation, "Charity"),
         _TransactionSeed(None, date(2026, 5, 18), "-500.00", TransactionKind.tax, "IRS"),
-        _TransactionSeed(None, date(2026, 5, 19), "-2000.00", TransactionKind.transfer, "To Savings"),
-        _TransactionSeed(None, date(2026, 5, 20), "300.00", TransactionKind.cc_payment, "Card Payment"),
-        _TransactionSeed(None, date(2026, 5, 21), "-1000.00", TransactionKind.investment, "Brokerage Buy"),
+        _TransactionSeed(
+            None, date(2026, 5, 19), "-2000.00", TransactionKind.transfer, "To Savings"
+        ),
+        _TransactionSeed(
+            None, date(2026, 5, 20), "300.00", TransactionKind.cc_payment, "Card Payment"
+        ),
+        _TransactionSeed(
+            None, date(2026, 5, 21), "-1000.00", TransactionKind.investment, "Brokerage Buy"
+        ),
         _TransactionSeed(None, date(2026, 5, 22), "25.00", TransactionKind.refund, "Store Refund"),
-        _TransactionSeed(None, date(2026, 5, 23), "-40.00", TransactionKind.uncategorized, "Mystery"),
-        _TransactionSeed(None, date(2026, 5, 24), "60.00", TransactionKind.uncategorized, "Mystery In"),
+        _TransactionSeed(
+            None, date(2026, 5, 23), "-40.00", TransactionKind.uncategorized, "Mystery"
+        ),
+        _TransactionSeed(
+            None, date(2026, 5, 24), "60.00", TransactionKind.uncategorized, "Mystery In"
+        ),
     ]:
         _transaction(db, checking, seed)
     db.commit()

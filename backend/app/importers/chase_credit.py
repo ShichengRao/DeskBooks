@@ -3,6 +3,7 @@
 Header: Transaction Date,Post Date,Description,Category,Type,Amount,Memo
 Amounts are outflow-negative already.
 """
+
 from __future__ import annotations
 
 from ..models import TransactionKind

@@ -51,9 +51,7 @@ def ensure_profile_registry() -> None:
     _write_registry(
         {
             "active": "personal",
-            "profiles": [
-                {"slug": "personal", "name": "Personal", "db_file": DEFAULT_DB_FILE}
-            ],
+            "profiles": [{"slug": "personal", "name": "Personal", "db_file": DEFAULT_DB_FILE}],
         }
     )
 

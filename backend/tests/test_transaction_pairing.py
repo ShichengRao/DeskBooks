@@ -33,7 +33,9 @@ def _account(db) -> Account:
     return account
 
 
-def _tx(db, account, amount, *, kind=TransactionKind.expense, description="COFFEE BAR") -> Transaction:
+def _tx(
+    db, account, amount, *, kind=TransactionKind.expense, description="COFFEE BAR"
+) -> Transaction:
     tx = Transaction(
         account_id=account.id,
         date=date(2026, 6, 1),
