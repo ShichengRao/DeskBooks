@@ -186,9 +186,7 @@ def test_collect_staged_prefill_returns_newest_balance_per_account(tmp_path):
     def stage(name: str, as_of: str, rows: list[dict], source: str) -> str:
         path = staging / name
         path.write_text(
-            json.dumps(
-                {"format": "deskbooks.staged-balances/v1", "as_of": as_of, "balances": rows}
-            )
+            json.dumps({"format": "deskbooks.staged-balances/v1", "as_of": as_of, "balances": rows})
         )
         return json.dumps({"kind": "balances", "path": str(path), "source": source})
 
@@ -201,7 +199,9 @@ def test_collect_staged_prefill_returns_newest_balance_per_account(tmp_path):
     )
     missing = json.dumps({"kind": "balances", "path": str(staging / "gone.json"), "source": "x"})
     statement = json.dumps({"kind": "statement", "path": str(staging / "old.json"), "source": "y"})
-    (staging / "manifest.jsonl").write_text("\n".join([older, newer, missing, statement, "not-json"]) + "\n")
+    (staging / "manifest.jsonl").write_text(
+        "\n".join([older, newer, missing, statement, "not-json"]) + "\n"
+    )
 
     rows = balance_snapshots.collect_staged_prefill(staging)
     assert rows == [
@@ -226,7 +226,9 @@ def test_parse_staged_balances_reads_profile_stamp():
     assert staged.profile == "personal"
 
     del payload["profile"]
-    assert balance_snapshots.parse_staged_balances_bytes(json.dumps(payload).encode()).profile is None
+    assert (
+        balance_snapshots.parse_staged_balances_bytes(json.dumps(payload).encode()).profile is None
+    )
 
     payload["profile"] = 7
     with pytest.raises(ValueError, match="invalid profile"):
@@ -238,7 +240,11 @@ def test_collect_staged_prefill_scopes_to_profile_and_known_accounts(tmp_path):
     staging.mkdir()
 
     def stage(name: str, rows: list[dict], profile: str | None) -> str:
-        payload = {"format": "deskbooks.staged-balances/v1", "as_of": "2026-07-30", "balances": rows}
+        payload = {
+            "format": "deskbooks.staged-balances/v1",
+            "as_of": "2026-07-30",
+            "balances": rows,
+        }
         if profile is not None:
             payload["profile"] = profile
         path = staging / name
@@ -262,8 +268,18 @@ def test_collect_staged_prefill_scopes_to_profile_and_known_accounts(tmp_path):
     # The other profile's file is skipped even though it shares account id 1,
     # and the legacy file's unknown id 42 is dropped while id 2 survives.
     assert rows == [
-        {"account_id": 1, "balance": Decimal("10.00"), "as_of": date(2026, 7, 30), "source": "mine.json"},
-        {"account_id": 2, "balance": Decimal("20.00"), "as_of": date(2026, 7, 30), "source": "legacy.json"},
+        {
+            "account_id": 1,
+            "balance": Decimal("10.00"),
+            "as_of": date(2026, 7, 30),
+            "source": "mine.json",
+        },
+        {
+            "account_id": 2,
+            "balance": Decimal("20.00"),
+            "as_of": date(2026, 7, 30),
+            "source": "legacy.json",
+        },
     ]
 
 

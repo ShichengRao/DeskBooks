@@ -113,7 +113,9 @@ def test_transaction_routes_reject_missing_category_ids(db):
 
 
 def _account_in(name: str) -> schemas.AccountIn:
-    return schemas.AccountIn(name=name, account_category=AccountCategory.bank, type=AccountType.checking)
+    return schemas.AccountIn(
+        name=name, account_category=AccountCategory.bank, type=AccountType.checking
+    )
 
 
 def test_bulk_account_create_is_all_or_nothing(db):
@@ -138,7 +140,9 @@ def test_bulk_account_create_is_all_or_nothing(db):
     assert "duplicate" in repeated.value.detail
 
     created = accounts_router.create_accounts_bulk(
-        schemas.AccountBulkIn(accounts=[_account_in("CD Ladder"), _account_in(" Rental Checking ")]),
+        schemas.AccountBulkIn(
+            accounts=[_account_in("CD Ladder"), _account_in(" Rental Checking ")]
+        ),
         db,
     )
     assert [a.name for a in created] == ["CD Ladder", "Rental Checking"]

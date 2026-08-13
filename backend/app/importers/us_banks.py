@@ -8,6 +8,7 @@ exports tend to fall into a few recurring shapes:
 * card activity split into Debit and Credit columns
 * card activity where purchases are positive and payments are negative
 """
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -193,7 +194,9 @@ class RunningBalanceBankImporter(CsvImporter):
 
     @classmethod
     def can_handle(cls, header: list[str]) -> bool:
-        if _has_any(header, "ACTIVITY", "TRANSACTION", "DEBIT", "CREDIT", "WITHDRAWALS", "DEPOSITS"):
+        if _has_any(
+            header, "ACTIVITY", "TRANSACTION", "DEBIT", "CREDIT", "WITHDRAWALS", "DEPOSITS"
+        ):
             return False
         return _has_all(header, "DATE", "DESCRIPTION", "AMOUNT") and _has_any(
             header, "RUNNING BAL.", "RUNNING BALANCE", "BALANCE"

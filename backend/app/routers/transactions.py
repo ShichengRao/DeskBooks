@@ -230,9 +230,7 @@ def _set_split(tx: models.Transaction, body: schemas.TransactionSplitIn) -> None
 
 
 @router.put("/{tx_id}/split", response_model=schemas.TransactionOut)
-def set_transaction_split(
-    tx_id: int, body: schemas.TransactionSplitIn, db: Session = DB_DEP
-):
+def set_transaction_split(tx_id: int, body: schemas.TransactionSplitIn, db: Session = DB_DEP):
     tx = db.scalar(
         select(models.Transaction)
         .options(selectinload(models.Transaction.tags), selectinload(models.Transaction.split))
@@ -256,9 +254,7 @@ def _category_or_404(db: Session, category_id: int | None) -> models.Category | 
 
 
 @router.patch("/{tx_id}", response_model=schemas.TransactionOut)
-def update_transaction(
-    tx_id: int, body: schemas.TransactionUpdate, db: Session = DB_DEP
-):
+def update_transaction(tx_id: int, body: schemas.TransactionUpdate, db: Session = DB_DEP):
     tx = db.get(models.Transaction, tx_id)
     if not tx:
         raise HTTPException(404)

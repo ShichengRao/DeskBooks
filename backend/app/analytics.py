@@ -4,6 +4,7 @@ All money is normalized to outflow-negative before aggregation. Filters
 on `kind` are the standard way to include or exclude transfers, taxes,
 donations, etc.
 """
+
 from __future__ import annotations
 
 from collections import defaultdict
@@ -317,7 +318,10 @@ def _delta_bucket_for_account(acc: models.Account) -> str:
     name = (acc.name or "").lower()
     if "bond" in name:
         return "Bond Account"
-    if acc.account_category in (models.AccountCategory.investment, models.AccountCategory.tax_advantaged):
+    if acc.account_category in (
+        models.AccountCategory.investment,
+        models.AccountCategory.tax_advantaged,
+    ):
         return "Stock Account"
     if acc.account_category == models.AccountCategory.bank:
         return "CDs + Bank Accounts"
@@ -332,21 +336,25 @@ def _collect_sankey_transactions(
     end: date,
     group_map: dict[int, tuple[str, str]],
 ) -> _SankeyTransactionRollup:
-    tx_stmt = select(
-        models.Transaction.kind,
-        models.Transaction.amount,
-        models.TransactionSplit.personal_share,
-        models.Transaction.merchant,
-        models.Transaction.category_id,
-        models.Transaction.account_id,
-    ).join(
-        models.TransactionSplit,
-        models.TransactionSplit.transaction_id == models.Transaction.id,
-        isouter=True,
-    ).where(
-        models.Transaction.date >= start,
-        models.Transaction.date <= end,
-        models.Transaction.is_excluded_from_totals.is_(False),
+    tx_stmt = (
+        select(
+            models.Transaction.kind,
+            models.Transaction.amount,
+            models.TransactionSplit.personal_share,
+            models.Transaction.merchant,
+            models.Transaction.category_id,
+            models.Transaction.account_id,
+        )
+        .join(
+            models.TransactionSplit,
+            models.TransactionSplit.transaction_id == models.Transaction.id,
+            isouter=True,
+        )
+        .where(
+            models.Transaction.date >= start,
+            models.Transaction.date <= end,
+            models.Transaction.is_excluded_from_totals.is_(False),
+        )
     )
 
     income_leaves: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
@@ -402,7 +410,10 @@ def _collect_sankey_snapshot_deltas(
     positive_delta_by_growth_source: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
     total_account_delta = Decimal("0")
     for acc_id, acc in accounts.items():
-        if acc.account_category in (models.AccountCategory.credit, models.AccountCategory.liability):
+        if acc.account_category in (
+            models.AccountCategory.credit,
+            models.AccountCategory.liability,
+        ):
             continue
         start_bal = start_balances.get(acc_id, Decimal("0"))
         end_bal = end_balances.get(acc_id, Decimal("0"))
@@ -436,10 +447,7 @@ def _sankey_flow_totals(
     # transaction imports captured *more* "income" than the NLV grew by,
     # usually because some money flowed out via untracked transfers).
     net_cashflow_realized = (
-        income_total
-        - expense_total
-        - transactions.donations_total
-        - transactions.taxes_total
+        income_total - expense_total - transactions.donations_total - transactions.taxes_total
     )
     growth_total = max(Decimal("0"), total_account_delta - net_cashflow_realized)
     return _SankeyFlowTotals(
@@ -587,7 +595,9 @@ def _add_account_delta_links(
         _add_account_delta_bucket_links(graph, accounts_node, implied_to_accounts, delta_by_bucket)
     elif implied_to_accounts < 0:
         # Outflows exceeded inflows. Show a "Drawn from savings" inflow.
-        graph.link(graph.node("Drawn from savings"), hub, -implied_to_accounts, "Drawn from savings")
+        graph.link(
+            graph.node("Drawn from savings"), hub, -implied_to_accounts, "Drawn from savings"
+        )
 
 
 def _add_account_delta_bucket_links(
@@ -690,13 +700,10 @@ def cashflow_sankey(db: Session, start: date, end: date, label: str) -> dict:
     reserves" on the inflow side when the period ran a deficit).
     """
     group_map = _category_group_map(db)
-    stmt = (
-        select(models.Transaction)
-        .where(
-            models.Transaction.date >= start,
-            models.Transaction.date <= end,
-            models.Transaction.is_excluded_from_totals.is_(False),
-        )
+    stmt = select(models.Transaction).where(
+        models.Transaction.date >= start,
+        models.Transaction.date <= end,
+        models.Transaction.is_excluded_from_totals.is_(False),
     )
     income_by_source: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
     spend_by_group: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
@@ -825,7 +832,9 @@ def recurring_merchants(
     start: date | None = None,
     end: date | None = None,
 ) -> list[dict]:
-    key = func.coalesce(models.Transaction.merchant, models.Transaction.description_normalized).label("k")
+    key = func.coalesce(
+        models.Transaction.merchant, models.Transaction.description_normalized
+    ).label("k")
     where = [
         key.is_not(None),
         models.Transaction.is_excluded_from_totals.is_(False),
@@ -878,8 +887,12 @@ def recurring_merchants(
             {
                 "merchant": merchant,
                 "occurrences": int(n),
-                "avg_amount": Decimal(str(avg_amount)).quantize(Decimal("0.01")) if avg_amount is not None else Decimal("0"),
-                "total_amount": Decimal(str(total_amount)).quantize(Decimal("0.01")) if total_amount is not None else Decimal("0"),
+                "avg_amount": Decimal(str(avg_amount)).quantize(Decimal("0.01"))
+                if avg_amount is not None
+                else Decimal("0"),
+                "total_amount": Decimal(str(total_amount)).quantize(Decimal("0.01"))
+                if total_amount is not None
+                else Decimal("0"),
                 "last_seen": last_seen,
                 "cadence_days_estimate": cadence,
                 # majority vote; ties count as spending
@@ -892,6 +905,7 @@ def recurring_merchants(
 # ---------------------------------------------------------------------------
 # Reconciliation
 # ---------------------------------------------------------------------------
+
 
 def fire_projection(db: Session, max_years: int = 60) -> dict:
     """Year-by-year projection of total NLV under the user's FIRE
@@ -925,10 +939,15 @@ def fire_projection(db: Session, max_years: int = 60) -> dict:
             if acc is None:
                 continue
             # Credit / liability are debt; they subtract from net worth.
-            sign = -1 if acc.account_category in (
-                models.AccountCategory.credit,
-                models.AccountCategory.liability,
-            ) else 1
+            sign = (
+                -1
+                if acc.account_category
+                in (
+                    models.AccountCategory.credit,
+                    models.AccountCategory.liability,
+                )
+                else 1
+            )
             by_category[acc.account_category.value] += sign * Decimal(bal.balance)
 
     rates = {
@@ -980,9 +999,7 @@ def fire_projection(db: Session, max_years: int = 60) -> dict:
     if settings.birth_year:
         retirement_age_year = settings.birth_year + retirement_age
         clamped = min(max(retirement_age_year, years[0]["year"]), years[-1]["year"])
-        total_at_retirement_age = next(
-            row["total"] for row in years if row["year"] == clamped
-        )
+        total_at_retirement_age = next(row["total"] for row in years if row["year"] == clamped)
 
     notes = [
         "Growth rates are real (inflation-adjusted) — no need to subtract inflation separately.",

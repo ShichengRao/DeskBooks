@@ -18,9 +18,7 @@ def test_starter_onboarding_uses_generic_accounts_and_categories(db):
 
     assert result["accounts_added"] == 3
     assert {"Checking", "Savings", "Credit Card"}.issubset(account_names)
-    assert {"Housing", "Food", "Income", "Credit Card Payment"}.issubset(
-        category_names
-    )
+    assert {"Housing", "Food", "Income", "Credit Card Payment"}.issubset(category_names)
     assert account_names == {"Checking", "Savings", "Credit Card"}
     assert category_names.issuperset(
         {
@@ -45,9 +43,7 @@ def test_profiles_map_to_separate_sqlite_files(tmp_path, monkeypatch):
         json.dumps(
             {
                 "active": "personal",
-                "profiles": [
-                    {"slug": "personal", "name": "Personal", "db_file": "app.db"}
-                ],
+                "profiles": [{"slug": "personal", "name": "Personal", "db_file": "app.db"}],
             }
         ),
         encoding="utf-8",
@@ -78,9 +74,7 @@ def test_profiles_create_default_registry_on_first_run(tmp_path, monkeypatch):
     registry = json.loads((tmp_path / "profiles.json").read_text(encoding="utf-8"))
     assert registry == {
         "active": "personal",
-        "profiles": [
-            {"db_file": "app.db", "name": "Personal", "slug": "personal"}
-        ],
+        "profiles": [{"db_file": "app.db", "name": "Personal", "slug": "personal"}],
     }
 
 
@@ -102,9 +96,7 @@ def test_duplicate_active_profile_copies_sqlite_database(tmp_path, monkeypatch):
         json.dumps(
             {
                 "active": "personal",
-                "profiles": [
-                    {"slug": "personal", "name": "Personal", "db_file": "app.db"}
-                ],
+                "profiles": [{"slug": "personal", "name": "Personal", "db_file": "app.db"}],
             }
         ),
         encoding="utf-8",
@@ -218,9 +210,7 @@ def test_delete_profile_rejects_last_profile(tmp_path, monkeypatch):
         json.dumps(
             {
                 "active": "personal",
-                "profiles": [
-                    {"slug": "personal", "name": "Personal", "db_file": "app.db"}
-                ],
+                "profiles": [{"slug": "personal", "name": "Personal", "db_file": "app.db"}],
             }
         ),
         encoding="utf-8",

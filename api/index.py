@@ -5,6 +5,7 @@ into /tmp on cold start, so every new instance begins from the same clean,
 fully invented dataset and nothing persists. PFA_DEMO_MODE turns the API
 read-only (see the middleware in app.main).
 """
+
 from __future__ import annotations
 
 import os

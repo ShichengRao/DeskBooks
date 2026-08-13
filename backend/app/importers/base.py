@@ -8,6 +8,7 @@ An importer:
 Account selection is left to the caller — multiple Chase cards can share
 the same importer.
 """
+
 from __future__ import annotations
 
 import csv
@@ -102,7 +103,10 @@ def _read_dictrows(csv_text: str) -> tuple[list[str], list[dict]]:
     for r in rows[1:]:
         if not any(c.strip() for c in r):
             continue
-        d = {header[i] if i < len(header) else f"col{i}": (r[i] if i < len(r) else "") for i in range(len(r))}
+        d = {
+            header[i] if i < len(header) else f"col{i}": (r[i] if i < len(r) else "")
+            for i in range(len(r))
+        }
         dict_rows.append(d)
     return header, dict_rows
 

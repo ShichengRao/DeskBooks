@@ -33,7 +33,9 @@ def _read_marker(db_path) -> str:
         return conn.execute("SELECT value FROM marker").fetchone()[0]
 
 
-def test_backup_restore_replaces_active_profile_database_and_keeps_safety_copy(tmp_path, monkeypatch):
+def test_backup_restore_replaces_active_profile_database_and_keeps_safety_copy(
+    tmp_path, monkeypatch
+):
     monkeypatch.setattr(backups, "DATA_DIR", tmp_path)
     db_path = tmp_path / "app.db"
     profile = ProfileInfo(

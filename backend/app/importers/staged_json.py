@@ -8,6 +8,7 @@ and .json uploads route here by extension.
 Rows marked pending are skipped: pending transactions can change date and
 amount when they post, which would defeat duplicate detection.
 """
+
 from __future__ import annotations
 
 import json

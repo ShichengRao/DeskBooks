@@ -43,9 +43,7 @@ def create_accounts_bulk(body: schemas.AccountBulkIn, db: DbSession):
     repeated = sorted(name for name, count in Counter(names).items() if count > 1)
     if repeated:
         raise HTTPException(422, f"duplicate name(s) in request: {', '.join(repeated)}")
-    taken = sorted(
-        db.scalars(select(models.Account.name).where(models.Account.name.in_(names)))
-    )
+    taken = sorted(db.scalars(select(models.Account.name).where(models.Account.name.in_(names))))
     if taken:
         raise HTTPException(422, f"account name(s) already exist: {', '.join(taken)}")
 

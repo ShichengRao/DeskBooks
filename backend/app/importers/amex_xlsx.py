@@ -7,6 +7,7 @@ rows first, then a transaction header row where column A is "Date".
 Charges are still positive — we invert to outflow-negative on the way in
 to keep the rest of the app uniform.
 """
+
 from __future__ import annotations
 
 from decimal import Decimal
@@ -68,7 +69,11 @@ def parse_amex_xlsx_bytes(data: bytes) -> list[ImportDraftRow]:
         desc = normalize_description(str(desc_raw))
         upper = desc.upper()
         kind = TransactionKind.uncategorized
-        if "AUTOPAY PAYMENT" in upper or "PAYMENT - THANK YOU" in upper or "PAYMENT RECEIVED" in upper:
+        if (
+            "AUTOPAY PAYMENT" in upper
+            or "PAYMENT - THANK YOU" in upper
+            or "PAYMENT RECEIVED" in upper
+        ):
             kind = TransactionKind.cc_payment
         out.append(
             ImportDraftRow(

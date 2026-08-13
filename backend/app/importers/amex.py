@@ -5,6 +5,7 @@ Header: Date,Description,Amount
 Convention note: Amex web exports list **charges as positive**. We invert
 to outflow-negative so the database is consistent regardless of source.
 """
+
 from __future__ import annotations
 
 from ..models import TransactionKind

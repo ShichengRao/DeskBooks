@@ -3,6 +3,7 @@
 Header: "DATE","DESCRIPTION","AMOUNT","CHECK #","STATUS"
 Amounts are outflow-negative.
 """
+
 from __future__ import annotations
 
 from ..models import TransactionKind
@@ -59,7 +60,12 @@ class WellsFargoCheckingImporter(CsvImporter):
                 merchant = "Tax Refund"
             elif "ZELLE" in upper or "VENMO" in upper or "PAYPAL" in upper:
                 kind = TransactionKind.uncategorized
-            elif "FID BKG SVC" in upper or "GOLDMAN SACHS BA" in upper or "JPMORGAN CHASE   EXT TRNSFR" in upper or "MSPBNA" in upper:
+            elif (
+                "FID BKG SVC" in upper
+                or "GOLDMAN SACHS BA" in upper
+                or "JPMORGAN CHASE   EXT TRNSFR" in upper
+                or "MSPBNA" in upper
+            ):
                 kind = TransactionKind.transfer
 
             out.append(
