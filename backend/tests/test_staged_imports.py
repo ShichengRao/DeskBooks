@@ -282,3 +282,50 @@ def test_apply_staged_refuses_changed_or_unknown_files(db, tmp_path):
     assert result.outcomes[1].detail == "not in the staging manifest"
     assert db.query(Transaction).count() == 0
     assert not state_path.exists()
+
+
+def test_dismissed_files_drop_off_the_ready_list_and_can_come_back(db, tmp_path):
+    """A fetch leaves behind files that will never be wanted — a
+    connection since set to balance-only, a window widened once. They stay
+    "ready" forever, and a list that is mostly noise stops being read."""
+    staging_dir, state_path = _setup(tmp_path)
+    account = _account(db)
+    db.commit()
+
+    keep = _stage(
+        staging_dir,
+        "keep.json",
+        _transactions_payload(account.id),
+        account_id=account.id,
+        importer_name="staged_json",
+    )
+    unwanted = _stage(
+        staging_dir,
+        "unwanted.json",
+        _transactions_payload(account.id, rows=3),
+        account_id=account.id,
+        importer_name="staged_json",
+    )
+    _write_manifest(staging_dir, [keep, unwanted])
+
+    statuses = {r.file_name: r.status for r in _staged_listing(db, staging_dir, state_path, ACTIVE)}
+    assert statuses == {"keep.json": "new", "unwanted.json": "new"}
+
+    state = staging.load_state(state_path)
+    state.setdefault("dismissed_sha256", {})[unwanted["sha256"]] = {"profile": ACTIVE}
+    staging.save_state(state_path, state)
+
+    statuses = {r.file_name: r.status for r in _staged_listing(db, staging_dir, state_path, ACTIVE)}
+    assert statuses == {"keep.json": "new", "unwanted.json": "dismissed"}
+
+    # And a sweep must not pick it up — "import all new" is exactly the
+    # thing a dismissal is meant to stay out of.
+    result = _apply_staged(db, staging_dir, state_path, ACTIVE, [])
+    assert {o.file_name for o in result.outcomes} == {"keep.json"}
+
+    # Dismissal is not a one-way door.
+    state = staging.load_state(state_path)
+    del state["dismissed_sha256"][unwanted["sha256"]]
+    staging.save_state(state_path, state)
+    statuses = {r.file_name: r.status for r in _staged_listing(db, staging_dir, state_path, ACTIVE)}
+    assert statuses["unwanted.json"] == "new"

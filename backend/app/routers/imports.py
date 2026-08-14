@@ -335,6 +335,10 @@ def _staged_listing(
             break
 
     account_names = dict(db.execute(select(models.Account.id, models.Account.name)).all())
+    # Dismissals are the one thing the listing does read from the state
+    # file, because "I am never importing this" is a decision about the
+    # file rather than something derivable from the database.
+    dismissed = set(staging.load_state(state_path).get("dismissed_sha256", {}))
 
     rows: list[schemas.StagedEntryOut] = []
     for entry in picked:
@@ -356,6 +360,10 @@ def _staged_listing(
             status="new",
         )
         rows.append(out)
+
+        if out.sha256 in dismissed:
+            out.status = "dismissed"
+            continue
 
         if kind not in staging.ENTRY_KINDS:
             out.status, out.detail = "invalid", f"unknown kind: {kind}"
@@ -543,6 +551,26 @@ def _apply_staged(
     if state_dirty:
         staging.save_state(state_path, state)
     return schemas.StagedApplyResult(outcomes=outcomes, backup_name=backup_name)
+
+
+@router.post("/staged/dismiss", response_model=schemas.StagedDismissResult)
+def staged_dismiss(body: schemas.StagedDismissRequest, profile: RequestProfile):
+    """Mark staged files as never-to-import, or put them back.
+
+    A fetch leaves files behind that will never be wanted — a connection
+    you have since set to balance-only, a window you widened once. They
+    stay "ready" forever, and a list where most rows are noise is a list
+    nobody reads, so the ones that matter get missed too."""
+    state_path = staging.default_state_path()
+    state = staging.load_state(state_path)
+    dismissed = state.setdefault("dismissed_sha256", {})
+    for sha256 in body.sha256s:
+        if body.dismissed:
+            dismissed[sha256] = {"profile": profile.slug}
+        else:
+            dismissed.pop(sha256, None)
+    staging.save_state(state_path, state)
+    return schemas.StagedDismissResult(dismissed=len(dismissed), changed=len(body.sha256s))
 
 
 @router.post("/staged/apply", response_model=schemas.StagedApplyResult)
