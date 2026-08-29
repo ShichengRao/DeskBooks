@@ -847,6 +847,16 @@ function SnapshotEditor({
 
   const total = Object.values(balances).reduce((a, v) => a + (parseFloat(v) || 0), 0);
   const accountLinks = useMemo(() => uniqueAccountLinks(visibleAccounts), [visibleAccounts]);
+  // The logins for accounts still blank in this draft. After filling from
+  // connections that is exactly what is left to look up by hand, which is
+  // the point: opening all of them again means hunting for the few that
+  // still need a number among the ones already answered.
+  //
+  // Blank, not zero — a balance someone typed as 0 has been dealt with.
+  const unfilledLinks = useMemo(
+    () => uniqueAccountLinks(visibleAccounts.filter((a) => (balances[a.id] ?? "").trim() === "")),
+    [visibleAccounts, balances],
+  );
 
   return (
     <SidePanel
@@ -882,14 +892,26 @@ function SnapshotEditor({
               : "No account login links yet. Add account URLs with the Account button on the Net Worth page."}
           </span>
           {accountLinks.length > 0 && (
-            <button
-              type="button"
-              className="btn-ghost text-xs"
-              onClick={() => openAccountLinks(accountLinks)}
-              title="Open every unique visible account login"
-            >
-              ↗ open all links
-            </button>
+            <span className="flex items-center gap-1">
+              {unfilledLinks.length > 0 && unfilledLinks.length < accountLinks.length && (
+                <button
+                  type="button"
+                  className="btn-ghost text-xs"
+                  onClick={() => openAccountLinks(unfilledLinks)}
+                  title="Open only the logins for accounts still blank in this snapshot"
+                >
+                  ↗ open unfilled ({unfilledLinks.length})
+                </button>
+              )}
+              <button
+                type="button"
+                className="btn-ghost text-xs"
+                onClick={() => openAccountLinks(accountLinks)}
+                title="Open every unique visible account login"
+              >
+                ↗ open all links
+              </button>
+            </span>
           )}
         </div>
         {prefillRows.length > 0 && (
