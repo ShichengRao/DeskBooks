@@ -220,9 +220,19 @@ export function normalizePlaidBalances({ mappings, accountsById }) {
   return rows;
 }
 
+// These dates label a day on the user's calendar: the stamp on a staged
+// file, and the as_of a balances snapshot is filed under. toISOString()
+// renders UTC, so west of Greenwich every evening fetch is stamped
+// tomorrow — a 9pm run on the last of the month files the month-end
+// balances under the 1st, and the mislabelling is invisible because the
+// numbers are right.
+export function localIsoDate(d) {
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 function isoDaysAgo(days) {
-  const d = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-  return d.toISOString().slice(0, 10);
+  return localIsoDate(new Date(Date.now() - days * 24 * 60 * 60 * 1000));
 }
 
 function validateSource(source) {
@@ -334,7 +344,7 @@ export async function fetch({ source, config, profile = null, downloadsDir }) {
   const auth = { client_id: clientId, secret, access_token: accessToken };
 
   const startDate = isoDaysAgo(source.lookbackDays ?? 90);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localIsoDate(new Date());
 
   const transactions = [];
   let total = Infinity;
