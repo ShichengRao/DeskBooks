@@ -9,6 +9,7 @@ import {
 } from "../src/staged-formats.mjs";
 import {
   groupMappings,
+  localIsoDate,
   normalizePlaidBalances,
   normalizePlaidInvestmentTransactions,
   normalizePlaidTransactions,
@@ -359,4 +360,22 @@ test("groupMappings folds many provider accounts into one DeskBooks account", ()
     [1, ["a", "c"]],
     [2, ["b"]],
   ]);
+});
+
+test("localIsoDate labels the day the calendar is on, not the UTC day", () => {
+  // The case that matters: an evening fetch west of Greenwich. 22:55 on
+  // the 1st is already the 2nd in UTC, so toISOString would file that
+  // day's balances under tomorrow — and under the next month whenever
+  // the run lands on the last evening of one.
+  const evening = new Date(2026, 9, 1, 22, 55, 0); // 1 Oct 2026, local
+  assert.equal(localIsoDate(evening), "2026-10-01");
+
+  const lastEveningOfMonth = new Date(2026, 8, 30, 21, 0, 0); // 30 Sep
+  assert.equal(localIsoDate(lastEveningOfMonth), "2026-09-30");
+
+  // Single digits keep their padding, or the date stops sorting.
+  assert.equal(localIsoDate(new Date(2026, 0, 5, 9, 0, 0)), "2026-01-05");
+
+  // And a morning run, where UTC and local agree anyway.
+  assert.equal(localIsoDate(new Date(2026, 9, 1, 9, 0, 0)), "2026-10-01");
 });
