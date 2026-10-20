@@ -302,7 +302,9 @@ def test_dismissed_files_drop_off_the_ready_list_and_can_come_back(db, tmp_path)
     unwanted = _stage(
         staging_dir,
         "unwanted.json",
-        _transactions_payload(account.id, rows=3),
+        # Rows of its own, so this stays a test about dismissal: sharing
+        # ids with keep.json would make one supersede the other.
+        _slice_payload(account.id, range(10, 13)),
         account_id=account.id,
         importer_name="staged_json",
     )
@@ -329,3 +331,108 @@ def test_dismissed_files_drop_off_the_ready_list_and_can_come_back(db, tmp_path)
     staging.save_state(state_path, state)
     statuses = {r.file_name: r.status for r in _staged_listing(db, staging_dir, state_path, ACTIVE)}
     assert statuses["unwanted.json"] == "new"
+
+
+def _slice_payload(account_id: int, ids: range) -> dict:
+    """A staged file holding exactly the named transaction ids."""
+    return {
+        "format": "deskbooks.staged-transactions/v1",
+        "account_id": account_id,
+        "transactions": [
+            {
+                "id": f"txn_{i}",
+                "date": f"2026-07-{10 + i:02d}",
+                "description": f"COFFEE {i}",
+                "amount": "-4.50",
+                "pending": False,
+            }
+            for i in ids
+        ],
+    }
+
+
+def test_a_file_a_later_fetch_already_covers_is_retired(db, tmp_path):
+    """Fetch windows overlap by design, so a manual pull and the next
+    scheduled one hold most of the same rows. Once the newer file has
+    everything the older would add, the older is not outstanding work."""
+    staging_dir, state_path = _setup(tmp_path)
+    account = _account(db)
+    db.commit()
+
+    earlier = _stage(
+        staging_dir,
+        "earlier.json",
+        _slice_payload(account.id, range(0, 3)),
+        account_id=account.id,
+        importer_name="staged_json",
+    )
+    later = _stage(
+        staging_dir,
+        "later.json",
+        _slice_payload(account.id, range(0, 6)),
+        account_id=account.id,
+        importer_name="staged_json",
+    )
+    # Manifest order is fetch order; the listing reads it newest-first.
+    _write_manifest(staging_dir, [earlier, later])
+
+    statuses = {r.file_name: r.status for r in _staged_listing(db, staging_dir, state_path, ACTIVE)}
+    assert statuses == {"earlier.json": "superseded", "later.json": "new"}
+
+    # And it stays out of the sweep, which is the point.
+    result = _apply_staged(db, staging_dir, state_path, ACTIVE, [])
+    assert {o.file_name for o in result.outcomes} == {"later.json"}
+
+
+def test_a_file_holding_rows_the_later_one_lacks_is_kept(db, tmp_path):
+    """The older file reaches further back — dropping it would lose rows
+    nothing else is staging."""
+    staging_dir, state_path = _setup(tmp_path)
+    account = _account(db)
+    db.commit()
+
+    earlier = _stage(
+        staging_dir,
+        "earlier.json",
+        _slice_payload(account.id, range(0, 6)),
+        account_id=account.id,
+        importer_name="staged_json",
+    )
+    later = _stage(
+        staging_dir,
+        "later.json",
+        _slice_payload(account.id, range(3, 9)),
+        account_id=account.id,
+        importer_name="staged_json",
+    )
+    _write_manifest(staging_dir, [earlier, later])
+
+    statuses = {r.file_name: r.status for r in _staged_listing(db, staging_dir, state_path, ACTIVE)}
+    assert statuses == {"earlier.json": "new", "later.json": "new"}
+
+
+def test_coverage_is_not_read_across_accounts(db, tmp_path):
+    """Identical ids in two accounts are two different transactions."""
+    staging_dir, state_path = _setup(tmp_path)
+    one = _account(db)
+    two = _account(db, name="Second")
+    db.commit()
+
+    earlier = _stage(
+        staging_dir,
+        "earlier.json",
+        _slice_payload(one.id, range(0, 3)),
+        account_id=one.id,
+        importer_name="staged_json",
+    )
+    later = _stage(
+        staging_dir,
+        "later.json",
+        _slice_payload(two.id, range(0, 6)),
+        account_id=two.id,
+        importer_name="staged_json",
+    )
+    _write_manifest(staging_dir, [earlier, later])
+
+    statuses = {r.file_name: r.status for r in _staged_listing(db, staging_dir, state_path, ACTIVE)}
+    assert statuses["earlier.json"] == "new"

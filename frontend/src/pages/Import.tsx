@@ -140,6 +140,7 @@ const STAGED_STATUS_LABEL: Record<StagedEntry["status"], string> = {
   unknown_account: "unknown account",
   missing_file: "file missing",
   invalid: "invalid",
+  superseded: "superseded",
   dismissed: "ignored",
 };
 
@@ -161,10 +162,13 @@ function StagedImportsPanel({
   // Fully hidden until a connector has staged something — a CSV-only setup
   // never sees this panel.
   if (!entries.length) return null;
-  // Already-imported and empty files stay off the page: they'd duplicate
-  // the Past imports table. Problems (unknown account, missing file, …)
-  // stay visible so an unimportable file is never silently invisible.
-  const actionable = entries.filter((entry) => entry.status !== "imported" && entry.status !== "empty");
+  // Already-imported, empty and superseded files stay off the page: the
+  // first two would duplicate the Past imports table, and a superseded
+  // one adds nothing a later fetch has not already staged. Problems
+  // (unknown account, missing file, …) stay visible so an unimportable
+  // file is never silently invisible.
+  const DONE: StagedEntry["status"][] = ["imported", "empty", "superseded"];
+  const actionable = entries.filter((entry) => !DONE.includes(entry.status));
   const ready = actionable.filter((entry) => entry.status === "new");
   const doneCount = entries.length - actionable.length;
   const lastFetched = entries
