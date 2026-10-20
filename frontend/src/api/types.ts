@@ -391,6 +391,7 @@ export interface StagedEntry {
     | "unknown_account"
     | "missing_file"
     | "invalid"
+    | "superseded"
     | "dismissed";
   detail: string | null;
 }

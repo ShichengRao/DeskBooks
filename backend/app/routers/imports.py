@@ -303,6 +303,42 @@ def list_batches(db: DbSession):
     )
 
 
+def _mark_superseded(
+    rows: list[schemas.StagedEntryOut],
+    pending_new_rows: dict[str, tuple[int, set[str] | None]],
+) -> None:
+    """Retire a staged file that a later fetch has entirely covered.
+
+    Fetch windows overlap by design, so a manual pull and the next
+    scheduled one hold most of the same transactions. Once the newer file
+    contains every row the older one would add, importing the older one
+    changes nothing — but it sits at "ready" looking like outstanding
+    work, and a list of those is one nobody reads.
+
+    `rows` is newest first, so anything earlier in the list is a later
+    fetch. Comparison is by provider id: a file whose rows carry none
+    (CSV, XLSX) is never retired, because there is no way to be sure.
+    """
+    for index, out in enumerate(rows):
+        pending = pending_new_rows.get(out.sha256)
+        if pending is None:
+            continue
+        account_id, ids = pending
+        if not ids:
+            continue
+        for newer in rows[:index]:
+            newer_pending = pending_new_rows.get(newer.sha256)
+            if newer_pending is None:
+                continue
+            newer_account_id, newer_ids = newer_pending
+            if newer_account_id != account_id or not newer_ids:
+                continue
+            if ids <= newer_ids:
+                out.status = "superseded"
+                out.detail = f"every new row is also in {newer.file_name}"
+                break
+
+
 def _staged_listing(
     db: Session,
     staging_dir: Path,
@@ -335,6 +371,10 @@ def _staged_listing(
             break
 
     account_names = dict(db.execute(select(models.Account.id, models.Account.name)).all())
+    # sha256 -> (account_id, provider ids this file would add), for files
+    # that still have something to add. Used to retire the ones a later
+    # fetch has already covered.
+    pending_new_rows: dict[str, tuple[int, set[str] | None]] = {}
     # Dismissals are the one thing the listing does read from the state
     # file, because "I am never importing this" is a decision about the
     # file rather than something derivable from the database.
@@ -402,6 +442,13 @@ def _staged_listing(
                 continue
             out.row_count = len(preview.rows)
             out.new_count = sum(1 for r in preview.rows if not r.is_duplicate)
+            if out.new_count:
+                # Remember exactly what this file would add, so a later
+                # fetch covering all of it can retire this one.
+                ids = {_provider_id(r.raw) for r in preview.rows if not r.is_duplicate}
+                # Rows without a provider id (CSV, XLSX) cannot be compared
+                # across files, so such a file is never retired.
+                pending_new_rows[out.sha256] = (account_id, None if None in ids else ids)
             if out.row_count == 0:
                 out.status = "empty"
             elif out.new_count == 0:
@@ -422,6 +469,8 @@ def _staged_listing(
             elif out.new_count == 0:
                 out.status = "imported"
                 out.detail = "balances already match this profile"
+
+    _mark_superseded(rows, pending_new_rows)
     return rows
 
 
