@@ -159,9 +159,10 @@ function StagedImportsPanel({
   onImport: (sha256s: string[]) => void;
   onDismiss: (sha256s: string[], dismissed: boolean) => void;
 }) {
-  // Fully hidden until a connector has staged something — a CSV-only setup
-  // never sees this panel.
-  if (!entries.length) return null;
+  // Declared before any early return: hooks cannot run conditionally.
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(25);
+
   // Already-imported, empty and superseded files stay off the page: the
   // first two would duplicate the Past imports table, and a superseded
   // one adds nothing a later fetch has not already staged. Problems
@@ -169,13 +170,27 @@ function StagedImportsPanel({
   // file is never silently invisible.
   const DONE: StagedEntry["status"][] = ["imported", "empty", "superseded"];
   const actionable = entries.filter((entry) => !DONE.includes(entry.status));
-  const ready = actionable.filter((entry) => entry.status === "new");
+  // Ignored files are a decision already made, so they are kept out of
+  // the main list rather than re-read every visit — but reachable,
+  // because the way back from a mistaken ignore has to be visible.
+  const ignored = actionable.filter((entry) => entry.status === "dismissed");
+  const live = actionable.filter((entry) => entry.status !== "dismissed");
+  const ready = live.filter((entry) => entry.status === "new");
   const doneCount = entries.length - actionable.length;
+
+  const totalPages = Math.max(1, Math.ceil(live.length / pageSize));
+  // Clamped rather than reset by an effect: importing or ignoring the
+  // last rows on a page should land on the new last page, not page one.
+  const safePage = Math.min(page, totalPages - 1);
+  const visible = live.slice(safePage * pageSize, safePage * pageSize + pageSize);
   const lastFetched = entries
     .map((entry) => entry.downloaded_at)
     .filter(Boolean)
     .sort()
     .at(-1);
+  // Fully hidden until a connector has staged something — a CSV-only
+  // setup never sees this panel.
+  if (!entries.length) return null;
   if (!actionable.length) {
     return (
       <div className="card p-4 flex items-baseline justify-between">
@@ -196,6 +211,7 @@ function StagedImportsPanel({
           {lastFetched ? `last fetch ${dateLabel(lastFetched)} · ` : ""}
           {ready.length ? `${ready.length} file(s) ready` : "nothing importable"}
           {doneCount ? ` · ${doneCount} already imported` : ""}
+          {ignored.length ? ` · ${ignored.length} ignored` : ""}
         </div>
       </div>
       <div className="overflow-x-auto">
@@ -211,12 +227,27 @@ function StagedImportsPanel({
             </tr>
           </thead>
           <tbody className="divide-y divide-ink-100">
-            {actionable.map((entry) => (
+            {visible.map((entry) => (
               <StagedImportRow key={entry.sha256} entry={entry} pending={pending} onImport={onImport} onDismiss={onDismiss} />
             ))}
           </tbody>
         </table>
       </div>
+      {live.length > pageSize && (
+        <div className="mt-3">
+          <StagedPagination
+            page={safePage}
+            pageSize={pageSize}
+            totalPages={totalPages}
+            totalRows={live.length}
+            onPage={setPage}
+            onPageSize={(size) => {
+              setPageSize(size);
+              setPage(0);
+            }}
+          />
+        </div>
+      )}
       <div className="mt-3 flex items-center gap-2">
         <button
           className="btn-primary"
@@ -227,7 +258,74 @@ function StagedImportsPanel({
         </button>
         {error && <span className="text-sm text-bad-600">{error}</span>}
       </div>
+      {ignored.length > 0 && (
+        <details className="mt-3 border-t border-ink-100 pt-3">
+          <summary className="cursor-pointer text-xs text-ink-500">
+            {ignored.length} ignored file{ignored.length === 1 ? "" : "s"}
+          </summary>
+          <div className="overflow-x-auto mt-2">
+            <table className="w-full text-sm">
+              <tbody className="divide-y divide-ink-100">
+                {ignored.map((entry) => (
+                  <StagedImportRow
+                    key={entry.sha256}
+                    entry={entry}
+                    pending={pending}
+                    onImport={onImport}
+                    onDismiss={onDismiss}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      )}
       {result && <StagedApplySummary result={result} />}
+    </div>
+  );
+}
+
+function StagedPagination({
+  page,
+  pageSize,
+  totalPages,
+  totalRows,
+  onPage,
+  onPageSize,
+}: {
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  totalRows: number;
+  onPage: (page: number) => void;
+  onPageSize: (size: number) => void;
+}) {
+  const first = page * pageSize + 1;
+  const last = Math.min(totalRows, (page + 1) * pageSize);
+  return (
+    <div className="flex items-center justify-between text-sm">
+      <div className="flex items-center gap-2">
+        <span className="text-ink-500">Page size</span>
+        <select
+          className="input max-w-[5rem]"
+          value={pageSize}
+          onChange={(e) => onPageSize(parseInt(e.target.value, 10))}
+        >
+          {[10, 25, 50, 100].map((n) => (
+            <option key={n} value={n}>{n}</option>
+          ))}
+        </select>
+        <span className="text-xs text-ink-500 tabular">
+          {first}–{last} of {totalRows}
+        </span>
+      </div>
+      <div className="flex items-center gap-2 tabular">
+        <button className="btn" disabled={page === 0} onClick={() => onPage(0)}>«</button>
+        <button className="btn" disabled={page === 0} onClick={() => onPage(page - 1)}>‹ Prev</button>
+        <span className="text-ink-600">Page {page + 1} of {totalPages}</span>
+        <button className="btn" disabled={page + 1 >= totalPages} onClick={() => onPage(page + 1)}>Next ›</button>
+        <button className="btn" disabled={page + 1 >= totalPages} onClick={() => onPage(totalPages - 1)}>»</button>
+      </div>
     </div>
   );
 }
