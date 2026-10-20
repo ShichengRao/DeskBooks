@@ -8,7 +8,6 @@ __pycache__/
 venv/
 env/
 *.egg-info/
-backend/uv.lock
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
