@@ -345,7 +345,7 @@ function BudgetsHeader({
 }) {
   return (
     <div className="flex flex-wrap items-end justify-between gap-3">
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-semibold tracking-tight">Budgets</h1>
         <button type="button" className="btn" onClick={onNewCategory}>+ Category</button>
       </div>
@@ -469,46 +469,48 @@ function BudgetRowsTable({
   return (
     <div className="card overflow-hidden">
       <BudgetTableHeader isRangeView={isRangeView} startMonth={startMonth} endMonth={endMonth} focusMonth={focusMonth} />
-      <table className="w-full text-sm tabular">
-        <thead className="bg-ink-50 text-left">
-          <tr>
-            <th className="px-3 py-2 font-medium">Category</th>
-            {!isRangeView && <th className="px-3 py-2 font-medium text-right">Default</th>}
-            {!isRangeView && <th className="px-3 py-2 font-medium text-right">Override</th>}
-            <th className="px-3 py-2 font-medium text-right">{isRangeView ? "Budget" : "Effective"}</th>
-            <th className="px-3 py-2 font-medium text-right">Actual</th>
-            <th className="px-3 py-2 font-medium text-right">Delta</th>
-            <th className="px-3 py-2 font-medium text-right">Rows</th>
-            {!isRangeView && <th className="px-3 py-2 font-medium text-right">Actions</th>}
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-ink-100">
-          {rows.map((row) => (
-            <BudgetRow
-              key={row.category_id}
-              row={row}
-              isRangeView={isRangeView}
-              defaultDraft={defaultDrafts[row.category_id] ?? ""}
-              overrideDraft={overrideDrafts[row.category_id] ?? ""}
-              defaultChanged={changedDefaults.has(row.category_id)}
-              overrideChanged={changedOverrides.has(row.category_id)}
-              savingDefault={savingDefault}
-              savingOverride={savingOverride}
-              onDefaultDraft={onDefaultDraft}
-              onOverrideDraft={onOverrideDraft}
-              onSaveDefault={onSaveDefault}
-              onSaveOverride={onSaveOverride}
-            />
-          ))}
-          {rows.length === 0 && (
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm tabular min-w-[46rem]">
+          <thead className="bg-ink-50 text-left">
             <tr>
-              <td colSpan={isRangeView ? 5 : 8} className="px-3 py-8 text-center text-ink-500">
-                No budget categories found. You can add one by clicking the Category button in the top right.
-              </td>
+              <th className="px-3 py-2 font-medium">Category</th>
+              {!isRangeView && <th className="px-3 py-2 font-medium text-right">Default</th>}
+              {!isRangeView && <th className="px-3 py-2 font-medium text-right">Override</th>}
+              <th className="px-3 py-2 font-medium text-right">{isRangeView ? "Budget" : "Effective"}</th>
+              <th className="px-3 py-2 font-medium text-right">Actual</th>
+              <th className="px-3 py-2 font-medium text-right">Delta</th>
+              <th className="px-3 py-2 font-medium text-right">Rows</th>
+              {!isRangeView && <th className="px-3 py-2 font-medium text-right">Actions</th>}
             </tr>
-          )}
-        </tbody>
-      </table>
+          </thead>
+          <tbody className="divide-y divide-ink-100">
+            {rows.map((row) => (
+              <BudgetRow
+                key={row.category_id}
+                row={row}
+                isRangeView={isRangeView}
+                defaultDraft={defaultDrafts[row.category_id] ?? ""}
+                overrideDraft={overrideDrafts[row.category_id] ?? ""}
+                defaultChanged={changedDefaults.has(row.category_id)}
+                overrideChanged={changedOverrides.has(row.category_id)}
+                savingDefault={savingDefault}
+                savingOverride={savingOverride}
+                onDefaultDraft={onDefaultDraft}
+                onOverrideDraft={onOverrideDraft}
+                onSaveDefault={onSaveDefault}
+                onSaveOverride={onSaveOverride}
+              />
+            ))}
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={isRangeView ? 5 : 8} className="px-3 py-8 text-center text-ink-500">
+                  No budget categories found. You can add one by clicking the Category button in the top right.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -585,7 +587,7 @@ function CategoryEditor({
           </select>
         </Field>
       </div>
-      <div className="sticky bottom-0 z-10 -mx-6 mt-4 flex items-center gap-2 border-t border-ink-100 bg-white px-6 py-3">
+      <div className="sticky bottom-0 z-10 -mx-4 mt-4 flex flex-wrap items-center gap-2 border-t border-ink-100 bg-white px-4 py-3 sm:-mx-6 sm:px-6">
         <button type="submit" className="btn-primary" disabled={save.isPending || !name.trim()}>
           Save category
         </button>

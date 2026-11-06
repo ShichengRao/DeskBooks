@@ -84,7 +84,7 @@ export function Dashboard() {
     <div className="space-y-6">
       <div className="flex justify-between items-start gap-3 flex-wrap">
         <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
-        <div className="flex items-center gap-2 text-xs flex-wrap justify-end">
+        <div className="flex items-center gap-2 text-xs flex-wrap sm:justify-end">
           {!isLastSixMonths && (
             <button
               type="button"

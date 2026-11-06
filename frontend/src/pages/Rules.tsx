@@ -243,9 +243,9 @@ function RulesHeader({
   onCreate: () => void;
 }) {
   return (
-    <div className="flex items-baseline justify-between">
+    <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-3">
       <h1 className="text-2xl font-semibold tracking-tight">Rules</h1>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <label className="flex items-center gap-1.5 text-sm text-ink-600">
           <input type="checkbox" checked={showProposals} onChange={(e) => onShowProposals(e.target.checked)} />
           show proposals
@@ -310,40 +310,42 @@ function ActiveRulesTable({
           onClear={onClearSelection}
         />
       </div>
-      <table className="w-full text-sm">
-        <thead className="bg-ink-50 text-left">
-          <tr>
-            <th className="px-3 py-2 w-8">
-              <input type="checkbox" checked={allVisibleSelected} onChange={(e) => onSelectAll(e.target.checked ? rules.map((rule) => rule.id) : [])} />
-            </th>
-            <th className="px-3 py-2 w-16">Prio</th>
-            <th className="px-3 py-2">Name</th>
-            <th className="px-3 py-2">Pattern</th>
-            <th className="px-3 py-2">Sets</th>
-            <th className="px-3 py-2 w-24 text-right">Applied</th>
-            <th className="px-3 py-2 w-20"></th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-ink-100">
-          {rules.map((rule) => (
-            <ActiveRuleRow
-              key={rule.id}
-              rule={rule}
-              category={rule.set_category_id ? categoryById[rule.set_category_id] : null}
-              accountById={accountById}
-              selected={selectedRuleIds.has(rule.id)}
-              onToggleSelected={onToggleSelected}
-              onEdit={onEdit}
-              onDelete={onDelete}
-            />
-          ))}
-          {rules.length === 0 && (
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm min-w-[46rem]">
+          <thead className="bg-ink-50 text-left">
             <tr>
-              <td colSpan={7} className="p-8 text-center text-sm text-ink-500">No active rules yet.</td>
+              <th className="px-3 py-2 w-8">
+                <input type="checkbox" checked={allVisibleSelected} onChange={(e) => onSelectAll(e.target.checked ? rules.map((rule) => rule.id) : [])} />
+              </th>
+              <th className="px-3 py-2 w-16">Prio</th>
+              <th className="px-3 py-2">Name</th>
+              <th className="px-3 py-2">Pattern</th>
+              <th className="px-3 py-2">Sets</th>
+              <th className="px-3 py-2 w-24 text-right">Applied</th>
+              <th className="px-3 py-2 w-20"></th>
             </tr>
-          )}
-        </tbody>
-      </table>
+          </thead>
+          <tbody className="divide-y divide-ink-100">
+            {rules.map((rule) => (
+              <ActiveRuleRow
+                key={rule.id}
+                rule={rule}
+                category={rule.set_category_id ? categoryById[rule.set_category_id] : null}
+                accountById={accountById}
+                selected={selectedRuleIds.has(rule.id)}
+                onToggleSelected={onToggleSelected}
+                onEdit={onEdit}
+                onDelete={onDelete}
+              />
+            ))}
+            {rules.length === 0 && (
+              <tr>
+                <td colSpan={7} className="p-8 text-center text-sm text-ink-500">No active rules yet.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -969,7 +971,7 @@ function RuleEditor({
           )}
           <Field label="Notes"><textarea className="input min-h-[5rem]" value={r.notes ?? ""} onChange={(e) => setR({ ...r, notes: e.target.value })} /></Field>
         </div>
-        <div className="sticky bottom-0 z-10 -mx-6 mt-4 flex items-center gap-2 border-t border-ink-100 bg-white px-6 py-3">
+        <div className="sticky bottom-0 z-10 -mx-4 mt-4 flex flex-wrap items-center gap-2 border-t border-ink-100 bg-white px-4 py-3 sm:-mx-6 sm:px-6">
           <button type="submit" className="btn-primary">Save</button>
           <button type="button" className="btn" onClick={onClose}>Cancel</button>
         </div>

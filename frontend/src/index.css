@@ -51,6 +51,15 @@
   .table-row-hover {
     @apply hover:bg-ink-50;
   }
+  /* Horizontal swipe strips (the header tabs) scroll without showing a
+     scrollbar across the UI; the clipped last item is the affordance. */
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
   .kbd {
     @apply inline-block px-1.5 py-0.5 rounded border border-ink-200 bg-ink-50 font-mono text-[11px] text-ink-700;
   }

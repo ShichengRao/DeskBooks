@@ -26,7 +26,12 @@ function DateInput({
   return (
     <label className="flex items-center gap-1">
       <span className="text-ink-500">{label}</span>
-      <input type="date" className="input" value={value} onChange={(e) => onChange(e.target.value)} />
+      <input
+        type="date"
+        className="input max-w-[9.5rem]"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
     </label>
   );
 }

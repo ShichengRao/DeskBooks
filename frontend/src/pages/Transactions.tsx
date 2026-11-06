@@ -356,9 +356,9 @@ function TransactionsHeader({
   onCreate: () => void;
 }) {
   return (
-    <div className="flex items-baseline justify-between">
+    <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-3">
       <h1 className="text-2xl font-semibold tracking-tight">Transactions</h1>
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <div className="text-sm text-ink-500 tabular">
           {totalRows.toLocaleString()} matching · showing {showing} · expense {currency(-expensesSum)} · income {currency(incomeSum)}
         </div>
@@ -384,7 +384,7 @@ function TransactionFiltersCard({
 
   return (
     <div className="card p-3">
-      <div className="grid grid-cols-2 md:grid-cols-9 gap-2 items-end">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-9 gap-2 items-end">
         <Field label="Search">
           <input className="input" placeholder="merchant or description" value={filters.q} onChange={(e) => update({ q: e.target.value })} />
         </Field>
@@ -603,7 +603,7 @@ function TransactionsPagination({
   onPageSize: (size: number) => void;
 }) {
   return (
-    <div className="flex items-center justify-between text-sm">
+    <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
       <div className="flex items-center gap-2">
         <span className="text-ink-500">Page size</span>
         <select className="input max-w-[5rem]" value={pageSize} onChange={(e) => onPageSize(parseInt(e.target.value, 10))}>
@@ -612,7 +612,7 @@ function TransactionsPagination({
           ))}
         </select>
       </div>
-      <div className="flex items-center gap-2 tabular">
+      <div className="flex flex-wrap items-center gap-2 tabular">
         <button className="btn" disabled={page === 0} onClick={() => onPage(0)}>«</button>
         <button className="btn" disabled={page === 0} onClick={() => onPage(page - 1)}>‹ Prev</button>
         <span className="text-ink-600">Page {page + 1} of {totalPages.toLocaleString()}</span>

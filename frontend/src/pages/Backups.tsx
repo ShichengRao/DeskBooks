@@ -127,55 +127,57 @@ export function Backups() {
       </div>
 
       <div className="card overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-ink-50 text-left">
-            <tr>
-              <th className="px-3 py-2 font-medium">Created</th>
-              <th className="px-3 py-2 font-medium">Backup</th>
-              <th className="px-3 py-2 font-medium text-right">Size</th>
-              <th className="px-3 py-2 font-medium text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-ink-100">
-            {backups.data?.backups.map((backup) => (
-              <tr key={backup.name} className="table-row-hover">
-                <td className="px-3 py-2 whitespace-nowrap">{timestamp(backup.created_at)}</td>
-                <td className="px-3 py-2">
-                  <div className="font-medium">{backupName(backup.label)}</div>
-                  <div className="text-xs text-ink-500 font-mono break-all">{backup.name}</div>
-                </td>
-                <td className="px-3 py-2 text-right tabular">{formatBytes(backup.size_bytes)}</td>
-                <td className="px-3 py-2">
-                  <div className="flex justify-end gap-2">
-                    <button
-                      type="button"
-                      className="btn text-xs"
-                      onClick={() => restore(backup)}
-                      disabled={restoreBackup.isPending}
-                    >
-                      Restore
-                    </button>
-                    <button
-                      type="button"
-                      className="btn-danger text-xs"
-                      onClick={() => remove(backup)}
-                      disabled={deleteBackup.isPending || restoreBackup.isPending}
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-            {backups.data?.backups.length === 0 && (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[34rem]">
+            <thead className="bg-ink-50 text-left">
               <tr>
-                <td colSpan={4} className="px-3 py-8 text-center text-ink-500">
-                  No backups yet.
-                </td>
+                <th className="px-3 py-2 font-medium">Created</th>
+                <th className="px-3 py-2 font-medium">Backup</th>
+                <th className="px-3 py-2 font-medium text-right">Size</th>
+                <th className="px-3 py-2 font-medium text-right">Actions</th>
               </tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-ink-100">
+              {backups.data?.backups.map((backup) => (
+                <tr key={backup.name} className="table-row-hover">
+                  <td className="px-3 py-2 whitespace-nowrap">{timestamp(backup.created_at)}</td>
+                  <td className="px-3 py-2">
+                    <div className="font-medium">{backupName(backup.label)}</div>
+                    <div className="text-xs text-ink-500 font-mono break-all">{backup.name}</div>
+                  </td>
+                  <td className="px-3 py-2 text-right tabular">{formatBytes(backup.size_bytes)}</td>
+                  <td className="px-3 py-2">
+                    <div className="flex justify-end gap-2">
+                      <button
+                        type="button"
+                        className="btn text-xs"
+                        onClick={() => restore(backup)}
+                        disabled={restoreBackup.isPending}
+                      >
+                        Restore
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-danger text-xs"
+                        onClick={() => remove(backup)}
+                        disabled={deleteBackup.isPending || restoreBackup.isPending}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {backups.data?.backups.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="px-3 py-8 text-center text-ink-500">
+                    No backups yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {backups.data?.backups[0] && (

@@ -390,7 +390,7 @@ function GoalEditorActions({
   onDelete: () => void;
 }) {
   return (
-    <div className="sticky bottom-0 z-10 -mx-6 mt-4 flex items-center gap-2 border-t border-ink-100 bg-white px-6 py-3">
+    <div className="sticky bottom-0 z-10 -mx-4 mt-4 flex flex-wrap items-center gap-2 border-t border-ink-100 bg-white px-4 py-3 sm:-mx-6 sm:px-6">
       <button type="submit" className="btn-primary" disabled={savePending}>Save</button>
       <button type="button" className="btn" onClick={onClose}>Cancel</button>
       {goalId !== null && (
@@ -535,7 +535,7 @@ function EntryEditor({ entryId, goals, onClose }: { entryId: number | null; goal
             </Field>
           )}
         </div>
-        <div className="sticky bottom-0 z-10 -mx-6 mt-4 flex items-center gap-2 border-t border-ink-100 bg-white px-6 py-3">
+        <div className="sticky bottom-0 z-10 -mx-4 mt-4 flex flex-wrap items-center gap-2 border-t border-ink-100 bg-white px-4 py-3 sm:-mx-6 sm:px-6">
           <button type="submit" className="btn-primary" disabled={save.isPending}>
             Save
           </button>
@@ -701,7 +701,7 @@ function JournalImportPanel({ goals, onClose }: { goals: Goal[]; onClose: () => 
           ))}
         </div>
       </div>
-      <div className="sticky bottom-0 z-10 -mx-6 mt-4 flex items-center gap-2 border-t border-ink-100 bg-white px-6 py-3">
+      <div className="sticky bottom-0 z-10 -mx-4 mt-4 flex flex-wrap items-center gap-2 border-t border-ink-100 bg-white px-4 py-3 sm:-mx-6 sm:px-6">
         <button type="submit" className="btn-primary" disabled={save.isPending || !drafts.length || !entryDate}>
           Save {drafts.length || ""} entr{drafts.length === 1 ? "y" : "ies"}
         </button>

@@ -189,9 +189,9 @@ function AnalyticsHeader({
   onUseYear: () => void;
 }) {
   return (
-    <div className="flex items-baseline justify-between">
+    <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-3">
       <h1 className="text-2xl font-semibold tracking-tight">Analytics</h1>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <button className="btn" onClick={() => onYear(year - 1)}>←</button>
         <div className="font-medium text-lg tabular">{year}</div>
         <button className="btn" onClick={() => onYear(year + 1)}>→</button>
@@ -330,7 +330,7 @@ function MonthlyExpensesPanel({
 }) {
   return (
     <div className="card p-4">
-      <div className="flex items-baseline justify-between mb-2">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-2 mb-2">
         <div>
           <div className="text-sm font-medium">Monthly expenses by category</div>
           <div className="mt-2 flex items-center gap-2 text-xs flex-wrap">
@@ -400,7 +400,7 @@ function MonthlyExpenseChart({
 
 function CoverageDots({ coverage, start, end }: { coverage: CoverageMonth[]; start: string; end: string }) {
   return (
-    <div className="text-[11px] text-ink-500 flex items-center gap-1">
+    <div className="text-[11px] text-ink-500 flex flex-wrap items-center gap-1">
       <span>Data coverage:</span>
       <div className="flex items-center gap-0.5">
         {coverage.map((month) => (
@@ -519,14 +519,14 @@ function RecurringMerchantsHeader({
   return (
     <div className="flex items-baseline justify-between mb-2 gap-3 flex-wrap">
       <div className="text-sm font-medium">Recurring merchants</div>
-      <div className="flex items-center gap-2 text-xs">
+      <div className="flex flex-wrap items-center gap-2 text-xs">
         <label className="flex items-center gap-1">
           <span className="text-ink-500">From</span>
-          <input type="date" className="input" value={start} onChange={(e) => onStart(e.target.value)} />
+          <input type="date" className="input max-w-[9.5rem]" value={start} onChange={(e) => onStart(e.target.value)} />
         </label>
         <label className="flex items-center gap-1">
           <span className="text-ink-500">To</span>
-          <input type="date" className="input" value={end} onChange={(e) => onEnd(e.target.value)} />
+          <input type="date" className="input max-w-[9.5rem]" value={end} onChange={(e) => onEnd(e.target.value)} />
         </label>
         <label className="flex items-center gap-1">
           <span className="text-ink-500">Min occurrences</span>
@@ -546,30 +546,32 @@ function RecurringMerchantsHeader({
 
 function RecurringMerchantsTable({ merchants }: { merchants: RecurringMerchant[] }) {
   return (
-    <table className="w-full text-sm tabular">
-      <thead className="bg-ink-50">
-        <tr>
-          <th className="px-3 py-2 text-left">Merchant</th>
-          <th className="px-3 py-2 text-right">Count</th>
-          <th className="px-3 py-2 text-right">Avg</th>
-          <th className="px-3 py-2 text-right">Total</th>
-          <th className="px-3 py-2 text-right">Cadence (days)</th>
-        </tr>
-      </thead>
-      <tbody className="divide-y divide-ink-100">
-        {merchants.map((merchant) => (
-          <tr key={merchant.merchant}>
-            <td className="px-3 py-1.5">{merchant.merchant}</td>
-            <td className="px-3 py-1.5 text-right">{merchant.occurrences}</td>
-            <td className="px-3 py-1.5 text-right">{currency(merchant.avg_amount)}</td>
-            <td className="px-3 py-1.5 text-right">{currency(merchant.total_amount)}</td>
-            <td className="px-3 py-1.5 text-right">
-              {merchant.cadence_days_estimate ? merchant.cadence_days_estimate.toFixed(1) : "—"}
-            </td>
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm tabular min-w-[40rem]">
+        <thead className="bg-ink-50">
+          <tr>
+            <th className="px-3 py-2 text-left">Merchant</th>
+            <th className="px-3 py-2 text-right">Count</th>
+            <th className="px-3 py-2 text-right">Avg</th>
+            <th className="px-3 py-2 text-right">Total</th>
+            <th className="px-3 py-2 text-right">Cadence (days)</th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody className="divide-y divide-ink-100">
+          {merchants.map((merchant) => (
+            <tr key={merchant.merchant}>
+              <td className="px-3 py-1.5">{merchant.merchant}</td>
+              <td className="px-3 py-1.5 text-right">{merchant.occurrences}</td>
+              <td className="px-3 py-1.5 text-right">{currency(merchant.avg_amount)}</td>
+              <td className="px-3 py-1.5 text-right">{currency(merchant.total_amount)}</td>
+              <td className="px-3 py-1.5 text-right">
+                {merchant.cadence_days_estimate ? merchant.cadence_days_estimate.toFixed(1) : "—"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

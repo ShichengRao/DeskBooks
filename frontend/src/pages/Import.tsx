@@ -215,7 +215,7 @@ function StagedImportsPanel({
         </div>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full text-sm min-w-[44rem]">
           <thead className="bg-ink-50">
             <tr>
               <th className="px-3 py-2 text-left">File</th>
@@ -264,7 +264,7 @@ function StagedImportsPanel({
             {ignored.length} ignored file{ignored.length === 1 ? "" : "s"}
           </summary>
           <div className="overflow-x-auto mt-2">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm min-w-[44rem]">
               <tbody className="divide-y divide-ink-100">
                 {ignored.map((entry) => (
                   <StagedImportRow
@@ -534,7 +534,7 @@ function ImportPreviewPanel({
 function ImportPreviewTable({ preview }: { preview: ImportPreview }) {
   return (
     <div className="overflow-x-auto max-h-[60vh] border border-ink-200 rounded-md">
-      <table className="w-full text-xs tabular">
+      <table className="w-full text-xs tabular min-w-[46rem]">
         <thead className="bg-ink-50 sticky top-0">
           <tr>
             <th className="px-2 py-1.5 text-left">Date</th>
@@ -600,30 +600,32 @@ function PastImportsTable({
   onRollback: (id: number) => void;
 }) {
   return (
-    <table className="w-full text-sm">
-      <thead className="bg-ink-50">
-        <tr>
-          <th className="px-3 py-2 text-left">When</th>
-          <th className="px-3 py-2 text-left">File</th>
-          <th className="px-3 py-2 text-left">Account</th>
-          <th className="px-3 py-2 text-right" title="Imported as new transactions">Applied</th>
-          <th className="px-3 py-2 text-right" title="Rows that matched an existing transaction (skipped)">Skipped&nbsp;dups</th>
-          <th className="px-3 py-2 text-right" title="Total rows in the source file">Total&nbsp;rows</th>
-          <th className="px-3 py-2 text-left">Status</th>
-          <th className="px-3 py-2"></th>
-        </tr>
-      </thead>
-      <tbody className="divide-y divide-ink-100">
-        {batches.map((batch) => (
-          <PastImportRow
-            key={batch.id}
-            batch={batch}
-            account={accounts.find((account) => account.id === batch.account_id)}
-            onRollback={onRollback}
-          />
-        ))}
-      </tbody>
-    </table>
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm min-w-[46rem]">
+        <thead className="bg-ink-50">
+          <tr>
+            <th className="px-3 py-2 text-left">When</th>
+            <th className="px-3 py-2 text-left">File</th>
+            <th className="px-3 py-2 text-left">Account</th>
+            <th className="px-3 py-2 text-right" title="Imported as new transactions">Applied</th>
+            <th className="px-3 py-2 text-right" title="Rows that matched an existing transaction (skipped)">Skipped&nbsp;dups</th>
+            <th className="px-3 py-2 text-right" title="Total rows in the source file">Total&nbsp;rows</th>
+            <th className="px-3 py-2 text-left">Status</th>
+            <th className="px-3 py-2"></th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-ink-100">
+          {batches.map((batch) => (
+            <PastImportRow
+              key={batch.id}
+              batch={batch}
+              account={accounts.find((account) => account.id === batch.account_id)}
+              onRollback={onRollback}
+            />
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
