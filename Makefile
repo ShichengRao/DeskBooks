@@ -1,7 +1,7 @@
 PORT ?= $(or $(FRONTEND_PORT),5173)
 API_PORT ?= $(or $(BACKEND_PORT),$(if $(filter 5173,$(PORT)),8765,8766))
 
-.PHONY: dev backend frontend open bootstrap install fetch-preview fetch-apply test test-automation api-contract-python api-contract-check lint format typecheck build clean reset-db
+.PHONY: dev backend frontend open bootstrap install fetch-preview fetch-apply fetch-balances fetch-transactions test test-automation api-contract-python api-contract-check lint format typecheck build clean reset-db
 
 dev:
 	./run.sh --port "$(PORT)" --api-port "$(API_PORT)" $(if $(DATA_DIR),--data-dir "$(DATA_DIR)")
@@ -15,6 +15,15 @@ fetch-preview:
 
 fetch-apply:
 	DESKBOOKS_IMPORT_APPLY=1 automation/bin/run-fetch.sh
+
+# Halves of a fetch, for a schedule that wants the balance mark stamped on
+# the day it belongs to and the month's rows a few days later, once the card
+# transactions that post late have landed.
+fetch-balances:
+	DESKBOOKS_FETCH_ONLY=balances automation/bin/run-fetch.sh
+
+fetch-transactions:
+	DESKBOOKS_FETCH_ONLY=transactions automation/bin/run-fetch.sh
 
 bootstrap:
 	cd backend && uv run python -m app.bootstrap

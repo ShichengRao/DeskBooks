@@ -255,8 +255,10 @@ old ones — and spends another of your ten Trial Items. New Items can take
 ## Running
 
 ```sh
-make fetch-preview   # fetch + stage + preview (writes nothing to the DB)
-make fetch-apply     # fetch + stage + backup + apply
+make fetch-preview        # fetch + stage + preview (writes nothing to the DB)
+make fetch-apply          # fetch + stage + backup + apply
+make fetch-balances       # the balance half only
+make fetch-transactions   # the transaction half only
 ```
 
 Under the hood `automation/bin/run-fetch.sh` runs the fetchers and then
@@ -264,9 +266,43 @@ Under the hood `automation/bin/run-fetch.sh` runs the fetchers and then
 latest run. Useful importer flags: `--manifest`, `--staging-dir`, `--state`,
 `--source`, `--apply`, `--no-backup`.
 
+### Fetching one half at a time
+
+`run-fetchers.mjs --only balances|transactions` narrows a run to one entry
+kind, and `run-fetch.sh` passes `DESKBOOKS_FETCH_ONLY` through to it. Both
+halves read the same config, so there is no second config file to keep in
+step and no mapping to edit between runs.
+
+The two halves suit different days. A net-worth mark belongs to the day it
+is taken, so balances are worth reading while that day is still current.
+Rows are the opposite: card transactions commonly post a day or three after
+they clear, so a run on the first of the month misses the tail of the month
+before. Reading balances on the day the mark belongs to and rows a few days
+later gets both right:
+
+```sh
+# on the day the mark belongs to
+DESKBOOKS_FETCH_ONLY=balances automation/bin/run-fetch.sh
+# a few days later, for the same month's rows
+DESKBOOKS_FETCH_ONLY=transactions automation/bin/run-fetch.sh
+```
+
+The later run is safe to overlap: its lookback re-covers the whole window
+and the importer counts anything already staged as a duplicate, so only the
+late arrivals come through as new.
+
+Per-account `"balances": false` and `"transactions": false` still apply
+inside whichever half runs, and a source left with nothing to stage for that
+half is skipped rather than failed — so a source that only ever produces
+rows costs a `--only balances` run nothing but a log line.
+
 There is no built-in scheduler; run the make targets when you want fresh
-data, or wire `make fetch-apply` into cron/launchd yourself if you want it
-periodic.
+data, or wire them into cron/launchd yourself if you want it periodic. A
+`launchd` agent that fires daily and returns early unless the calendar day
+is one it wants keeps the chosen days in the script, where changing them
+does not mean reinstalling the agent. `StartCalendarInterval` is wall-clock,
+so on a daylight-saving changeover the job can fire an hour off — harmless
+for a day-grained schedule, but worth knowing before depending on the hour.
 
 ## Verifying the automation layer
 

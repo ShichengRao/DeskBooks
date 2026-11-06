@@ -170,3 +170,118 @@ test("defaults staging under PFA_DATA_DIR when config sets no stagingDir", async
     );
   }
 });
+
+// --only splits one config across two runs: the balance mark on the day it
+// belongs to, the month's rows a few days later once late postings land.
+test("--only balances keeps the balance mark and drops the rows", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "deskbooks-runner-"));
+  const stagingDir = path.join(dir, "staging");
+  const configPath = await writeConfig(dir, {
+    stagingDir,
+    profile: "personal",
+    sources: [
+      {
+        name: "json_connector",
+        browser: false,
+        module: path.join(here, "..", "fetchers", "example-json-connector.mjs"),
+        fixturePath: fixtureBundle,
+      },
+    ],
+  });
+
+  const { entries, failures } = await runFetchers({ configPath, only: "balances" });
+  assert.equal(failures.length, 0);
+  assert.deepEqual(
+    entries.map((e) => e.kind),
+    ["balances"],
+  );
+
+  // The manifest the importer reads is narrowed too, not just the return value.
+  const latest = await readJsonl(path.join(stagingDir, "latest-manifest.jsonl"));
+  assert.deepEqual(
+    latest.map((e) => e.kind),
+    ["balances"],
+  );
+});
+
+test("--only transactions keeps the rows and drops the balance mark", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "deskbooks-runner-"));
+  const stagingDir = path.join(dir, "staging");
+  const configPath = await writeConfig(dir, {
+    stagingDir,
+    profile: "personal",
+    sources: [
+      {
+        name: "json_connector",
+        browser: false,
+        module: path.join(here, "..", "fetchers", "example-json-connector.mjs"),
+        fixturePath: fixtureBundle,
+      },
+    ],
+  });
+
+  const { entries, failures } = await runFetchers({ configPath, only: "transactions" });
+  assert.equal(failures.length, 0);
+  assert.ok(entries.length > 0);
+  assert.ok(entries.every((e) => e.kind === "statement"));
+
+  const latest = await readJsonl(path.join(stagingDir, "latest-manifest.jsonl"));
+  assert.ok(latest.every((e) => e.kind === "statement"));
+});
+
+test("--only skips a source with nothing of that kind instead of failing it", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "deskbooks-runner-"));
+  const stagingDir = path.join(dir, "staging");
+  const rowsOnly = path.join(dir, "rows-only.mjs");
+  await writeFile(
+    rowsOnly,
+    `import { writeFile } from "node:fs/promises";
+import path from "node:path";
+export async function fetch({ downloadsDir }) {
+  const file = path.join(downloadsDir, "statement.csv");
+  await writeFile(file, "Date,Description,Amount\\n2026-07-01,COFFEE,-4.50\\n");
+  return { files: [file] };
+}
+`,
+  );
+  const configPath = await writeConfig(dir, {
+    stagingDir,
+    profile: "personal",
+    sources: [
+      {
+        name: "rows_only",
+        browser: false,
+        module: rowsOnly,
+        accountId: 7,
+        importerName: "running_balance_bank",
+      },
+      {
+        name: "json_connector",
+        browser: false,
+        module: path.join(here, "..", "fetchers", "example-json-connector.mjs"),
+        fixturePath: fixtureBundle,
+      },
+    ],
+  });
+
+  // A source with no balance to mark is narrowed to nothing. That is a skip,
+  // not a failure — failing it would bury the source that did produce.
+  const { entries, failures } = await runFetchers({ configPath, only: "balances" });
+  assert.equal(failures.length, 0);
+  assert.deepEqual(
+    entries.map((e) => e.source),
+    ["json_connector"],
+  );
+  assert.deepEqual(
+    entries.map((e) => e.kind),
+    ["balances"],
+  );
+});
+
+test("rejects an --only value that names no kind", async () => {
+  // Validated before the config is read, so a typo costs no fetching.
+  await assert.rejects(
+    runFetchers({ configPath: path.join(tmpdir(), "nonexistent.json"), only: "balance" }),
+    /only must be balances or transactions, got: balance/,
+  );
+});
