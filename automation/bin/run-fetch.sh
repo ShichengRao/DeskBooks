@@ -19,8 +19,14 @@ CONFIG="${DESKBOOKS_FETCH_CONFIG:-$ROOT/automation/config.local.json}"
 DEFAULT_STAGING_DIR="${PFA_DATA_DIR:-$HOME/Library/Application Support/DeskBooks}/import-staging"
 
 cd "$ROOT/automation"
+# DESKBOOKS_FETCH_ONLY splits a run by kind, so the balance mark for a month
+# and that month's transaction rows can be fetched on different days.
+FETCH_ARGS=()
+if [[ -n "${DESKBOOKS_FETCH_ONLY:-}" ]]; then
+  FETCH_ARGS+=(--only "$DESKBOOKS_FETCH_ONLY")
+fi
 # No npm install needed: the connector layer has zero dependencies.
-node src/run-fetchers.mjs --config "$CONFIG"
+node src/run-fetchers.mjs --config "$CONFIG" ${FETCH_ARGS[@]+"${FETCH_ARGS[@]}"}
 
 IMPORT_ARGS=()
 if [[ -n "${DESKBOOKS_IMPORT_MANIFEST:-}" ]]; then

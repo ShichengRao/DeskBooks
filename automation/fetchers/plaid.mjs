@@ -35,7 +35,9 @@
  *
  * "balances": false stages the account's transactions but never its
  * balance, keeping it out of the net-worth series. "transactions": false
- * is the mirror — balance only, no rows.
+ * is the mirror — balance only, no rows. Both are per-account and
+ * permanent; `--only balances|transactions` is the per-run equivalent, for
+ * splitting one config across two days.
  *
  * "investments": true additionally reads /investments/transactions/get,
  * which is where brokerages, IRAs, 401(k)s and donor-advised funds report
@@ -334,18 +336,10 @@ async function readSecretFile(configDir, rawPath) {
   return value;
 }
 
-export async function fetch({ source, config, profile = null, downloadsDir }) {
-  const mappings = validateSource(source);
-  const base = plaidHost(source.environment || "sandbox");
-  const clientId = await readSecretFile(config.__dir, source.clientIdPath);
-  const secret = await readSecretFile(config.__dir, source.secretPath);
-  const accessToken = await readSecretFile(config.__dir, source.accessTokenPath);
-  const http = { allowedHosts: PLAID_HOSTS };
-  const auth = { client_id: clientId, secret, access_token: accessToken };
-
-  const startDate = isoDaysAgo(source.lookbackDays ?? 90);
-  const today = localIsoDate(new Date());
-
+// Mirrors fetchInvestmentTransactions: one page loop behind one call site,
+// so an --only run can skip this half without threading a flag through the
+// paging itself.
+async function fetchTransactions({ base, auth, http, startDate, endDate, sourceName }) {
   const transactions = [];
   let total = Infinity;
   while (transactions.length < total && transactions.length < MAX_TRANSACTIONS) {
@@ -354,7 +348,7 @@ export async function fetch({ source, config, profile = null, downloadsDir }) {
       {
         ...auth,
         start_date: startDate,
-        end_date: today,
+        end_date: endDate,
         options: { count: PAGE_SIZE, offset: transactions.length },
       },
       http,
@@ -367,13 +361,37 @@ export async function fetch({ source, config, profile = null, downloadsDir }) {
   }
   if (transactions.length >= MAX_TRANSACTIONS && transactions.length < total) {
     console.warn(
-      `[plaid] ${source.name}: capped at ${MAX_TRANSACTIONS} of ${total} transactions; shorten lookbackDays to cover the rest`,
+      `[plaid] ${sourceName}: capped at ${MAX_TRANSACTIONS} of ${total} transactions; shorten lookbackDays to cover the rest`,
     );
   }
+  return transactions;
+}
 
+export async function fetch({ source, config, profile = null, downloadsDir, only = null }) {
+  const mappings = validateSource(source);
+  const base = plaidHost(source.environment || "sandbox");
+  const clientId = await readSecretFile(config.__dir, source.clientIdPath);
+  const secret = await readSecretFile(config.__dir, source.secretPath);
+  const accessToken = await readSecretFile(config.__dir, source.accessTokenPath);
+  const http = { allowedHosts: PLAID_HOSTS };
+  const auth = { client_id: clientId, secret, access_token: accessToken };
+
+  const startDate = isoDaysAgo(source.lookbackDays ?? 90);
+  const today = localIsoDate(new Date());
+
+  // An --only run skips the other half's calls outright instead of fetching
+  // and discarding: /transactions/get pages through the whole lookback, the
+  // first /investments/transactions/get on an Item is slow, and
+  // /accounts/balance/get asks the institution for a live refresh and fails
+  // for its own reasons. Neither half should carry the other's latency or
+  // failure surface.
+  const wantTransactions = only !== "balances";
+  const wantBalances = only !== "transactions";
+
+  let transactions = [];
   let investments = { transactions: [], securities: [] };
-  if (source.investments === true) {
-    investments = await fetchInvestmentTransactions({
+  if (wantTransactions) {
+    transactions = await fetchTransactions({
       base,
       auth,
       http,
@@ -381,20 +399,34 @@ export async function fetch({ source, config, profile = null, downloadsDir }) {
       endDate: today,
       sourceName: source.name,
     });
+    if (source.investments === true) {
+      investments = await fetchInvestmentTransactions({
+        base,
+        auth,
+        http,
+        startDate,
+        endDate: today,
+        sourceName: source.name,
+      });
+    }
   }
 
-  const balancesResponse = await httpsPostJson(`${base}/accounts/balance/get`, { ...auth }, http);
   const accountsById = {};
-  for (const account of balancesResponse.accounts ?? []) {
-    accountsById[account.account_id] = account;
-  }
+  if (wantBalances) {
+    const balancesResponse = await httpsPostJson(`${base}/accounts/balance/get`, { ...auth }, http);
+    for (const account of balancesResponse.accounts ?? []) {
+      accountsById[account.account_id] = account;
+    }
 
-  const mappedIds = new Set(mappings.map((m) => m.plaidAccountId));
-  for (const account of balancesResponse.accounts ?? []) {
-    if (!mappedIds.has(account.account_id)) {
-      console.log(
-        `[plaid] ${source.name}: skipping unmapped account ${account.account_id} (${account.name ?? "?"} …${account.mask ?? "????"})`,
-      );
+    // Only worth saying on the run that reads balances: an unmapped account
+    // is one the net-worth mark is missing, which is where it would be felt.
+    const mappedIds = new Set(mappings.map((m) => m.plaidAccountId));
+    for (const account of balancesResponse.accounts ?? []) {
+      if (!mappedIds.has(account.account_id)) {
+        console.log(
+          `[plaid] ${source.name}: skipping unmapped account ${account.account_id} (${account.name ?? "?"} …${account.mask ?? "????"})`,
+        );
+      }
     }
   }
 
@@ -404,7 +436,9 @@ export async function fetch({ source, config, profile = null, downloadsDir }) {
   // Turning investments on covers every account in the Item, and a
   // retirement plan's dividend reinvestments are rarely worth importing
   // just to reach the one account whose activity you wanted.
-  const stagedMappings = mappings.filter((mapping) => mapping.transactions !== false);
+  const stagedMappings = wantTransactions
+    ? mappings.filter((mapping) => mapping.transactions !== false)
+    : [];
   for (const [deskbooksAccountId, plaidIds] of groupMappings(stagedMappings)) {
     const idSet = new Set(plaidIds);
     const invertAmounts = source.invertAmounts === true;
@@ -439,7 +473,7 @@ export async function fetch({ source, config, profile = null, downloadsDir }) {
     });
   }
 
-  const balanceRows = normalizePlaidBalances({ mappings, accountsById });
+  const balanceRows = wantBalances ? normalizePlaidBalances({ mappings, accountsById }) : [];
   if (balanceRows.length) {
     const stagedBalances = buildStagedBalances({ asOf: today, rows: balanceRows, profile });
     const balancesPath = await writeStagedFile(

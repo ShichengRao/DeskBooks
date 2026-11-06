@@ -15,10 +15,22 @@ const repoRoot = path.resolve(automationRoot, "..");
 
 export const ENTRY_KINDS = new Set(["statement", "balances"]);
 
+// `--only` splits one config across two runs by entry kind. A net-worth
+// mark wants balances stamped on the day it belongs to, while the rows for
+// that same month are better fetched a few days later, once the card
+// transactions that post 1-3 days late have arrived. The flag speaks in the
+// words a config uses ("transactions") rather than the manifest's kind
+// ("statement"), so the two stay translatable in one place.
+export const ONLY_KINDS = new Map([
+  ["balances", "balances"],
+  ["transactions", "statement"],
+]);
+
 function parseArgs(argv) {
   const args = {
     config: process.env.DESKBOOKS_FETCH_CONFIG || path.join(automationRoot, "config.local.json"),
     source: null,
+    only: null,
   };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -30,6 +42,10 @@ function parseArgs(argv) {
       args.source = argv[++i];
     } else if (arg.startsWith("--source=")) {
       args.source = arg.slice("--source=".length);
+    } else if (arg === "--only") {
+      args.only = argv[++i];
+    } else if (arg.startsWith("--only=")) {
+      args.only = arg.slice("--only=".length);
     } else {
       throw new Error(`unknown argument: ${arg}`);
     }
@@ -134,7 +150,7 @@ function validateEntry(source, entry) {
   }
 }
 
-async function runSource(config, source) {
+async function runSource(config, source, only) {
   const modulePath = resolveFrom(config.__dir, source.module);
   const fetcher = await import(pathToFileURL(modulePath).href);
   if (typeof fetcher.fetch !== "function") {
@@ -153,10 +169,23 @@ async function runSource(config, source) {
     downloadsDir,
     automationRoot,
     repoRoot,
+    only,
   });
-  const staged = normalizeEntries(source, result);
+  // The kind filter is enforced here rather than trusted to each fetcher: a
+  // fetcher may read `only` to skip the other half's calls, but one that
+  // ignores it still cannot put the wrong kind in the manifest.
+  const produced = normalizeEntries(source, result);
+  const wantedKind = only ? ONLY_KINDS.get(only) : null;
+  const staged = wantedKind ? produced.filter((item) => item.kind === wantedKind) : produced;
   if (staged.length === 0) {
-    throw new Error(`${source.name}: fetcher returned no files`);
+    if (!only) {
+      throw new Error(`${source.name}: fetcher returned no files`);
+    }
+    // Narrowing a source to nothing is a skip, not a failure: a source can
+    // have no balance to mark, or no rows to stage, and failing it here
+    // would bury the sources that did produce.
+    console.log(`[fetch] ${source.name}: nothing to stage for --only ${only}`);
+    return [];
   }
 
   const entries = [];
@@ -182,7 +211,10 @@ async function runSource(config, source) {
   return entries;
 }
 
-export async function runFetchers({ configPath, sourceFilter = null } = {}) {
+export async function runFetchers({ configPath, sourceFilter = null, only = null } = {}) {
+  if (only != null && !ONLY_KINDS.has(only)) {
+    throw new Error(`only must be ${[...ONLY_KINDS.keys()].join(" or ")}, got: ${only}`);
+  }
   const config = await loadConfig(configPath);
   const enabledSources = (config.sources ?? []).filter((source) => {
     if (source.enabled === false) {
@@ -203,12 +235,15 @@ export async function runFetchers({ configPath, sourceFilter = null } = {}) {
   // and the latest manifest is still written for whatever succeeded.
   for (const source of enabledSources) {
     try {
-      const entries = await runSource(config, source);
+      const entries = await runSource(config, source, only);
       runEntries.push(...entries);
     } catch (error) {
       failures.push({ source: source.name, error });
       console.error(`[fetch] ${source.name} failed: ${error.message}`);
     }
+  }
+  if (only && runEntries.length === 0 && failures.length === 0) {
+    console.warn(`[fetch] nothing matched --only ${only}; the latest manifest is empty`);
   }
   const latestManifestPath = await writeLatestManifest(stagingDirFor(config), runEntries);
   console.log(`[fetch] latest manifest: ${latestManifestPath}`);
@@ -220,6 +255,7 @@ async function main() {
   const { entries, failures } = await runFetchers({
     configPath: args.config,
     sourceFilter: args.source,
+    only: args.only,
   });
   if (failures.length > 0) {
     const names = failures.map((f) => f.source).join(", ");
