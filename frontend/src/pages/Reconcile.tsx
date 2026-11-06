@@ -97,21 +97,23 @@ function SectionTable({
         </span>
         <span className="text-ink-500 text-xs whitespace-nowrap">{countLabel}</span>
       </div>
-      <table className="w-full text-sm tabular">
-        <thead className="bg-ink-50 text-left">
-          <tr>{headers}</tr>
-        </thead>
-        <tbody className="divide-y divide-ink-100">
-          {children}
-          {isEmpty && (
-            <tr>
-              <td colSpan={emptyColSpan} className="p-6 text-center text-ink-500 italic">
-                {emptyText}
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm tabular min-w-[44rem]">
+          <thead className="bg-ink-50 text-left">
+            <tr>{headers}</tr>
+          </thead>
+          <tbody className="divide-y divide-ink-100">
+            {children}
+            {isEmpty && (
+              <tr>
+                <td colSpan={emptyColSpan} className="p-6 text-center text-ink-500 italic">
+                  {emptyText}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -307,7 +309,7 @@ export function Reconcile() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-baseline justify-between">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">Splits & netting</h1>
         <div className="text-sm text-ink-500">
           Track shared expenses, and net out refunds and reversals.

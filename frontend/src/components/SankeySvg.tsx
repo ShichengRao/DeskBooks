@@ -318,81 +318,85 @@ export function SankeySvg({
   }, [data, height, width]);
 
   return (
-    <svg
-      viewBox={`0 0 ${width} ${height}`}
-      style={{ width: "100%", height: "auto", fontFamily: "inherit" }}
-      role="img"
-      aria-label="Sankey diagram"
-    >
-      {layout.ribbons.map(({ link, s, t, h0, h1, y0, y1 }, i) => {
-        const x0 = s.x + NODE_W;
-        const x1 = t.x;
-        const mx = (x0 + x1) / 2;
-        const color = colorAt(colors, s.index);
-        return (
-          <path
-            key={`ribbon-${i}`}
-            d={`M${x0},${y0} C${mx},${y0} ${mx},${y1} ${x1},${y1} L${x1},${y1 + h1} C${mx},${y1 + h1} ${mx},${y0 + h0} ${x0},${y0 + h0} Z`}
-            fill={color}
-            opacity={0.32}
-            stroke={SURFACE}
-            strokeWidth={1}
-          >
-            <title>{`${s.name} → ${t.name} · $${fmt(link.value)}`}</title>
-          </path>
-        );
-      })}
-      {layout.nodes.map((node) => {
-        const color = colorAt(colors, node.index);
-        const first = node.depth === 0;
-        // Terminal nodes label to the right even when they end early
-        // (e.g. a residual bucket beside a column of pass-through hubs).
-        const last = node.depth === layout.maxDepth || node.terminal;
-        const middle = !first && !last;
-        const cy = node.y + node.h / 2;
-        const inline = node.h < 34;
-        const singleLine = inline || (!first && node.depth !== layout.maxDepth);
-        return (
-          <g
-            key={node.index}
-            onClick={onFocus ? () => onFocus(node.name) : undefined}
-            style={onFocus ? { cursor: "pointer" } : undefined}
-          >
-            <rect x={node.x} y={node.y} width={NODE_W} height={node.h} rx={3} fill={color}>
-              <title>{`${node.name} · $${fmt(node.value)}`}</title>
-            </rect>
-            {middle && (!inline || layout.labelMode[node.index] === "title") ? (
-              <text x={node.x + NODE_W / 2} y={Math.max(node.y - 8, 12)} textAnchor="middle" fontSize={12.5} fontWeight={600} fill={INK}>
-                {node.name}
-                <tspan fontWeight={400} fill={INK2}>{` $${fmt(node.value)}`}</tspan>
-              </text>
-            ) : singleLine ? (
-              <text
-                x={first || middle ? node.x - 8 : node.x + NODE_W + 8}
-                y={layout.labelY[node.index]}
-                textAnchor={first || middle ? "end" : "start"}
-                fontSize={12.5}
-                fontWeight={600}
-                fill={INK}
-              >
-                {node.name}
-                {layout.labelMode[node.index] !== "name" && (
-                  <tspan fontWeight={400} fontSize={11.5} fill={INK2}>{` $${fmt(node.value)}`}</tspan>
-                )}
-              </text>
-            ) : (
-              <>
-                <text x={first ? node.x - 8 : node.x + NODE_W + 8} y={cy - 3} textAnchor={first ? "end" : "start"} fontSize={12.5} fontWeight={600} fill={INK}>
+    // Five levels of labels stop being readable much below ~40rem, so on a
+    // narrow screen the diagram keeps its size and the card scrolls instead.
+    <div className="overflow-x-auto">
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        style={{ width: "100%", minWidth: "40rem", height: "auto", fontFamily: "inherit" }}
+        role="img"
+        aria-label="Sankey diagram"
+      >
+        {layout.ribbons.map(({ link, s, t, h0, h1, y0, y1 }, i) => {
+          const x0 = s.x + NODE_W;
+          const x1 = t.x;
+          const mx = (x0 + x1) / 2;
+          const color = colorAt(colors, s.index);
+          return (
+            <path
+              key={`ribbon-${i}`}
+              d={`M${x0},${y0} C${mx},${y0} ${mx},${y1} ${x1},${y1} L${x1},${y1 + h1} C${mx},${y1 + h1} ${mx},${y0 + h0} ${x0},${y0 + h0} Z`}
+              fill={color}
+              opacity={0.32}
+              stroke={SURFACE}
+              strokeWidth={1}
+            >
+              <title>{`${s.name} → ${t.name} · $${fmt(link.value)}`}</title>
+            </path>
+          );
+        })}
+        {layout.nodes.map((node) => {
+          const color = colorAt(colors, node.index);
+          const first = node.depth === 0;
+          // Terminal nodes label to the right even when they end early
+          // (e.g. a residual bucket beside a column of pass-through hubs).
+          const last = node.depth === layout.maxDepth || node.terminal;
+          const middle = !first && !last;
+          const cy = node.y + node.h / 2;
+          const inline = node.h < 34;
+          const singleLine = inline || (!first && node.depth !== layout.maxDepth);
+          return (
+            <g
+              key={node.index}
+              onClick={onFocus ? () => onFocus(node.name) : undefined}
+              style={onFocus ? { cursor: "pointer" } : undefined}
+            >
+              <rect x={node.x} y={node.y} width={NODE_W} height={node.h} rx={3} fill={color}>
+                <title>{`${node.name} · $${fmt(node.value)}`}</title>
+              </rect>
+              {middle && (!inline || layout.labelMode[node.index] === "title") ? (
+                <text x={node.x + NODE_W / 2} y={Math.max(node.y - 8, 12)} textAnchor="middle" fontSize={12.5} fontWeight={600} fill={INK}>
                   {node.name}
+                  <tspan fontWeight={400} fill={INK2}>{` $${fmt(node.value)}`}</tspan>
                 </text>
-                <text x={first ? node.x - 8 : node.x + NODE_W + 8} y={cy + 12} textAnchor={first ? "end" : "start"} fontSize={11.5} fill={INK2}>
-                  ${fmt(node.value)}
+              ) : singleLine ? (
+                <text
+                  x={first || middle ? node.x - 8 : node.x + NODE_W + 8}
+                  y={layout.labelY[node.index]}
+                  textAnchor={first || middle ? "end" : "start"}
+                  fontSize={12.5}
+                  fontWeight={600}
+                  fill={INK}
+                >
+                  {node.name}
+                  {layout.labelMode[node.index] !== "name" && (
+                    <tspan fontWeight={400} fontSize={11.5} fill={INK2}>{` $${fmt(node.value)}`}</tspan>
+                  )}
                 </text>
-              </>
-            )}
-          </g>
-        );
-      })}
-    </svg>
+              ) : (
+                <>
+                  <text x={first ? node.x - 8 : node.x + NODE_W + 8} y={cy - 3} textAnchor={first ? "end" : "start"} fontSize={12.5} fontWeight={600} fill={INK}>
+                    {node.name}
+                  </text>
+                  <text x={first ? node.x - 8 : node.x + NODE_W + 8} y={cy + 12} textAnchor={first ? "end" : "start"} fontSize={11.5} fill={INK2}>
+                    ${fmt(node.value)}
+                  </text>
+                </>
+              )}
+            </g>
+          );
+        })}
+      </svg>
+    </div>
   );
 }

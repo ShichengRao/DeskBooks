@@ -42,58 +42,60 @@ export function TransactionsTable({
 }) {
   return (
     <div className="card overflow-hidden">
-      <table className="w-full text-sm tabular">
-        <thead className="bg-ink-50 text-left">
-          <tr>
-            <th className="px-2 py-2 w-8">
-              <input
-                type="checkbox"
-                checked={selection.size === txs.length && txs.length > 0}
-                onChange={(e) => onSelectAll(e.target.checked ? txs.map((tx) => tx.id) : [])}
-              />
-            </th>
-            <th className="px-2 py-2 w-24">Date</th>
-            <th className="px-2 py-2">Description</th>
-            <th className="px-2 py-2 w-36">Account</th>
-            <th className="px-2 py-2 w-44">Category</th>
-            <th className="px-2 py-2 w-32">Kind</th>
-            <th className="px-2 py-2 w-32">Split</th>
-            <th className="px-2 py-2 w-32 text-right">Amount</th>
-            <th className="px-2 py-2 w-16"></th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-ink-100">
-          {loading && <TableMessage>Loading…</TableMessage>}
-          {txs.map((tx) => (
-            <TransactionRow
-              key={tx.id}
-              tx={tx}
-              account={accountById[tx.account_id]}
-              category={tx.category_id ? categoryById[tx.category_id] : null}
-              categoryGroups={categoryGroups}
-              selected={selection.has(tx.id)}
-              editingCategory={editingCategoryTxId === tx.id}
-              deletePending={deletePending}
-              onToggleSelection={onToggleSelection}
-              onEditCategory={onEditCategory}
-              onUpdateCategory={onUpdateCategory}
-              onEditSplit={onEditSplit}
-              onEdit={onEdit}
-              onDelete={onDelete}
-            />
-          ))}
-          {!loading && txs.length === 0 && <TableMessage>No transactions match these filters.</TableMessage>}
-        </tbody>
-        {txs.length > 0 && (
-          <tfoot className="bg-ink-50">
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm tabular min-w-[60rem]">
+          <thead className="bg-ink-50 text-left">
             <tr>
-              <td colSpan={7} className="px-2 py-2 text-right text-ink-500">Page total (signed)</td>
-              <td className="px-2 py-2 text-right font-semibold">{currency(total)}</td>
-              <td></td>
+              <th className="px-2 py-2 w-8">
+                <input
+                  type="checkbox"
+                  checked={selection.size === txs.length && txs.length > 0}
+                  onChange={(e) => onSelectAll(e.target.checked ? txs.map((tx) => tx.id) : [])}
+                />
+              </th>
+              <th className="px-2 py-2 w-24">Date</th>
+              <th className="px-2 py-2">Description</th>
+              <th className="px-2 py-2 w-36">Account</th>
+              <th className="px-2 py-2 w-44">Category</th>
+              <th className="px-2 py-2 w-32">Kind</th>
+              <th className="px-2 py-2 w-32">Split</th>
+              <th className="px-2 py-2 w-32 text-right">Amount</th>
+              <th className="px-2 py-2 w-16"></th>
             </tr>
-          </tfoot>
-        )}
-      </table>
+          </thead>
+          <tbody className="divide-y divide-ink-100">
+            {loading && <TableMessage>Loading…</TableMessage>}
+            {txs.map((tx) => (
+              <TransactionRow
+                key={tx.id}
+                tx={tx}
+                account={accountById[tx.account_id]}
+                category={tx.category_id ? categoryById[tx.category_id] : null}
+                categoryGroups={categoryGroups}
+                selected={selection.has(tx.id)}
+                editingCategory={editingCategoryTxId === tx.id}
+                deletePending={deletePending}
+                onToggleSelection={onToggleSelection}
+                onEditCategory={onEditCategory}
+                onUpdateCategory={onUpdateCategory}
+                onEditSplit={onEditSplit}
+                onEdit={onEdit}
+                onDelete={onDelete}
+              />
+            ))}
+            {!loading && txs.length === 0 && <TableMessage>No transactions match these filters.</TableMessage>}
+          </tbody>
+          {txs.length > 0 && (
+            <tfoot className="bg-ink-50">
+              <tr>
+                <td colSpan={7} className="px-2 py-2 text-right text-ink-500">Page total (signed)</td>
+                <td className="px-2 py-2 text-right font-semibold">{currency(total)}</td>
+                <td></td>
+              </tr>
+            </tfoot>
+          )}
+        </table>
+      </div>
     </div>
   );
 }
@@ -132,7 +134,7 @@ function TransactionRow({
       <td className="px-2 py-1.5">
         <input type="checkbox" checked={selected} onChange={() => onToggleSelection(tx.id)} />
       </td>
-      <td className="px-2 py-1.5 text-ink-600">
+      <td className="px-2 py-1.5 text-ink-600 whitespace-nowrap">
         {dateLabel(tx.date)}
         {tx.budget_date && (
           // A reassigned row has to say so, or the budget it feeds looks

@@ -322,9 +322,9 @@ function NetWorthHeader({
   onNewSnapshot: () => void;
 }) {
   return (
-    <div className="flex items-baseline justify-between">
+    <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-3">
       <h1 className="text-2xl font-semibold tracking-tight">Net Worth</h1>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <label className="flex items-center gap-1 text-sm text-ink-600">
           <input type="checkbox" checked={showLog} onChange={(e) => onShowLog(e.target.checked)} />
           log scale
@@ -410,7 +410,7 @@ function WorkbookImportPanel({ onClose, onImported }: { onClose: () => void; onI
           </div>
         )}
       </div>
-      <div className="sticky bottom-0 z-10 -mx-6 mt-4 flex items-center gap-2 border-t border-ink-100 bg-white px-6 py-3">
+      <div className="sticky bottom-0 z-10 -mx-4 mt-4 flex flex-wrap items-center gap-2 border-t border-ink-100 bg-white px-4 py-3 sm:-mx-6 sm:px-6">
         <button type="submit" className="btn-primary" disabled={save.isPending || !path.trim()}>
           Import workbook
         </button>
@@ -654,7 +654,7 @@ function NetWorthSnapshotsTable({
 }) {
   return (
     <div className="card overflow-x-auto">
-      <table className="text-sm w-full tabular">
+      <table className="text-sm w-full tabular min-w-[52rem]">
         <thead className="bg-ink-50">
           <tr>
             <th className="px-3 py-2 text-left">Snapshot</th>
@@ -960,7 +960,7 @@ function SnapshotEditor({
               <div className="space-y-1">
                 {accs.map((a) => (
                   <div key={a.id} className="flex items-center gap-2">
-                    <div className="flex-1 text-sm flex items-center gap-1.5">
+                    <div className="flex-1 min-w-0 text-sm flex flex-wrap items-baseline gap-x-1.5">
                       <span className={a.is_closed ? "text-ink-400 italic" : ""}>{a.name}</span>
                       {a.institution && (
                         <span className="text-xs text-ink-400">· {a.institution}</span>
@@ -1005,7 +1005,7 @@ function SnapshotEditor({
           <div className="label">Sum of entered balances</div>
           <div className="text-lg font-semibold tabular">{currency(total)}</div>
         </div>
-        <div className="sticky bottom-0 z-10 -mx-6 mt-4 flex items-center gap-2 border-t border-ink-100 bg-white px-6 py-3">
+        <div className="sticky bottom-0 z-10 -mx-4 mt-4 flex flex-wrap items-center gap-2 border-t border-ink-100 bg-white px-4 py-3 sm:-mx-6 sm:px-6">
           <button type="submit" className="btn-primary" disabled={save.isPending}>
             Save snapshot
           </button>
@@ -1136,7 +1136,7 @@ function AccountEditor({
       <Field label="Notes">
         <textarea className="input min-h-24" value={form.notes ?? ""} onChange={(e) => update("notes", e.target.value)} />
       </Field>
-      <div className="sticky bottom-0 z-10 -mx-6 mt-4 flex items-center gap-2 border-t border-ink-100 bg-white px-6 py-3">
+      <div className="sticky bottom-0 z-10 -mx-4 mt-4 flex flex-wrap items-center gap-2 border-t border-ink-100 bg-white px-4 py-3 sm:-mx-6 sm:px-6">
         <button type="submit" className="btn-primary" disabled={save.isPending || !form.name.trim()}>
           Save account
         </button>
@@ -1218,7 +1218,7 @@ function BulkAccountEditor({
         </button>
       </div>
       <div className="space-y-2">
-        <div className="grid grid-cols-[1fr_1fr_9rem_9rem_2rem] gap-2 label">
+        <div className="hidden sm:grid grid-cols-[1fr_1fr_9rem_9rem_2rem] gap-2 label">
           <span>Name</span>
           <span>Institution</span>
           <span>Category</span>
@@ -1226,7 +1226,11 @@ function BulkAccountEditor({
           <span />
         </div>
         {rows.map((row, index) => (
-          <div key={index} className="grid grid-cols-[1fr_1fr_9rem_9rem_2rem] gap-2 items-center">
+          <div
+            key={index}
+            className="grid grid-cols-1 gap-2 rounded-md border border-ink-100 p-2
+              sm:grid-cols-[1fr_1fr_9rem_9rem_2rem] sm:items-center sm:rounded-none sm:border-0 sm:p-0"
+          >
             <input
               className="input"
               value={row.name}
@@ -1236,6 +1240,7 @@ function BulkAccountEditor({
             <input
               className="input"
               value={row.institution}
+              placeholder="Institution"
               onChange={(e) => update(index, "institution", e.target.value)}
             />
             <select
@@ -1258,7 +1263,7 @@ function BulkAccountEditor({
             </select>
             <button
               type="button"
-              className="btn-ghost text-ink-400"
+              className="btn-ghost justify-self-end text-ink-400"
               title="Remove row"
               onClick={() => setRows((prev) => prev.filter((_, i) => i !== index))}
               disabled={rows.length === 1}
@@ -1273,7 +1278,7 @@ function BulkAccountEditor({
           + Add row
         </button>
       </div>
-      <div className="sticky bottom-0 z-10 -mx-6 mt-4 flex items-center gap-2 border-t border-ink-100 bg-white px-6 py-3">
+      <div className="sticky bottom-0 z-10 -mx-4 mt-4 flex flex-wrap items-center gap-2 border-t border-ink-100 bg-white px-4 py-3 sm:-mx-6 sm:px-6">
         <button type="submit" className="btn-primary" disabled={save.isPending || filled.length === 0}>
           Create {filled.length || ""} account{filled.length === 1 ? "" : "s"}
         </button>

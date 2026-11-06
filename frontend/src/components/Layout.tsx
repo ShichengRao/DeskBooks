@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { NavLink, Outlet } from "react-router";
+import { useEffect, useRef, useState } from "react";
+import { NavLink, Outlet, useLocation } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
 import { api, getTabProfile, PROFILE_GONE_EVENT, setTabProfile } from "../api/client";
@@ -25,6 +25,8 @@ const tabs: { to: string; label: string; end?: boolean; group?: "view" | "edit" 
 
 export function Layout() {
   const queryClient = useQueryClient();
+  const navRef = useRef<HTMLElement>(null);
+  const location = useLocation();
   const [profileEditorOpen, setProfileEditorOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   // The profile this tab is pinned to (per-tab via sessionStorage). Every
@@ -113,6 +115,13 @@ export function Layout() {
     onError: surfaceError,
   });
 
+  // Below the `nav` breakpoint the tab strip scrolls sideways, so the tab
+  // you are actually on can start off-screen. Bring it into view.
+  useEffect(() => {
+    const active = navRef.current?.querySelector("[aria-current='page']");
+    active?.scrollIntoView({ block: "nearest", inline: "center" });
+  }, [location.pathname]);
+
   const stopApp = async () => {
     if (!confirm("Stop the local app servers?")) return;
     try {
@@ -166,13 +175,13 @@ export function Layout() {
   return (
     <div className="min-h-full flex flex-col">
       <header className="border-b border-ink-200 bg-white">
-        <div className="px-6 py-3 flex items-center gap-6">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 sm:gap-x-6 sm:px-6">
           <div className="font-semibold text-ink-900 tracking-tight">DeskBooks</div>
           <div className="relative text-xs text-ink-600">
             <span className="sr-only">Profile</span>
             <button
               type="button"
-              className="input flex min-w-40 items-center justify-between gap-3 py-1 text-left text-xs"
+              className="input flex min-w-32 items-center justify-between gap-3 py-1 text-left text-xs sm:min-w-40"
               disabled={profiles.isLoading || profileBusy}
               onClick={() => setProfileMenuOpen((open) => !open)}
               title="Local profile"
@@ -235,14 +244,18 @@ export function Layout() {
               </div>
             )}
           </div>
-          <nav className="flex items-center gap-1 text-sm">
+          <nav
+            ref={navRef}
+            className="no-scrollbar order-last -mx-4 flex w-full items-center gap-1 overflow-x-auto px-4 text-sm
+              sm:-mx-6 sm:px-6 nav:order-none nav:mx-0 nav:w-auto nav:overflow-visible nav:px-0"
+          >
             {tabs.map((t, i) => {
               // Visual gap between the "view" group and the "edit" group so
               // the data-entry workflows feel like their own zone.
               const prev = tabs[i - 1];
               const showDivider = prev && prev.group !== t.group;
               return (
-                <span key={t.to} className="flex items-center gap-1">
+                <span key={t.to} className="flex shrink-0 items-center gap-1">
                   {showDivider && (
                     <span className="mx-1 h-5 w-px bg-ink-200" aria-hidden />
                   )}
@@ -251,7 +264,7 @@ export function Layout() {
                     end={t.end}
                     className={({ isActive }) =>
                       clsx(
-                        "px-3 py-1.5 rounded-md transition-colors",
+                        "whitespace-nowrap px-3 py-1.5 rounded-md transition-colors",
                         isActive
                           ? "bg-brand-100 text-brand-800"
                           : "text-ink-600 hover:bg-ink-100 hover:text-ink-900",
@@ -266,7 +279,7 @@ export function Layout() {
           </nav>
           <button
             type="button"
-            className="btn-ghost ml-auto text-xs text-bad-600 hover:bg-bad-500/10"
+            className="btn-ghost ml-auto shrink-0 text-xs text-bad-600 hover:bg-bad-500/10"
             onClick={stopApp}
           >
             Stop app
@@ -274,8 +287,8 @@ export function Layout() {
         </div>
       </header>
       {goneProfile && (
-        <div className="flex items-center gap-3 border-b border-bad-500/30 bg-bad-500/10 px-6 py-2 text-sm text-bad-700">
-          <span className="flex-1">
+        <div className="flex flex-wrap items-center gap-3 border-b border-bad-500/30 bg-bad-500/10 px-4 py-2 text-sm text-bad-700 sm:px-6">
+          <span className="flex-1 min-w-0">
             This window was on <strong>{profileName(goneProfile)}</strong>, but that profile no
             longer exists (deleted in another window?).
           </span>
@@ -291,7 +304,7 @@ export function Layout() {
           </button>
         </div>
       )}
-      <main className="flex-1 p-6 max-w-[1600px] w-full mx-auto">
+      <main className="flex-1 p-4 sm:p-6 max-w-[1600px] w-full mx-auto">
         <Outlet />
       </main>
       {profileEditorOpen && (
@@ -376,7 +389,7 @@ function ProfileEditor({
           </Field>
         )}
       </div>
-      <div className="sticky bottom-0 z-10 -mx-6 mt-4 flex items-center gap-2 border-t border-ink-100 bg-white px-6 py-3">
+      <div className="sticky bottom-0 z-10 -mx-4 mt-4 flex flex-wrap items-center gap-2 border-t border-ink-100 bg-white px-4 py-3 sm:-mx-6 sm:px-6">
         <button type="submit" className="btn-primary" disabled={isSaving || !canSubmit}>
           Create profile
         </button>

@@ -43,7 +43,7 @@ export function SidePanel({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className={clsx("bg-white w-full h-full overflow-y-auto p-6 shadow-xl", maxWidth)}>
+      <div className={clsx("bg-white w-full h-full overflow-y-auto p-4 sm:p-6 shadow-xl", maxWidth)}>
         {onSubmit ? (
           <form
             onSubmit={(e) => {

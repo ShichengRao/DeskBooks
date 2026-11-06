@@ -3,6 +3,12 @@ export default {
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
   theme: {
     extend: {
+      screens: {
+        // The brand, profile picker, full tab strip and "Stop app" need
+        // ~1370px side by side. Below that the tabs get their own row,
+        // as a strip that scrolls sideways.
+        nav: "1440px",
+      },
       fontFamily: {
         sans: [
           "Inter",
