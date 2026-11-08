@@ -25,6 +25,7 @@ from .routers import (
     settings,
     snapshots,
     transactions,
+    trips,
 )
 
 
@@ -112,3 +113,4 @@ app.include_router(goals.router)
 app.include_router(journal.router)
 app.include_router(imports.router)
 app.include_router(analytics.router)
+app.include_router(trips.router)

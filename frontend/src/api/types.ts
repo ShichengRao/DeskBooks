@@ -540,3 +540,157 @@ export interface RecurringMerchant {
   cadence_days_estimate: number | null;
   is_expense: boolean;
 }
+
+/** How a category takes part in trips. Declared once, reused by every
+ *  later trip. `advance` also looks for the category before a trip
+ *  began, which is how flights bought months ahead get found. */
+export type TripCategoryRule = "skip" | "include" | "advance";
+
+export interface TripCategoryPolicy {
+  category_id: number;
+  policy: TripCategoryRule;
+}
+
+export interface TripLeg {
+  id: number;
+  trip_id: number;
+  place: string;
+  start_date: string;
+  end_date: string;
+  sort_order: number;
+  notes: string | null;
+}
+
+export interface Trip {
+  id: number;
+  name: string;
+  start_date: string;
+  end_date: string;
+  notes: string | null;
+  archived: boolean;
+  legs: TripLeg[];
+}
+
+/** A trip cost with no transaction behind it — cash, a fare, someone
+ *  else's card. Positive for money out. */
+export interface TripItem {
+  id: number;
+  trip_id: number;
+  leg_id: number | null;
+  category_id: number | null;
+  label: string;
+  amount: string;
+  date: string | null;
+  notes: string | null;
+}
+
+export interface TripLegReport {
+  id: number;
+  place: string;
+  start_date: string;
+  end_date: string;
+  nights: number;
+  total: string;
+  per_night: string | null;
+}
+
+export interface TripCategoryReport {
+  category_id: number | null;
+  category_name: string;
+  total: string;
+  /** Keyed by leg id as a string, so one object is one matrix row. */
+  by_leg: Record<string, string>;
+  unassigned: string;
+}
+
+export interface TripReportRow {
+  kind: "transaction" | "item";
+  transaction_id: number | null;
+  item_id: number | null;
+  date: string | null;
+  label: string;
+  category_id: number | null;
+  category_name: string | null;
+  leg_id: number | null;
+  amount: string;
+  share: string | null;
+  personal_share: string | null;
+  spend: string;
+  notes: string | null;
+}
+
+export interface TripReport {
+  trip_id: number;
+  nights: number;
+  total: string;
+  per_night: string | null;
+  expense_count: number;
+  item_count: number;
+  legs: TripLegReport[];
+  unassigned_total: string;
+  categories: TripCategoryReport[];
+  rows: TripReportRow[];
+}
+
+export interface TripDetail {
+  trip: Trip;
+  items: TripItem[];
+  report: TripReport;
+}
+
+export interface TripSummary {
+  trip: Trip;
+  nights: number;
+  total: string;
+  per_night: string | null;
+  expense_count: number;
+  item_count: number;
+}
+
+export interface TripCandidateTransaction {
+  id: number;
+  date: string;
+  description: string;
+  amount: string;
+  spend: string;
+  personal_share: string | null;
+}
+
+export type TripCandidateBucketName =
+  | "pre_booking"
+  | "proposed"
+  | "standing_charge"
+  | "home_life";
+
+/** Repeats collapsed into one decision: seven taxi rides is one yes. */
+export interface TripCandidateGroup {
+  key: string;
+  bucket: TripCandidateBucketName;
+  reason: string;
+  merchant: string;
+  category_id: number | null;
+  category_name: string | null;
+  occurrences: number;
+  total: string;
+  first_date: string;
+  last_date: string;
+  transactions: TripCandidateTransaction[];
+}
+
+/** A category with no trip policy yet, plus the hint that settles it:
+ *  something charged in every month of data is home life. */
+export interface TripUndecidedCategory {
+  category_id: number;
+  category_name: string;
+  months_charged: number;
+  months_observed: number;
+}
+
+export interface TripCandidates {
+  trip_id: number;
+  lookback_days: number;
+  lookback_start: string;
+  groups: TripCandidateGroup[];
+  undecided_categories: TripUndecidedCategory[];
+  summary: Record<string, { transactions: number; total: string }>;
+}

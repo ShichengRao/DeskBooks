@@ -54,7 +54,7 @@ deskbooks/
 │   │   └── routers/           # one router per concept
 │   │       (accounts, transactions, categories, rules, snapshots,
 │   │        goals, journal, budgets, imports, backups, profiles,
-│   │        settings, analytics)
+│   │        settings, analytics, trips)
 │   ├── scripts/
 │   │   └── seed_demo_profile.py  # synthetic demo/family personas
 │   ├── data/                  # gitignored development data only
@@ -65,7 +65,7 @@ deskbooks/
 │   │   ├── App.tsx
 │   │   ├── api/               # typed fetch wrappers (+ per-tab profile pin)
 │   │   ├── pages/             # Dashboard, Transactions, NetWorth,
-│   │   │                      # Planning, Budgets, Analytics, Import,
+│   │   │                      # Planning, Budgets, Trips, Analytics, Import,
 │   │   │                      # Reconcile (Splits & netting), Rules,
 │   │   │                      # Organize, Backups
 │   │   ├── components/        # incl. SankeySvg
@@ -125,6 +125,35 @@ Tag, TransactionTag (m2m)
 TransactionSplit
   transaction_id (PK/FK), group_name, personal_share (0..1), notes
   -- shared expenses: analytics count amount * personal_share
+
+Trip
+  id, name, start_date, end_date, notes, archived, created_at,
+  updated_at
+
+TripLeg
+  id, trip_id, place, start_date, end_date, sort_order, notes
+  -- a stop. Legs need not tile the trip: a travel day between two
+     stays belongs to neither.
+
+TripExpense
+  transaction_id (PK/FK), trip_id, leg_id (nullable), share
+  (0..1, default 1), notes
+  -- `transaction_id` is the PK, so a row belongs to at most one trip;
+     that is what lets the candidate search skip rows another trip has
+     claimed, and stops two overlapping trips counting the same charge.
+     `share` is the trip's own fraction and is independent of
+     `TransactionSplit.personal_share` — a row that is both shared and
+     partly trip-related multiplies the two.
+
+TripItem
+  id, trip_id, leg_id (nullable), category_id (nullable), label,
+  amount (POSITIVE = money out), date (nullable), notes
+  -- a cost with no transaction behind it. There is no account here
+     whose sign convention it could inherit, hence the flipped sign.
+
+TripCategoryPolicy
+  category_id (PK/FK), policy[skip|include|advance], updated_at
+  -- no row = undecided (still proposed, and the review screen asks).
 
 Rule
   id, name, priority, is_active, match_account_id (nullable),
@@ -304,6 +333,22 @@ PUT    /api/budgets/overrides
 DELETE /api/budgets/defaults/{id}
 DELETE /api/budgets/overrides/{id}
 
+GET    /api/trips?include_archived=
+POST   /api/trips
+GET    /api/trips/policies
+PUT    /api/trips/policies               # category rules, reused by every trip
+GET    /api/trips/{id}
+PATCH  /api/trips/{id}
+DELETE /api/trips/{id}                   # transactions are untouched
+GET    /api/trips/{id}/candidates?lookback_days=
+PUT    /api/trips/{id}/expenses          # add/remove/retarget membership
+POST   /api/trips/{id}/legs
+PATCH  /api/trips/{id}/legs/{leg_id}
+DELETE /api/trips/{id}/legs/{leg_id}
+POST   /api/trips/{id}/items
+PATCH  /api/trips/{id}/items/{item_id}
+DELETE /api/trips/{id}/items/{item_id}
+
 GET    /api/analytics/monthly?start=&end=
 GET    /api/analytics/sankey?year=       # or ?start=&end=
 GET    /api/analytics/recurring          # merchant frequency detection
@@ -416,6 +461,64 @@ turns a recurring merchant into a rule.
 - Restoring a backup disposes the active DB engine, saves a pre-restore
   snapshot, replaces the active profile DB, removes SQLite sidecar files, and
   reinitializes tables.
+
+## Trips
+
+A trip is a named journey plus the spending that belongs to it. The
+membership is an **explicit set** rather than a stored date filter, and
+that is the whole design decision:
+
+- A window over-captures. Rent, insurance and subscriptions bill whether
+  you are home or not, and payroll, transfers and card payments inside
+  the dates are money moving rather than money spent.
+- A window under-captures. Flights and hotels are routinely bought
+  months before departure.
+- An explicit set also stays stable. Recategorizing a row later cannot
+  silently change what a finished trip cost, and the row list makes the
+  total checkable.
+
+So `trips.py` proposes and explains; the user confirms. Proposal runs in
+four passes:
+
+1. **Spend only** — expense-kind rows plus uncategorized outflows.
+   Linked pairs, hidden rows and rows another trip has claimed drop out.
+2. **Category policy** — `TripCategoryPolicy` records, per category,
+   whether it is home life (`skip`), ordinary trip spending (`include`),
+   or bought ahead (`advance`). Only `advance` categories are searched
+   in the run-up to the trip, which is what keeps a lookback from
+   dragging in a whole season of unrelated spending. Categories with no
+   policy yet are still proposed and reported back, so the review screen
+   can ask once and remember the answer.
+3. **Standing charges** — merchants that bill on a schedule and would
+   have billed at home too. Average spacing alone does not identify
+   them: a shop visited every couple of weeks has the same mean gap as a
+   monthly bill. The separator is *regularity* — the coefficient of
+   variation of the intervals — with a second clause for the pass bought
+   at ragged times for an identical price. A cadence floor keeps daily
+   merchants (coffee, fares, delivery) out of the test entirely, since
+   on a trip those rows are the trip.
+4. **Grouping** — repeats collapse per merchant and category, so a
+   fortnight of taxi rides is one decision rather than fourteen.
+
+Category policy is deliberately user-declared rather than inferred.
+Merchant-frequency detection cannot see rent at all when the description
+carries a per-payment reference — every payment looks like a first — and
+the frequency signal it *can* see would suppress exactly the taxi and
+delivery rows a trip is made of. The month-presence figure the review
+screen shows is a hint for the user, not a decision the code makes.
+
+Legs are optional and need not tile the trip. A row is filed on the leg
+whose dates contain it; travel days and pre-bookings stay on the trip
+without a leg rather than being forced into the nearest one. Adding a
+leg files the rows it covers that are not already filed somewhere, since
+reviewing the spending and *then* splitting it by place is the normal
+order. An explicit assignment is never second-guessed.
+
+Totals follow `budgets.py`: `-(amount * personal_share) * share`,
+quantized per row so the rows a trip lists add up to the total it
+reports. Rows can also be filed from the Transactions table, and that
+path refuses the same kinds the proposal never offers — an inflow filed
+onto a trip would be negated into a discount.
 
 ## Sankey
 

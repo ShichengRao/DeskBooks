@@ -108,6 +108,14 @@ class GoalStatus(enum.StrEnum):
     paused = "paused"
 
 
+class TripCategoryRule(enum.StrEnum):
+    """How a category takes part in trips. See `TripCategoryPolicy`."""
+
+    skip = "skip"  # home life; never proposed, however well the dates fit
+    include = "include"  # proposed when it falls inside the trip's dates
+    advance = "advance"  # proposed inside the dates AND in the run-up to them
+
+
 class ImportStatus(enum.StrEnum):
     preview = "preview"
     applied = "applied"
@@ -254,6 +262,164 @@ class TransactionSplit(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     transaction: Mapped[Transaction] = relationship(back_populates="split")
+
+
+class Trip(Base):
+    """A named journey and the spending that belongs to it.
+
+    Membership is an explicit set (`TripExpense`), not a stored date
+    filter. A window both over-captures and under-captures: rent,
+    insurance and subscriptions keep billing while you are away, and the
+    flights were bought months before you left. So the window only ever
+    proposes candidates and the user confirms, which also makes the total
+    stable — recategorizing a row later cannot silently change what a
+    finished trip cost.
+
+    Legs are optional. A trip with none still totals by category; adding
+    them breaks that same total down by place.
+    """
+
+    __tablename__ = "trips"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(160))
+    start_date: Mapped[date] = mapped_column(Date, index=True)
+    end_date: Mapped[date] = mapped_column(Date)
+    notes: Mapped[str | None] = mapped_column(Text)
+    archived: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+    legs: Mapped[list[TripLeg]] = relationship(
+        back_populates="trip",
+        cascade="all, delete-orphan",
+        order_by="TripLeg.sort_order, TripLeg.start_date",
+    )
+    expenses: Mapped[list[TripExpense]] = relationship(
+        back_populates="trip", cascade="all, delete-orphan"
+    )
+    items: Mapped[list[TripItem]] = relationship(
+        back_populates="trip", cascade="all, delete-orphan"
+    )
+
+
+class TripLeg(Base):
+    """One stop on a trip: where you were, and when.
+
+    Legs may not cover the whole trip and may not be contiguous — the
+    travel days between two stays belong to neither. A transaction is
+    assigned to the leg whose dates contain it, and anything left over
+    (every pre-booking, and spend on a travel day) sits on the trip
+    without a leg rather than being forced into one.
+    """
+
+    __tablename__ = "trip_legs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    trip_id: Mapped[int] = mapped_column(ForeignKey("trips.id", ondelete="CASCADE"), index=True)
+    place: Mapped[str] = mapped_column(String(120))
+    start_date: Mapped[date] = mapped_column(Date)
+    end_date: Mapped[date] = mapped_column(Date)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    notes: Mapped[str | None] = mapped_column(Text)
+
+    trip: Mapped[Trip] = relationship(back_populates="legs")
+
+
+class TripExpense(Base):
+    """A transaction counted toward a trip.
+
+    `transaction_id` is the primary key, so a row belongs to at most one
+    trip. That is what lets the candidate search skip anything another
+    trip already claimed, and it keeps two overlapping trips from each
+    counting the same charge.
+
+    `share` is the trip's own fraction of the row — the toothpaste inside
+    a larger drugstore order. It is a separate axis from
+    `TransactionSplit.personal_share`, which is the roommate one, and a
+    row that is both shared and partly trip-related multiplies the two.
+    """
+
+    __tablename__ = "trip_expenses"
+
+    transaction_id: Mapped[int] = mapped_column(
+        ForeignKey("transactions.id", ondelete="CASCADE"), primary_key=True
+    )
+    trip_id: Mapped[int] = mapped_column(ForeignKey("trips.id", ondelete="CASCADE"), index=True)
+    leg_id: Mapped[int | None] = mapped_column(ForeignKey("trip_legs.id", ondelete="SET NULL"))
+    share: Mapped[Decimal] = mapped_column(Numeric(5, 4), default=Decimal("1"))
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    trip: Mapped[Trip] = relationship(back_populates="expenses")
+    transaction: Mapped[Transaction] = relationship()
+
+
+class TripItem(Base):
+    """A trip cost with no transaction behind it.
+
+    Cash, a friend's card, a fare paid in coins — the things a written
+    trip budget contains and the ledger never saw. Without these the trip
+    total cannot match the number you work out by hand, which is what
+    would stop you trusting it.
+
+    `amount` is positive for money out, unlike `Transaction.amount`:
+    there is no account here whose sign convention it could inherit.
+    """
+
+    __tablename__ = "trip_items"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    trip_id: Mapped[int] = mapped_column(ForeignKey("trips.id", ondelete="CASCADE"), index=True)
+    leg_id: Mapped[int | None] = mapped_column(ForeignKey("trip_legs.id", ondelete="SET NULL"))
+    category_id: Mapped[int | None] = mapped_column(
+        ForeignKey("categories.id", ondelete="SET NULL")
+    )
+    label: Mapped[str] = mapped_column(String(160))
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    date: Mapped[date | None] = mapped_column(Date)
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    trip: Mapped[Trip] = relationship(back_populates="items")
+
+
+class TripCategoryPolicy(Base):
+    """Whether a category is ever proposed as trip spend.
+
+    Rent, utilities, insurance and subscriptions bill whether you are
+    home or not, so they are never trip spend however neatly they fall
+    inside the dates. Merchant-frequency detection cannot find them —
+    rent descriptions carry a per-payment reference, so every payment
+    looks like a first — but the category always can.
+
+    The decision is declared once and reused by every later trip, which
+    is what keeps the second trip to a couple of clicks. No row at all
+    means undecided: the category is still proposed, and the review
+    screen asks about it. `include` records "I have decided this one
+    counts", so it stops asking.
+
+    `advance` additionally looks for the category before the trip began.
+    Which categories get bought ahead is the one thing no amount of
+    arithmetic can work out — a flight charged in January for a trip in
+    May is indistinguishable from a flight taken in January — so the
+    user says it once, per category, and every later trip reuses it.
+    """
+
+    __tablename__ = "trip_category_policies"
+
+    category_id: Mapped[int] = mapped_column(
+        ForeignKey("categories.id", ondelete="CASCADE"), primary_key=True
+    )
+    policy: Mapped[TripCategoryRule] = mapped_column(
+        SAEnum(TripCategoryRule, name="trip_category_rule"),
+        default=TripCategoryRule.skip,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
 
 
 class Rule(Base):
@@ -528,6 +694,12 @@ __all__ = [
     "TransactionKind",
     "Tag",
     "TransactionTag",
+    "Trip",
+    "TripLeg",
+    "TripExpense",
+    "TripItem",
+    "TripCategoryPolicy",
+    "TripCategoryRule",
     "Rule",
     "NetWorthSnapshot",
     "AccountBalance",

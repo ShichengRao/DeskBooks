@@ -6,7 +6,14 @@ import { Field } from "../components/Field";
 import { SidePanel } from "../components/SidePanel";
 import { TransactionsTable } from "../components/TransactionsTable";
 import { ALL_KINDS, useVisibleKinds } from "../lib/kinds";
-import type { Account, AccountCategory, Category, Transaction, TransactionKind } from "../api/types";
+import type {
+  Account,
+  AccountCategory,
+  Category,
+  Transaction,
+  TransactionKind,
+  TripSummary,
+} from "../api/types";
 import { accountCategoryLabel, transactionKindLabel } from "../lib/labels";
 import { currency } from "../lib/fmt";
 
@@ -70,6 +77,24 @@ export function Transactions() {
   } = useTransactionPageData(filters, page, pageSize);
   const { updateTx, createTx, editTx, bulkUpdate, setSplit, deleteTx, bulkDelete, pairTx } =
     useTransactionMutations({ qc, setCreatingTx, setEditingTx, setEditingSplit, setSelection });
+  // The other door into a trip: pick rows here and file them, instead of
+  // starting from the trip's dates.
+  const trips = useQuery({
+    queryKey: ["trips"],
+    queryFn: () => api.get<TripSummary[]>("/api/trips"),
+  });
+  const addToTrip = useMutation({
+    mutationFn: ({ tripId, ids }: { tripId: number; ids: number[] }) =>
+      api.put(`/api/trips/${tripId}/expenses`, {
+        expenses: ids.map((id) => ({ transaction_id: id })),
+      }),
+    onSuccess: () => {
+      setSelection(new Set());
+      qc.invalidateQueries({ queryKey: ["trips"] });
+      qc.invalidateQueries({ queryKey: ["trip"] });
+    },
+    onError: (error: Error) => alert(error.message),
+  });
 
   const toggleSelection = (id: number) => {
     setSelection((s) => {
@@ -112,6 +137,9 @@ export function Transactions() {
         onPair={() => pairTx.mutate(selectedIds)}
         onMarkSplit={() => setEditingSplit("bulk")}
         onClear={() => setSelection(new Set())}
+        trips={trips.data ?? []}
+        pendingTrip={addToTrip.isPending}
+        onAddToTrip={(tripId) => addToTrip.mutate({ tripId, ids: selectedIds })}
       />
       <TransactionsTable
         txs={txs}
@@ -495,6 +523,29 @@ function describePairability(
   return { blocked: null, hint };
 }
 
+// Which kinds a trip can count, mirroring the backend. Money moving —
+// payroll, transfers, card payments, contributions — would be negated
+// into a discount and quietly reduce what a trip cost, so the picker
+// says so up front instead of letting the API refuse after the click.
+const TRIP_COUNTABLE_KINDS: ReadonlySet<TransactionKind> = new Set<TransactionKind>([
+  "expense",
+  "uncategorized",
+  "refund",
+  "reimbursement",
+]);
+
+function describeTripEligibility(selectedTxs: Transaction[]): { blocked: string | null; hint: string } {
+  const hint = "File these rows under a trip, so they count toward what it cost.";
+  const ineligible = selectedTxs.filter((t) => !TRIP_COUNTABLE_KINDS.has(t.kind));
+  if (ineligible.length > 0) {
+    return {
+      blocked: `${ineligible.length} of these ${ineligible.length === 1 ? "is" : "are"} money moving rather than spending. A trip counts expenses, refunds and reimbursements.`,
+      hint,
+    };
+  }
+  return { blocked: null, hint };
+}
+
 function BulkTransactionActions({
   selectedIds,
   selectedTxs,
@@ -506,6 +557,9 @@ function BulkTransactionActions({
   onPair,
   onMarkSplit,
   onClear,
+  trips,
+  pendingTrip,
+  onAddToTrip,
 }: {
   selectedIds: number[];
   selectedTxs: Transaction[];
@@ -517,11 +571,15 @@ function BulkTransactionActions({
   onPair: () => void;
   onMarkSplit: () => void;
   onClear: () => void;
+  trips: TripSummary[];
+  pendingTrip: boolean;
+  onAddToTrip: (tripId: number) => void;
 }) {
   const visibleKinds = useVisibleKinds();
   if (selectedIds.length === 0) return null;
 
   const pairability = describePairability(selectedIds, selectedTxs);
+  const tripEligibility = describeTripEligibility(selectedTxs);
 
   return (
     <div className="card p-3 flex items-center gap-3 bg-brand-50 border-brand-200">
@@ -573,6 +631,24 @@ function BulkTransactionActions({
       >
         Link as pair
       </button>
+      {trips.length > 0 && (
+        <select
+          className="input max-w-xs"
+          disabled={pendingTrip || tripEligibility.blocked !== null}
+          title={tripEligibility.blocked ?? tripEligibility.hint}
+          onChange={(e) => {
+            if (!e.target.value) return;
+            onAddToTrip(parseInt(e.target.value, 10));
+            e.target.value = "";
+          }}
+          defaultValue=""
+        >
+          <option value="" disabled>Add to trip…</option>
+          {trips.map((summary) => (
+            <option key={summary.trip.id} value={summary.trip.id}>{summary.trip.name}</option>
+          ))}
+        </select>
+      )}
       <button className="btn" onClick={onMarkSplit}>Mark split</button>
       <button className="btn" onClick={() => onBulkUpdate({ clear_split: true })}>Clear split</button>
       <button

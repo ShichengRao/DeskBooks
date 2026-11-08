@@ -94,6 +94,36 @@ amount-at-retirement-age readout when the target isn't reached.
 Set default category targets, add month-specific overrides, and compare
 planned spending with actual expense transactions across a range.
 
+### Trips
+
+Name a journey and confirm what it cost. A trip holds an explicit set of
+transactions rather than a saved date filter, because a date window is
+wrong in both directions: rent, insurance and subscriptions keep billing
+while you are away, and the flights were bought months before you left.
+
+The dates propose and you confirm. The review screen groups what it
+found and says why each group is there:
+
+- things bought ahead, in categories you marked as booked in advance
+- spending inside the dates
+- standing charges, which bill on a schedule and would have billed at
+  home too
+- categories you keep out of trips altogether
+
+Repeats collapse into one decision, so a fortnight of taxi rides is a
+single yes rather than fourteen. The two judgements no arithmetic can
+make — which categories are home life, which get booked ahead — are
+answered once per category and reused by every later trip.
+
+Stops are optional. Without them a trip totals by category; add them and
+the same total breaks down per place, with a cost-per-night for each.
+Costs the ledger never saw (cash, a fare, someone else's card) can be
+added by hand, and part of a charge can count toward the trip when only
+part of it was the trip's.
+
+Rows can also be filed from the Transactions table: select them and pick
+a trip.
+
 ### Analytics
 
 Explore spending and money flow:
