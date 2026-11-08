@@ -8,7 +8,7 @@ from datetime import date as _date
 from datetime import datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .models import (
     AccountCategory,
@@ -19,7 +19,6 @@ from .models import (
     ImportStatus,
     SignConvention,
     TransactionKind,
-    TripCategoryRule,
 )
 
 
@@ -212,6 +211,16 @@ class TransactionSplitOut(ORMBase):
     notes: str | None
 
 
+class TransactionTripOut(ORMBase):
+    """Which trip a transaction counts toward, and how."""
+
+    trip_id: int
+    trip_name: str
+    group_name: str | None = None
+    leg_id: int | None = None
+    share: Decimal
+
+
 class TransactionOut(ORMBase):
     id: int
     account_id: int
@@ -232,6 +241,7 @@ class TransactionOut(ORMBase):
     matched_rule_id: int | None
     tags: list[TagOut] = []
     split: TransactionSplitOut | None = None
+    trip: TransactionTripOut | None = Field(default=None, validation_alias="trip_membership")
 
 
 class TransactionSplitIn(BaseModel):
@@ -764,11 +774,12 @@ class TripLegOut(ORMBase):
 
 
 class TripIn(BaseModel):
+    """A trip starts as a name. Dates can come later, or never."""
+
     name: str = Field(min_length=1, max_length=160)
-    start_date: _date
-    end_date: _date
+    start_date: _date | None = None
+    end_date: _date | None = None
     notes: str | None = None
-    legs: list[TripLegIn] = Field(default_factory=list)
 
 
 class TripUpdate(BaseModel):
@@ -779,24 +790,36 @@ class TripUpdate(BaseModel):
     archived: bool | None = None
 
 
+def _nonzero(value: Decimal | None) -> Decimal | None:
+    if value is not None and value == 0:
+        raise ValueError("an amount of zero adds nothing to a trip")
+    return value
+
+
 class TripItemIn(BaseModel):
     label: str = Field(min_length=1, max_length=160)
-    # Positive money out. Trip items have no account whose sign
-    # convention they could inherit, so the sign is fixed here instead.
-    amount: Decimal = Field(gt=0)
+    # Positive for a cost, negative for a credit. Trip items have no
+    # account whose sign convention they could inherit.
+    amount: Decimal
     date: _date | None = None
     leg_id: int | None = None
     category_id: int | None = None
+    group_name: str | None = Field(default=None, max_length=80)
     notes: str | None = None
+
+    _check_amount = field_validator("amount")(_nonzero)
 
 
 class TripItemUpdate(BaseModel):
     label: str | None = Field(default=None, min_length=1, max_length=160)
-    amount: Decimal | None = Field(default=None, gt=0)
+    amount: Decimal | None = None
     date: _date | None = None
     leg_id: int | None = None
     category_id: int | None = None
+    group_name: str | None = Field(default=None, max_length=80)
     notes: str | None = None
+
+    _check_amount = field_validator("amount")(_nonzero)
 
 
 class TripItemOut(ORMBase):
@@ -804,54 +827,37 @@ class TripItemOut(ORMBase):
     trip_id: int
     leg_id: int | None = None
     category_id: int | None = None
+    group_name: str | None = None
     label: str
     amount: Decimal
     date: _date | None = None
     notes: str | None = None
 
 
-class TripExpenseIn(BaseModel):
-    transaction_id: int
+class TripMembershipChange(BaseModel):
+    """Tick or untick rows. Re-adding a row already in this trip leaves its
+    group, share and stop alone, so a page of ticks can be resent safely."""
+
+    add_transaction_ids: list[int] = Field(default_factory=list)
+    remove_transaction_ids: list[int] = Field(default_factory=list)
+
+
+class TripExpenseUpdate(BaseModel):
+    """One counted row's trip-only details. Only the fields sent change."""
+
+    group_name: str | None = Field(default=None, max_length=80)
     leg_id: int | None = None
     # The trip's own fraction of the row, independent of any roommate
     # split already on it.
-    share: Decimal = Field(default=Decimal("1"), gt=0, le=1)
+    share: Decimal | None = Field(default=None, gt=0, le=1)
     notes: str | None = None
-
-
-class TripExpensesIn(BaseModel):
-    """Add or update membership for many rows at once.
-
-    The review screen confirms a whole bucket in one go, so this takes a
-    list; `remove_transaction_ids` lets the same call take rows back out.
-    """
-
-    expenses: list[TripExpenseIn] = Field(default_factory=list)
-    remove_transaction_ids: list[int] = Field(default_factory=list)
-    # Put newly added rows on the leg covering their date.
-    auto_assign_legs: bool = True
-
-
-class TripCategoryPolicyIn(BaseModel):
-    category_id: int
-    policy: TripCategoryRule
-
-
-class TripCategoryPoliciesIn(BaseModel):
-    policies: list[TripCategoryPolicyIn] = Field(default_factory=list)
-    clear_category_ids: list[int] = Field(default_factory=list)
-
-
-class TripCategoryPolicyOut(ORMBase):
-    category_id: int
-    policy: TripCategoryRule
 
 
 class TripOut(ORMBase):
     id: int
     name: str
-    start_date: _date
-    end_date: _date
+    start_date: _date | None = None
+    end_date: _date | None = None
     notes: str | None = None
     archived: bool
     legs: list[TripLegOut] = Field(default_factory=list)
@@ -867,111 +873,42 @@ class TripLegReport(BaseModel):
     per_night: Decimal | None = None
 
 
-class TripCategoryReport(BaseModel):
-    category_id: int | None = None
-    category_name: str
+class TripGroupReport(BaseModel):
+    name: str
     total: Decimal
     # Keyed by leg id as a string so the whole matrix row is one object.
     by_leg: dict[str, Decimal] = Field(default_factory=dict)
     unassigned: Decimal = Decimal("0")
 
 
-class TripReportRow(BaseModel):
-    kind: str
-    transaction_id: int | None = None
-    item_id: int | None = None
-    date: _date | None = None
-    label: str
-    category_id: int | None = None
-    category_name: str | None = None
-    leg_id: int | None = None
-    amount: Decimal
-    share: Decimal | None = None
-    personal_share: Decimal | None = None
-    spend: Decimal
-    notes: str | None = None
-
-
 class TripReport(BaseModel):
     trip_id: int
-    nights: int
+    nights: int | None = None
     total: Decimal
     per_night: Decimal | None = None
     expense_count: int
     item_count: int
+    span_start: _date | None = None
+    span_end: _date | None = None
     legs: list[TripLegReport] = Field(default_factory=list)
     unassigned_total: Decimal = Decimal("0")
-    categories: list[TripCategoryReport] = Field(default_factory=list)
-    rows: list[TripReportRow] = Field(default_factory=list)
+    groups: list[TripGroupReport] = Field(default_factory=list)
 
 
 class TripDetail(BaseModel):
     trip: TripOut
     items: list[TripItemOut] = Field(default_factory=list)
     report: TripReport
+    group_suggestions: list[str] = Field(default_factory=list)
 
 
 class TripSummary(BaseModel):
     """A trip as the list page shows it: identity plus what it cost."""
 
     trip: TripOut
-    nights: int
     total: Decimal
-    per_night: Decimal | None = None
     expense_count: int
     item_count: int
-
-
-class TripCandidateTransaction(BaseModel):
-    id: int
-    date: _date
-    description: str
-    amount: Decimal
-    spend: Decimal
-    personal_share: Decimal | None = None
-
-
-class TripCandidateGroup(BaseModel):
-    """Repeats collapsed into one decision.
-
-    Seven taxi rides on one trip is a single yes or no, not seven, so the
-    group carries the rows and the review screen acts on all of them.
-    """
-
-    key: str
-    bucket: str
-    reason: str
-    merchant: str
-    category_id: int | None = None
-    category_name: str | None = None
-    occurrences: int
-    total: Decimal
-    first_date: _date
-    last_date: _date
-    transactions: list[TripCandidateTransaction] = Field(default_factory=list)
-
-
-class TripUndecidedCategory(BaseModel):
-    """A category with no trip policy yet, and the hint that settles it."""
-
-    category_id: int
-    category_name: str
-    months_charged: int
-    months_observed: int
-
-
-class TripCandidateBucket(BaseModel):
-    transactions: int
-    total: Decimal
-
-
-class TripCandidates(BaseModel):
-    trip_id: int
-    lookback_days: int
-    lookback_start: _date
-    groups: list[TripCandidateGroup] = Field(default_factory=list)
-    undecided_categories: list[TripUndecidedCategory] = Field(default_factory=list)
-    summary: dict[str, TripCandidateBucket] = Field(default_factory=dict)
 
 
 # ---------- analytics ----------

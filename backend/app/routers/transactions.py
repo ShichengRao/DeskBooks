@@ -27,6 +27,10 @@ class TransactionFilters(BaseModel):
     amount_max: Decimal | None = None
     q: str | None = None
     exclude_excluded: bool = False
+    # Trip membership: rows counted toward this trip, or rows that count
+    # toward no trip at all. The trip page browses with these.
+    trip_id: int | None = None
+    not_in_trip: bool = False
 
 
 class TransactionPage(BaseModel):
@@ -90,6 +94,16 @@ def _apply_filters(stmt, filters: TransactionFilters, db: Session):
         )
     if filters.exclude_excluded:
         stmt = stmt.where(models.Transaction.is_excluded_from_totals.is_(False))
+    if filters.trip_id is not None:
+        stmt = stmt.where(
+            models.Transaction.id.in_(
+                select(models.TripExpense.transaction_id).where(
+                    models.TripExpense.trip_id == filters.trip_id
+                )
+            )
+        )
+    if filters.not_in_trip:
+        stmt = stmt.where(models.Transaction.id.not_in(select(models.TripExpense.transaction_id)))
     return stmt
 
 
@@ -105,6 +119,8 @@ def list_transactions(
     amount_max: Decimal | None = None,
     q: str | None = None,
     exclude_excluded: bool = False,
+    trip_id: int | None = None,
+    not_in_trip: bool = False,
     limit: Annotated[int, Query(ge=1)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
     db: Session = DB_DEP,
@@ -120,11 +136,19 @@ def list_transactions(
         amount_max=amount_max,
         q=q,
         exclude_excluded=exclude_excluded,
+        trip_id=trip_id,
+        not_in_trip=not_in_trip,
     )
     page = TransactionPage(limit=limit, offset=offset)
     stmt = (
         select(models.Transaction)
-        .options(selectinload(models.Transaction.tags), selectinload(models.Transaction.split))
+        .options(
+            selectinload(models.Transaction.tags),
+            selectinload(models.Transaction.split),
+            # Which trip each row counts toward, loaded with the page rather
+            # than one query per row.
+            selectinload(models.Transaction.trip_membership).selectinload(models.TripExpense.trip),
+        )
         .order_by(models.Transaction.date.desc(), models.Transaction.id.desc())
     )
     stmt = _apply_filters(stmt, filters, db)
@@ -144,6 +168,8 @@ def count_transactions(
     amount_max: Decimal | None = None,
     q: str | None = None,
     exclude_excluded: bool = False,
+    trip_id: int | None = None,
+    not_in_trip: bool = False,
     db: Session = DB_DEP,
 ):
     filters = TransactionFilters(
@@ -157,6 +183,8 @@ def count_transactions(
         amount_max=amount_max,
         q=q,
         exclude_excluded=exclude_excluded,
+        trip_id=trip_id,
+        not_in_trip=not_in_trip,
     )
     stmt = select(func.count(models.Transaction.id))
     stmt = _apply_filters(stmt, filters, db)

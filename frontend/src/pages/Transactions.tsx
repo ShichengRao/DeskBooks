@@ -1,58 +1,35 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { api, qs } from "../api/client";
 import { invalidateTxQueries } from "../api/invalidate";
 import { Field } from "../components/Field";
 import { SidePanel } from "../components/SidePanel";
 import { TransactionsTable } from "../components/TransactionsTable";
+import {
+  EMPTY_FILTERS,
+  TransactionFiltersCard,
+  TransactionsPagination,
+  transactionFilterArgs,
+  type TransactionFilters,
+} from "../components/TransactionFilters";
 import { ALL_KINDS, useVisibleKinds } from "../lib/kinds";
 import type {
   Account,
-  AccountCategory,
   Category,
   Transaction,
   TransactionKind,
+  TripDetail,
   TripSummary,
 } from "../api/types";
-import { accountCategoryLabel, transactionKindLabel } from "../lib/labels";
+import { transactionKindLabel } from "../lib/labels";
+import { TRIP_COUNTABLE_KINDS } from "../lib/trips";
 import { currency } from "../lib/fmt";
-
-type TransactionFilters = {
-  start: string;
-  end: string;
-  account_id: string;
-  account_category: AccountCategory | "";
-  category_id: string;
-  kind: TransactionKind[];
-  amount_min: string;
-  amount_max: string;
-  q: string;
-};
 
 type CategoryGroup = { group: Category; leaves: Category[] };
 
-const ACCOUNT_FILTER_CATEGORIES: AccountCategory[] = [
-  "bank",
-  "credit",
-  "investment",
-  "tax_advantaged",
-  "nonsense",
-  "cash",
-];
-
 export function Transactions() {
   const qc = useQueryClient();
-  const [filters, setFilters] = useState<TransactionFilters>({
-    start: "",
-    end: "",
-    account_id: "",
-    account_category: "" as AccountCategory | "",
-    category_id: "",
-    kind: [] as TransactionKind[],
-    amount_min: "",
-    amount_max: "",
-    q: "",
-  });
+  const [filters, setFilters] = useState<TransactionFilters>(EMPTY_FILTERS);
   const [pageSize, setPageSize] = useState(100);
   const [page, setPage] = useState(0);
   // Reset to first page whenever filters change so a narrowed view never
@@ -77,21 +54,26 @@ export function Transactions() {
   } = useTransactionPageData(filters, page, pageSize);
   const { updateTx, createTx, editTx, bulkUpdate, setSplit, deleteTx, bulkDelete, pairTx } =
     useTransactionMutations({ qc, setCreatingTx, setEditingTx, setEditingSplit, setSelection });
-  // The other door into a trip: pick rows here and file them, instead of
-  // starting from the trip's dates.
+  // The other door into a trip: find a row here — a deposit paid a year
+  // ahead, a one-off — and file it, or start a trip from it.
   const trips = useQuery({
     queryKey: ["trips"],
     queryFn: () => api.get<TripSummary[]>("/api/trips"),
   });
   const addToTrip = useMutation({
-    mutationFn: ({ tripId, ids }: { tripId: number; ids: number[] }) =>
-      api.put(`/api/trips/${tripId}/expenses`, {
-        expenses: ids.map((id) => ({ transaction_id: id })),
-      }),
+    mutationFn: async ({ target, ids }: { target: TripTarget; ids: number[] }) => {
+      const tripId =
+        target.kind === "existing"
+          ? target.tripId
+          : (await api.post<TripDetail>("/api/trips", { name: target.name })).trip.id;
+      return api.put<TripDetail>(`/api/trips/${tripId}/expenses`, { add_transaction_ids: ids });
+    },
     onSuccess: () => {
       setSelection(new Set());
       qc.invalidateQueries({ queryKey: ["trips"] });
       qc.invalidateQueries({ queryKey: ["trip"] });
+      qc.invalidateQueries({ queryKey: ["trip-rows"] });
+      qc.invalidateQueries({ queryKey: ["transactions"] });
     },
     onError: (error: Error) => alert(error.message),
   });
@@ -139,7 +121,7 @@ export function Transactions() {
         onClear={() => setSelection(new Set())}
         trips={trips.data ?? []}
         pendingTrip={addToTrip.isPending}
-        onAddToTrip={(tripId) => addToTrip.mutate({ tripId, ids: selectedIds })}
+        onAddToTrip={(target) => addToTrip.mutate({ target, ids: selectedIds })}
       />
       <TransactionsTable
         txs={txs}
@@ -235,17 +217,7 @@ type TransactionFormBody = {
 function useTransactionPageData(filters: TransactionFilters, page: number, pageSize: number) {
   const accounts = useQuery({ queryKey: ["accounts"], queryFn: () => api.get<Account[]>("/api/accounts") });
   const categories = useQuery({ queryKey: ["categories-all"], queryFn: () => api.get<Category[]>("/api/categories?include_archived=true") });
-  const apiArgs = {
-    start: filters.start || undefined,
-    end: filters.end || undefined,
-    account_id: filters.account_id || undefined,
-    account_category: filters.account_category ? [filters.account_category] : undefined,
-    category_id: filters.category_id || undefined,
-    kind: filters.kind.length ? filters.kind : undefined,
-    amount_min: filters.amount_min || undefined,
-    amount_max: filters.amount_max || undefined,
-    q: filters.q || undefined,
-  };
+  const apiArgs = transactionFilterArgs(filters);
   const txQ = useQuery({
     queryKey: ["transactions", filters, page, pageSize],
     queryFn: () =>
@@ -396,107 +368,6 @@ function TransactionsHeader({
   );
 }
 
-function TransactionFiltersCard({
-  filters,
-  accounts,
-  categories,
-  onChange,
-}: {
-  filters: TransactionFilters;
-  accounts: Account[];
-  categories: Category[];
-  onChange: (filters: TransactionFilters) => void;
-}) {
-  const visibleKinds = useVisibleKinds();
-  const update = (patch: Partial<TransactionFilters>) => onChange({ ...filters, ...patch });
-
-  return (
-    <div className="card p-3">
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-9 gap-2 items-end">
-        <Field label="Search">
-          <input className="input" placeholder="merchant or description" value={filters.q} onChange={(e) => update({ q: e.target.value })} />
-        </Field>
-        <Field label="From">
-          <input type="date" className="input" value={filters.start} onChange={(e) => update({ start: e.target.value })} />
-        </Field>
-        <Field label="To">
-          <input type="date" className="input" value={filters.end} onChange={(e) => update({ end: e.target.value })} />
-        </Field>
-        <Field label="Account type">
-          <select
-            className="input"
-            value={filters.account_category}
-            onChange={(e) => update({ account_category: e.target.value as AccountCategory | "" })}
-          >
-            <option value="">All types</option>
-            {ACCOUNT_FILTER_CATEGORIES.map((cat) => (
-              <option key={cat} value={cat}>{accountCategoryLabel(cat)}</option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Account">
-          <select className="input" value={filters.account_id} onChange={(e) => update({ account_id: e.target.value })}>
-            <option value="">All accounts</option>
-            {accounts
-              .filter((a) => !filters.account_category || a.account_category === filters.account_category)
-              .map((a) => (
-                <option key={a.id} value={a.id}>{a.name}</option>
-              ))}
-          </select>
-        </Field>
-        <Field label="Category">
-          <select className="input" value={filters.category_id} onChange={(e) => update({ category_id: e.target.value })}>
-            <option value="">All categories</option>
-            {/* Parents stay selectable: picking Housing includes its
-                subcategories' transactions (the backend expands to
-                descendants). */}
-            {categories.filter((c) => !c.archived && c.parent_id === null).map((parent) => (
-              <Fragment key={parent.id}>
-                <option value={parent.id}>{parent.name}</option>
-                {categories.filter((c) => !c.archived && c.parent_id === parent.id).map((child) => (
-                  <option key={child.id} value={child.id}>{`\u00A0\u00A0\u00A0\u00B7 ${child.name}`}</option>
-                ))}
-              </Fragment>
-            ))}
-          </select>
-        </Field>
-        <Field label="Kind">
-          <select
-            className="input"
-            value={filters.kind[0] ?? ""}
-            onChange={(e) => update({ kind: e.target.value ? [e.target.value as TransactionKind] : [] })}
-          >
-            <option value="">All kinds</option>
-            {visibleKinds.map((k) => (
-              <option key={k} value={k}>{transactionKindLabel(k)}</option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Signed amount from">
-          <input
-            type="number"
-            step="0.01"
-            className="input tabular text-right"
-            value={filters.amount_min}
-            onChange={(e) => update({ amount_min: e.target.value })}
-            placeholder="-50.00"
-          />
-        </Field>
-        <Field label="Signed amount to">
-          <input
-            type="number"
-            step="0.01"
-            className="input tabular text-right"
-            value={filters.amount_max}
-            onChange={(e) => update({ amount_max: e.target.value })}
-            placeholder="-10.00"
-          />
-        </Field>
-      </div>
-    </div>
-  );
-}
-
 // Linking rewrites both rows' kind, so the button says why it is off
 // rather than failing after the click. Selection can span pages, so the
 // row-level checks only run on rows we can actually see; anything they
@@ -523,17 +394,11 @@ function describePairability(
   return { blocked: null, hint };
 }
 
-// Which kinds a trip can count, mirroring the backend. Money moving —
-// payroll, transfers, card payments, contributions — would be negated
-// into a discount and quietly reduce what a trip cost, so the picker
-// says so up front instead of letting the API refuse after the click.
-const TRIP_COUNTABLE_KINDS: ReadonlySet<TransactionKind> = new Set<TransactionKind>([
-  "expense",
-  "uncategorized",
-  "refund",
-  "reimbursement",
-]);
+type TripTarget = { kind: "existing"; tripId: number } | { kind: "new"; name: string };
 
+// Money moving — payroll, transfers, card payments — would be negated into
+// a discount and quietly reduce what a trip cost, so the picker says so up
+// front instead of letting the API refuse after the click.
 function describeTripEligibility(selectedTxs: Transaction[]): { blocked: string | null; hint: string } {
   const hint = "File these rows under a trip, so they count toward what it cost.";
   const ineligible = selectedTxs.filter((t) => !TRIP_COUNTABLE_KINDS.has(t.kind));
@@ -573,7 +438,7 @@ function BulkTransactionActions({
   onClear: () => void;
   trips: TripSummary[];
   pendingTrip: boolean;
-  onAddToTrip: (tripId: number) => void;
+  onAddToTrip: (target: TripTarget) => void;
 }) {
   const visibleKinds = useVisibleKinds();
   if (selectedIds.length === 0) return null;
@@ -584,6 +449,39 @@ function BulkTransactionActions({
   return (
     <div className="card p-3 flex items-center gap-3 bg-brand-50 border-brand-200">
       <div className="text-sm"><strong>{selectedIds.length}</strong> selected</div>
+      <select
+        className="input max-w-xs"
+        aria-label="Add to trip"
+        disabled={pendingTrip || tripEligibility.blocked !== null}
+        title={tripEligibility.blocked ?? tripEligibility.hint}
+        onChange={(e) => {
+          const value = e.target.value;
+          e.target.value = "";
+          if (!value) return;
+          if (value === "new") {
+            const name = prompt("Name the new trip:")?.trim();
+            if (name) onAddToTrip({ kind: "new", name });
+            return;
+          }
+          const tripId = parseInt(value, 10);
+          // One row, one trip. Say which rows clash, by trip name, rather
+          // than letting the API refuse the whole batch.
+          const elsewhere = selectedTxs.filter((t) => t.trip && t.trip.trip_id !== tripId);
+          if (elsewhere.length > 0) {
+            const names = [...new Set(elsewhere.map((t) => t.trip!.trip_name))].join(", ");
+            alert(`${elsewhere.length} of these already count toward ${names}. Untick them there first.`);
+            return;
+          }
+          onAddToTrip({ kind: "existing", tripId });
+        }}
+        defaultValue=""
+      >
+        <option value="" disabled>Add to trip…</option>
+        {trips.map((summary) => (
+          <option key={summary.trip.id} value={summary.trip.id}>{summary.trip.name}</option>
+        ))}
+        <option value="new">New trip…</option>
+      </select>
       <select
         className="input max-w-xs"
         onChange={(e) => {
@@ -631,24 +529,6 @@ function BulkTransactionActions({
       >
         Link as pair
       </button>
-      {trips.length > 0 && (
-        <select
-          className="input max-w-xs"
-          disabled={pendingTrip || tripEligibility.blocked !== null}
-          title={tripEligibility.blocked ?? tripEligibility.hint}
-          onChange={(e) => {
-            if (!e.target.value) return;
-            onAddToTrip(parseInt(e.target.value, 10));
-            e.target.value = "";
-          }}
-          defaultValue=""
-        >
-          <option value="" disabled>Add to trip…</option>
-          {trips.map((summary) => (
-            <option key={summary.trip.id} value={summary.trip.id}>{summary.trip.name}</option>
-          ))}
-        </select>
-      )}
       <button className="btn" onClick={onMarkSplit}>Mark split</button>
       <button className="btn" onClick={() => onBulkUpdate({ clear_split: true })}>Clear split</button>
       <button
@@ -661,40 +541,6 @@ function BulkTransactionActions({
         Delete selected
       </button>
       <button className="btn-ghost" onClick={onClear}>Clear</button>
-    </div>
-  );
-}
-
-function TransactionsPagination({
-  page,
-  pageSize,
-  totalPages,
-  onPage,
-  onPageSize,
-}: {
-  page: number;
-  pageSize: number;
-  totalPages: number;
-  onPage: (page: number) => void;
-  onPageSize: (size: number) => void;
-}) {
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
-      <div className="flex items-center gap-2">
-        <span className="text-ink-500">Page size</span>
-        <select className="input max-w-[5rem]" value={pageSize} onChange={(e) => onPageSize(parseInt(e.target.value, 10))}>
-          {[50, 100, 250, 500, 1000].map((n) => (
-            <option key={n} value={n}>{n}</option>
-          ))}
-        </select>
-      </div>
-      <div className="flex flex-wrap items-center gap-2 tabular">
-        <button className="btn" disabled={page === 0} onClick={() => onPage(0)}>«</button>
-        <button className="btn" disabled={page === 0} onClick={() => onPage(page - 1)}>‹ Prev</button>
-        <span className="text-ink-600">Page {page + 1} of {totalPages.toLocaleString()}</span>
-        <button className="btn" disabled={page + 1 >= totalPages} onClick={() => onPage(page + 1)}>Next ›</button>
-        <button className="btn" disabled={page + 1 >= totalPages} onClick={() => onPage(totalPages - 1)}>»</button>
-      </div>
     </div>
   );
 }

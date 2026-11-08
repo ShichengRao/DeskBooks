@@ -108,14 +108,6 @@ class GoalStatus(enum.StrEnum):
     paused = "paused"
 
 
-class TripCategoryRule(enum.StrEnum):
-    """How a category takes part in trips. See `TripCategoryPolicy`."""
-
-    skip = "skip"  # home life; never proposed, however well the dates fit
-    include = "include"  # proposed when it falls inside the trip's dates
-    advance = "advance"  # proposed inside the dates AND in the run-up to them
-
-
 class ImportStatus(enum.StrEnum):
     preview = "preview"
     applied = "applied"
@@ -221,6 +213,12 @@ class Transaction(Base):
     split: Mapped[TransactionSplit | None] = relationship(
         back_populates="transaction", cascade="all, delete-orphan", uselist=False
     )
+    # Which trip this row counts toward, if any. Read-only from this side
+    # so a transaction delete never tries to blank the membership's
+    # primary key; the foreign key's ON DELETE CASCADE removes it instead.
+    trip_membership: Mapped[TripExpense | None] = relationship(
+        "TripExpense", uselist=False, viewonly=True
+    )
 
     __table_args__ = (
         Index("ix_transactions_date_kind", "date", "kind"),
@@ -267,24 +265,26 @@ class TransactionSplit(Base):
 class Trip(Base):
     """A named journey and the spending that belongs to it.
 
-    Membership is an explicit set (`TripExpense`), not a stored date
-    filter. A window both over-captures and under-captures: rent,
-    insurance and subscriptions keep billing while you are away, and the
-    flights were bought months before you left. So the window only ever
-    proposes candidates and the user confirms, which also makes the total
-    stable — recategorizing a row later cannot silently change what a
+    Membership is an explicit set (`TripExpense`) that the user builds by
+    ticking rows, in their own time: name the trip, come back days later,
+    add things as they turn up. Nothing is proposed. A date window is wrong
+    in both directions — rent bills while you are away, and the flights
+    were bought months ahead — and deciding a trip's few dozen rows
+    yourself is cheaper than correcting a guess about them. It also keeps
+    the total stable: recategorizing a row later cannot change what a
     finished trip cost.
 
-    Legs are optional. A trip with none still totals by category; adding
-    them breaks that same total down by place.
+    Dates are optional. They default the date filter while you browse and
+    give a per-night figure; a trip without them still totals. Stops are
+    optional too.
     """
 
     __tablename__ = "trips"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(160))
-    start_date: Mapped[date] = mapped_column(Date, index=True)
-    end_date: Mapped[date] = mapped_column(Date)
+    start_date: Mapped[date | None] = mapped_column(Date, index=True)
+    end_date: Mapped[date | None] = mapped_column(Date)
     notes: Mapped[str | None] = mapped_column(Text)
     archived: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
@@ -309,10 +309,10 @@ class TripLeg(Base):
     """One stop on a trip: where you were, and when.
 
     Legs may not cover the whole trip and may not be contiguous — the
-    travel days between two stays belong to neither. A transaction is
-    assigned to the leg whose dates contain it, and anything left over
-    (every pre-booking, and spend on a travel day) sits on the trip
-    without a leg rather than being forced into one.
+    travel days between two stays belong to neither. A row is filed on the
+    leg whose dates contain it, and anything left over (a booking made
+    months ahead, spend on a travel day) sits on the trip without a leg
+    rather than being forced into one.
     """
 
     __tablename__ = "trip_legs"
@@ -332,9 +332,16 @@ class TripExpense(Base):
     """A transaction counted toward a trip.
 
     `transaction_id` is the primary key, so a row belongs to at most one
-    trip. That is what lets the candidate search skip anything another
-    trip already claimed, and it keeps two overlapping trips from each
-    counting the same charge.
+    trip, and two overlapping trips cannot each count the same charge.
+    Deleting the transaction removes the row through the foreign key's
+    cascade, as it does for splits and tags.
+
+    `group_name` is the trip's own label for the row — "Flight",
+    "Tournament", "Souvenirs". How you think about a trip's costs rarely
+    matches the categories that suit budgets and analytics: one
+    "Flights + Hotels" category is always two lines on a trip. NULL means
+    "use the category name", so the default follows a recategorized row
+    instead of freezing a copy of its old name.
 
     `share` is the trip's own fraction of the row — the toothpaste inside
     a larger drugstore order. It is a separate axis from
@@ -349,6 +356,7 @@ class TripExpense(Base):
     )
     trip_id: Mapped[int] = mapped_column(ForeignKey("trips.id", ondelete="CASCADE"), index=True)
     leg_id: Mapped[int | None] = mapped_column(ForeignKey("trip_legs.id", ondelete="SET NULL"))
+    group_name: Mapped[str | None] = mapped_column(String(80))
     share: Mapped[Decimal] = mapped_column(Numeric(5, 4), default=Decimal("1"))
     notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
@@ -356,17 +364,21 @@ class TripExpense(Base):
     trip: Mapped[Trip] = relationship(back_populates="expenses")
     transaction: Mapped[Transaction] = relationship()
 
+    @property
+    def trip_name(self) -> str:
+        return self.trip.name
+
 
 class TripItem(Base):
     """A trip cost with no transaction behind it.
 
-    Cash, a friend's card, a fare paid in coins — the things a written
-    trip budget contains and the ledger never saw. Without these the trip
-    total cannot match the number you work out by hand, which is what
-    would stop you trusting it.
+    Cash, a ride paid from a PayPal balance, a friend's card — the things
+    a written trip budget contains and the ledger never saw. Without these
+    the trip total cannot match the number you work out by hand.
 
-    `amount` is positive for money out, unlike `Transaction.amount`:
-    there is no account here whose sign convention it could inherit.
+    `amount` is positive for money out and negative for a credit, unlike
+    `Transaction.amount`: there is no account here whose sign convention
+    it could inherit, so the sign means what a trip means by it.
     """
 
     __tablename__ = "trip_items"
@@ -377,6 +389,7 @@ class TripItem(Base):
     category_id: Mapped[int | None] = mapped_column(
         ForeignKey("categories.id", ondelete="SET NULL")
     )
+    group_name: Mapped[str | None] = mapped_column(String(80))
     label: Mapped[str] = mapped_column(String(160))
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2))
     date: Mapped[date | None] = mapped_column(Date)
@@ -384,42 +397,6 @@ class TripItem(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     trip: Mapped[Trip] = relationship(back_populates="items")
-
-
-class TripCategoryPolicy(Base):
-    """Whether a category is ever proposed as trip spend.
-
-    Rent, utilities, insurance and subscriptions bill whether you are
-    home or not, so they are never trip spend however neatly they fall
-    inside the dates. Merchant-frequency detection cannot find them —
-    rent descriptions carry a per-payment reference, so every payment
-    looks like a first — but the category always can.
-
-    The decision is declared once and reused by every later trip, which
-    is what keeps the second trip to a couple of clicks. No row at all
-    means undecided: the category is still proposed, and the review
-    screen asks about it. `include` records "I have decided this one
-    counts", so it stops asking.
-
-    `advance` additionally looks for the category before the trip began.
-    Which categories get bought ahead is the one thing no amount of
-    arithmetic can work out — a flight charged in January for a trip in
-    May is indistinguishable from a flight taken in January — so the
-    user says it once, per category, and every later trip reuses it.
-    """
-
-    __tablename__ = "trip_category_policies"
-
-    category_id: Mapped[int] = mapped_column(
-        ForeignKey("categories.id", ondelete="CASCADE"), primary_key=True
-    )
-    policy: Mapped[TripCategoryRule] = mapped_column(
-        SAEnum(TripCategoryRule, name="trip_category_rule"),
-        default=TripCategoryRule.skip,
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), onupdate=func.now()
-    )
 
 
 class Rule(Base):
@@ -698,8 +675,6 @@ __all__ = [
     "TripLeg",
     "TripExpense",
     "TripItem",
-    "TripCategoryPolicy",
-    "TripCategoryRule",
     "Rule",
     "NetWorthSnapshot",
     "AccountBalance",

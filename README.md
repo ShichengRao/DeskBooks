@@ -96,33 +96,34 @@ planned spending with actual expense transactions across a range.
 
 ### Trips
 
-Name a journey and confirm what it cost. A trip holds an explicit set of
-transactions rather than a saved date filter, because a date window is
-wrong in both directions: rent, insurance and subscriptions keep billing
-while you are away, and the flights were bought months before you left.
+Name a trip, then tick what it cost, whenever you get to it. A trip can
+start as just a name; dates are optional.
 
-The dates propose and you confirm. The review screen groups what it
-found and says why each group is there:
+The trip page is the transaction table with the Transactions tab's own
+filters, where a checkbox means "this counts toward the trip" and saves
+as you tick. The usual pass is a date range and a category at a time:
+tick what belongs, pick the next category. Switch between rows already
+in this trip, rows no trip has counted yet, and everything. "In this
+trip" ignores the date filter, so a deposit paid a year ahead sits there
+with the rest. Nothing is proposed or filled in for you.
 
-- things bought ahead, in categories you marked as booked in advance
-- spending inside the dates
-- standing charges, which bill on a schedule and would have billed at
-  home too
-- categories you keep out of trips altogether
+A running total sits beside the table, grouped by the trip's own labels.
+Each counted row has a trip group that starts as its category and can be
+renamed — a "Flights + Hotels" category is usually two lines on a trip.
+Other per-row details:
 
-Repeats collapse into one decision, so a fortnight of taxi rides is a
-single yes rather than fourteen. The two judgements no arithmetic can
-make — which categories are home life, which get booked ahead — are
-answered once per category and reused by every later trip.
+- **Stops** are optional; add them to split the total by place. Counted
+  rows file onto the stop whose dates contain them, and you can move any
+  row by hand.
+- **Share** counts part of a charge — the toothpaste inside a larger
+  drugstore order.
+- **Added by hand** holds costs and credits the ledger never saw: cash,
+  a ride paid from a PayPal balance, a refund that hasn't posted yet.
 
-Stops are optional. Without them a trip totals by category; add them and
-the same total breaks down per place, with a cost-per-night for each.
-Costs the ledger never saw (cash, a fare, someone else's card) can be
-added by hand, and part of a charge can count toward the trip when only
-part of it was the trip's.
-
-Rows can also be filed from the Transactions table: select them and pick
-a trip.
+Transactions in a trip show its name in the Transactions table, and
+selecting rows there offers "Add to trip", including starting a new trip
+from them. A row counts toward at most one trip, and only expenses,
+refunds and reimbursements can count.
 
 ### Analytics
 

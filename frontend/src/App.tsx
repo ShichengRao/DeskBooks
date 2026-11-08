@@ -12,7 +12,7 @@ import { Rules } from "./pages/Rules";
 import { Organize } from "./pages/Organize";
 import { Reconcile } from "./pages/Reconcile";
 import { Backups } from "./pages/Backups";
-import { Trips } from "./pages/Trips";
+import { TripPage, Trips } from "./pages/Trips";
 
 // Analytics pulls in Plotly (~5MB). Lazy-load it so it only costs users who
 // visit that route.
@@ -35,6 +35,7 @@ export function App() {
           <Route path="planning" element={<Planning />} />
           <Route path="budgets" element={<Budgets />} />
           <Route path="trips" element={<Trips />} />
+          <Route path="trips/:tripId" element={<TripPage />} />
           <Route
             path="analytics"
             element={
