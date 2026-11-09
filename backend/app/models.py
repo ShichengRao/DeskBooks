@@ -213,6 +213,12 @@ class Transaction(Base):
     split: Mapped[TransactionSplit | None] = relationship(
         back_populates="transaction", cascade="all, delete-orphan", uselist=False
     )
+    # Which trip this row counts toward, if any. Read-only from this side
+    # so a transaction delete never tries to blank the membership's
+    # primary key; the foreign key's ON DELETE CASCADE removes it instead.
+    trip_membership: Mapped[TripExpense | None] = relationship(
+        "TripExpense", uselist=False, viewonly=True
+    )
 
     __table_args__ = (
         Index("ix_transactions_date_kind", "date", "kind"),
@@ -254,6 +260,143 @@ class TransactionSplit(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     transaction: Mapped[Transaction] = relationship(back_populates="split")
+
+
+class Trip(Base):
+    """A named journey and the spending that belongs to it.
+
+    Membership is an explicit set (`TripExpense`) that the user builds by
+    ticking rows, in their own time: name the trip, come back days later,
+    add things as they turn up. Nothing is proposed. A date window is wrong
+    in both directions — rent bills while you are away, and the flights
+    were bought months ahead — and deciding a trip's few dozen rows
+    yourself is cheaper than correcting a guess about them. It also keeps
+    the total stable: recategorizing a row later cannot change what a
+    finished trip cost.
+
+    Dates are optional. They default the date filter while you browse and
+    give a per-night figure; a trip without them still totals. Stops are
+    optional too.
+    """
+
+    __tablename__ = "trips"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(160))
+    start_date: Mapped[date | None] = mapped_column(Date, index=True)
+    end_date: Mapped[date | None] = mapped_column(Date)
+    notes: Mapped[str | None] = mapped_column(Text)
+    archived: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+    legs: Mapped[list[TripLeg]] = relationship(
+        back_populates="trip",
+        cascade="all, delete-orphan",
+        order_by="TripLeg.sort_order, TripLeg.start_date",
+    )
+    expenses: Mapped[list[TripExpense]] = relationship(
+        back_populates="trip", cascade="all, delete-orphan"
+    )
+    items: Mapped[list[TripItem]] = relationship(
+        back_populates="trip", cascade="all, delete-orphan"
+    )
+
+
+class TripLeg(Base):
+    """One stop on a trip: where you were, and when.
+
+    Legs may not cover the whole trip and may not be contiguous — the
+    travel days between two stays belong to neither. A row is filed on the
+    leg whose dates contain it, and anything left over (a booking made
+    months ahead, spend on a travel day) sits on the trip without a leg
+    rather than being forced into one.
+    """
+
+    __tablename__ = "trip_legs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    trip_id: Mapped[int] = mapped_column(ForeignKey("trips.id", ondelete="CASCADE"), index=True)
+    place: Mapped[str] = mapped_column(String(120))
+    start_date: Mapped[date] = mapped_column(Date)
+    end_date: Mapped[date] = mapped_column(Date)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    notes: Mapped[str | None] = mapped_column(Text)
+
+    trip: Mapped[Trip] = relationship(back_populates="legs")
+
+
+class TripExpense(Base):
+    """A transaction counted toward a trip.
+
+    `transaction_id` is the primary key, so a row belongs to at most one
+    trip, and two overlapping trips cannot each count the same charge.
+    Deleting the transaction removes the row through the foreign key's
+    cascade, as it does for splits and tags.
+
+    `group_name` is the trip's own label for the row — "Flight",
+    "Tournament", "Souvenirs". How you think about a trip's costs rarely
+    matches the categories that suit budgets and analytics: one
+    "Flights + Hotels" category is always two lines on a trip. NULL means
+    "use the category name", so the default follows a recategorized row
+    instead of freezing a copy of its old name.
+
+    `share` is the trip's own fraction of the row — the toothpaste inside
+    a larger drugstore order. It is a separate axis from
+    `TransactionSplit.personal_share`, which is the roommate one, and a
+    row that is both shared and partly trip-related multiplies the two.
+    """
+
+    __tablename__ = "trip_expenses"
+
+    transaction_id: Mapped[int] = mapped_column(
+        ForeignKey("transactions.id", ondelete="CASCADE"), primary_key=True
+    )
+    trip_id: Mapped[int] = mapped_column(ForeignKey("trips.id", ondelete="CASCADE"), index=True)
+    leg_id: Mapped[int | None] = mapped_column(ForeignKey("trip_legs.id", ondelete="SET NULL"))
+    group_name: Mapped[str | None] = mapped_column(String(80))
+    share: Mapped[Decimal] = mapped_column(Numeric(5, 4), default=Decimal("1"))
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    trip: Mapped[Trip] = relationship(back_populates="expenses")
+    transaction: Mapped[Transaction] = relationship()
+
+    @property
+    def trip_name(self) -> str:
+        return self.trip.name
+
+
+class TripItem(Base):
+    """A trip cost with no transaction behind it.
+
+    Cash, a ride paid from a PayPal balance, a friend's card — the things
+    a written trip budget contains and the ledger never saw. Without these
+    the trip total cannot match the number you work out by hand.
+
+    `amount` is positive for money out and negative for a credit, unlike
+    `Transaction.amount`: there is no account here whose sign convention
+    it could inherit, so the sign means what a trip means by it.
+    """
+
+    __tablename__ = "trip_items"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    trip_id: Mapped[int] = mapped_column(ForeignKey("trips.id", ondelete="CASCADE"), index=True)
+    leg_id: Mapped[int | None] = mapped_column(ForeignKey("trip_legs.id", ondelete="SET NULL"))
+    category_id: Mapped[int | None] = mapped_column(
+        ForeignKey("categories.id", ondelete="SET NULL")
+    )
+    group_name: Mapped[str | None] = mapped_column(String(80))
+    label: Mapped[str] = mapped_column(String(160))
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    date: Mapped[date | None] = mapped_column(Date)
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    trip: Mapped[Trip] = relationship(back_populates="items")
 
 
 class Rule(Base):
@@ -528,6 +671,10 @@ __all__ = [
     "TransactionKind",
     "Tag",
     "TransactionTag",
+    "Trip",
+    "TripLeg",
+    "TripExpense",
+    "TripItem",
     "Rule",
     "NetWorthSnapshot",
     "AccountBalance",

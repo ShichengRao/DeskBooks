@@ -54,6 +54,17 @@ and `BACKEND_PORT` are accepted as aliases for `PORT` and `API_PORT`.
 
 ## App Panels
 
+The header groups the panels by workflow. Pick one on the top row and
+its panels fill the row below:
+
+- **Overview**: Dashboard, Net Worth, Planning, Analytics
+- **Spending**: Transactions, Budgets, Analytics, Trips
+- **Upkeep**: Import, Rules, Transactions, Splits & Netting, Organize,
+  Backups
+
+A panel in two workflows keeps you in the one you came from, and each
+workflow reopens on the panel you last used in it.
+
 ### Dashboard
 
 High-level view of current net worth, recent trends, and active goal
@@ -93,6 +104,37 @@ amount-at-retirement-age readout when the target isn't reached.
 
 Set default category targets, add month-specific overrides, and compare
 planned spending with actual expense transactions across a range.
+
+### Trips
+
+Name a trip, then tick what it cost, whenever you get to it. A trip can
+start as just a name; dates are optional.
+
+The trip page is the transaction table with the Transactions tab's own
+filters, where a checkbox means "this counts toward the trip" and saves
+as you tick. The usual pass is a date range and a category at a time:
+tick what belongs, pick the next category. Switch between rows already
+in this trip, rows no trip has counted yet, and everything. "In this
+trip" ignores the date filter, so a deposit paid a year ahead sits there
+with the rest. Nothing is proposed or filled in for you.
+
+A running total sits beside the table, grouped by the trip's own labels.
+Each counted row has a trip group that starts as its category and can be
+renamed — a "Flights + Hotels" category is usually two lines on a trip.
+Other per-row details:
+
+- **Stops** are optional; add them to split the total by place. Counted
+  rows file onto the stop whose dates contain them, and you can move any
+  row by hand.
+- **Share** counts part of a charge — the toothpaste inside a larger
+  drugstore order.
+- **Added by hand** holds costs and credits the ledger never saw: cash,
+  a ride paid from a PayPal balance, a refund that hasn't posted yet.
+
+Transactions in a trip show its name in the Transactions table, and
+selecting rows there offers "Add to trip", including starting a new trip
+from them. A row counts toward at most one trip, and only expenses,
+refunds and reimbursements can count.
 
 ### Analytics
 

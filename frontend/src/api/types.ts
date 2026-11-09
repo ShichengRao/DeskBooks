@@ -120,6 +120,8 @@ export interface Transaction {
   matched_rule_id: number | null;
   tags: Tag[];
   split: TransactionSplit | null;
+  /** The trip this row counts toward, if any. */
+  trip: TransactionTrip | null;
 }
 
 export interface TransactionSplit {
@@ -539,4 +541,98 @@ export interface RecurringMerchant {
   last_seen: string;
   cadence_days_estimate: number | null;
   is_expense: boolean;
+}
+
+/** Which trip a transaction counts toward, and how. */
+export interface TransactionTrip {
+  trip_id: number;
+  trip_name: string;
+  /** The trip's own label for the row; null means "use the category". */
+  group_name: string | null;
+  leg_id: number | null;
+  /** The trip's fraction of the row, 0–1. */
+  share: string;
+}
+
+export interface TripLeg {
+  id: number;
+  trip_id: number;
+  place: string;
+  start_date: string;
+  end_date: string;
+  sort_order: number;
+  notes: string | null;
+}
+
+/** A trip starts as a name; dates are optional. */
+export interface Trip {
+  id: number;
+  name: string;
+  start_date: string | null;
+  end_date: string | null;
+  notes: string | null;
+  archived: boolean;
+  legs: TripLeg[];
+}
+
+/** A cost the ledger never saw. Positive for money out, negative for a
+ *  credit. */
+export interface TripItem {
+  id: number;
+  trip_id: number;
+  leg_id: number | null;
+  category_id: number | null;
+  group_name: string | null;
+  label: string;
+  amount: string;
+  date: string | null;
+  notes: string | null;
+}
+
+export interface TripLegReport {
+  id: number;
+  place: string;
+  start_date: string;
+  end_date: string;
+  nights: number;
+  total: string;
+  per_night: string | null;
+}
+
+export interface TripGroupReport {
+  name: string;
+  total: string;
+  /** Keyed by leg id as a string, so one object is one matrix row. */
+  by_leg: Record<string, string>;
+  unassigned: string;
+}
+
+export interface TripReport {
+  trip_id: number;
+  nights: number | null;
+  total: string;
+  per_night: string | null;
+  expense_count: number;
+  item_count: number;
+  /** Where the counted rows actually fall. */
+  span_start: string | null;
+  span_end: string | null;
+  legs: TripLegReport[];
+  unassigned_total: string;
+  groups: TripGroupReport[];
+}
+
+export interface TripDetail {
+  trip: Trip;
+  items: TripItem[];
+  report: TripReport;
+  /** Every trip group already in use, across all trips. */
+  group_suggestions: string[];
+}
+
+export interface TripSummary {
+  trip: Trip;
+  total: string;
+  expense_count: number;
+  item_count: number;
 }

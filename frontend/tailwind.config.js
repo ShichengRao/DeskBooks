@@ -4,10 +4,10 @@ export default {
   theme: {
     extend: {
       screens: {
-        // The brand, profile picker, full tab strip and "Stop app" need
-        // ~1370px side by side. Below that the tabs get their own row,
-        // as a strip that scrolls sideways.
-        nav: "1440px",
+        // The brand, profile picker, workflow buttons and "Stop app" need
+        // ~690px side by side. Below that the workflow buttons get a row
+        // of their own, above the row of pages.
+        nav: "768px",
       },
       fontFamily: {
         sans: [

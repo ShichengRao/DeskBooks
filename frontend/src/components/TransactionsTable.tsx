@@ -1,4 +1,5 @@
 import clsx from "clsx";
+import { Link } from "react-router";
 import type { Account, Category, Transaction } from "../api/types";
 import { currency, dateLabel, monthLabel } from "../lib/fmt";
 import { KindPill } from "../lib/kinds";
@@ -149,7 +150,18 @@ function TransactionRow({
       </td>
       <td className="px-2 py-1.5">
         <div className="font-medium">{tx.merchant ?? tx.description_normalized ?? tx.description_raw}</div>
-        <div className="text-xs text-ink-500 truncate max-w-md">{tx.description_raw}</div>
+        <div className="flex items-center gap-2 text-xs text-ink-500">
+          <span className="truncate max-w-md">{tx.description_raw}</span>
+          {tx.trip && (
+            <Link
+              to={`/trips/${tx.trip.trip_id}`}
+              className="pill shrink-0 bg-brand-50 text-brand-700 hover:bg-brand-100"
+              title="Counts toward this trip"
+            >
+              {tx.trip.trip_name}
+            </Link>
+          )}
+        </div>
       </td>
       <td className="px-2 py-1.5 text-ink-600">{account?.name ?? "—"}</td>
       <td className="px-2 py-1.5">

@@ -51,10 +51,11 @@ deskbooks/
 │   │   │    amex_xlsx, contribution_history, staged_json)
 │   │   ├── rules.py           # rule engine + proposals
 │   │   ├── analytics.py       # rollups, sankey, FIRE, cancel-pairs
+│   │   ├── trips.py           # trip totals and membership rules
 │   │   └── routers/           # one router per concept
 │   │       (accounts, transactions, categories, rules, snapshots,
 │   │        goals, journal, budgets, imports, backups, profiles,
-│   │        settings, analytics)
+│   │        settings, analytics, trips)
 │   ├── scripts/
 │   │   └── seed_demo_profile.py  # synthetic demo/family personas
 │   ├── data/                  # gitignored development data only
@@ -65,7 +66,7 @@ deskbooks/
 │   │   ├── App.tsx
 │   │   ├── api/               # typed fetch wrappers (+ per-tab profile pin)
 │   │   ├── pages/             # Dashboard, Transactions, NetWorth,
-│   │   │                      # Planning, Budgets, Analytics, Import,
+│   │   │                      # Planning, Budgets, Trips, Analytics, Import,
 │   │   │                      # Reconcile (Splits & netting), Rules,
 │   │   │                      # Organize, Backups
 │   │   ├── components/        # incl. SankeySvg
@@ -125,6 +126,34 @@ Tag, TransactionTag (m2m)
 TransactionSplit
   transaction_id (PK/FK), group_name, personal_share (0..1), notes
   -- shared expenses: analytics count amount * personal_share
+
+Trip
+  id, name, start_date (nullable), end_date (nullable), notes, archived,
+  created_at, updated_at
+  -- both dates or neither. They seed the trip page's date filter and
+     give a per-night figure; membership never depends on them.
+
+TripLeg
+  id, trip_id, place, start_date, end_date, sort_order, notes
+  -- a stop. Legs need not tile the trip: a travel day between two
+     stays belongs to neither.
+
+TripExpense
+  transaction_id (PK/FK, ON DELETE CASCADE), trip_id, leg_id (nullable),
+  group_name (nullable), share (0..1, default 1), notes
+  -- `transaction_id` is the PK, so a row belongs to at most one trip and
+     two overlapping trips cannot both count it. `group_name` is the
+     trip's own label; NULL means "use the category name", so the
+     default follows a recategorized row. `share` is the trip's own
+     fraction, independent of `TransactionSplit.personal_share` — a row
+     that is both shared and partly trip-related multiplies the two.
+
+TripItem
+  id, trip_id, leg_id (nullable), category_id (nullable), group_name
+  (nullable), label, amount (positive = cost, negative = credit),
+  date (nullable), notes
+  -- a cost or credit with no transaction behind it. There is no
+     account here whose sign convention it could inherit.
 
 Rule
   id, name, priority, is_active, match_account_id (nullable),
@@ -260,7 +289,8 @@ POST   /api/rules
 PATCH  /api/rules/{id}
 POST   /api/rules/{id}/reapply           # reruns the rule over all txns
 
-GET    /api/transactions?...filters...   # category filter includes descendants
+GET    /api/transactions?...filters...   # category filter includes descendants;
+                                         # trip_id= / not_in_trip= for trips
 GET    /api/transactions/count
 GET    /api/transactions/{id}
 POST   /api/transactions
@@ -303,6 +333,21 @@ PUT    /api/budgets/defaults
 PUT    /api/budgets/overrides
 DELETE /api/budgets/defaults/{id}
 DELETE /api/budgets/overrides/{id}
+
+GET    /api/trips?include_archived=
+POST   /api/trips                        # a name is enough; dates optional
+GET    /api/trips/groups                 # trip groups in use, for suggestions
+GET    /api/trips/{id}
+PATCH  /api/trips/{id}
+DELETE /api/trips/{id}                   # transactions are untouched
+PUT    /api/trips/{id}/expenses          # tick / untick rows
+PATCH  /api/trips/{id}/expenses/{tx_id}  # one row's group, stop, share
+POST   /api/trips/{id}/legs
+PATCH  /api/trips/{id}/legs/{leg_id}
+DELETE /api/trips/{id}/legs/{leg_id}
+POST   /api/trips/{id}/items
+PATCH  /api/trips/{id}/items/{item_id}
+DELETE /api/trips/{id}/items/{item_id}
 
 GET    /api/analytics/monthly?start=&end=
 GET    /api/analytics/sankey?year=       # or ?start=&end=
@@ -416,6 +461,55 @@ turns a recurring merchant into a rule.
 - Restoring a backup disposes the active DB engine, saves a pre-restore
   snapshot, replaces the active profile DB, removes SQLite sidecar files, and
   reinitializes tables.
+
+## Trips
+
+A trip is a name plus the transactions the user ticks into it, in their
+own time. Membership is an explicit set (`TripExpense`), never a stored
+date filter and never proposed:
+
+- A date window over-captures — rent, subscriptions and payroll land
+  mid-trip — and under-captures, since flights and admissions are bought
+  weeks or months ahead.
+- Proposing membership was tried and dropped (it is in the history, in
+  the commit that added a Trips tab proposing spending from dates). It
+  needed correcting on every real trip, put every decision in front of
+  the user at once, and could never reach the one-off booking made a
+  year early. Ticking a few dozen rows is cheaper than reviewing a
+  guess, and it covers every case.
+- An explicit set also keeps a finished trip's total stable:
+  recategorizing a row later cannot change what the trip cost.
+
+The trip page is the transactions endpoint with two extra filters,
+`trip_id` (rows in this trip) and `not_in_trip` (rows in no trip), so
+browsing for a trip uses exactly the Transactions tab's filters. Every
+`TransactionOut` carries `trip` (id, name, group, stop, share), which is
+how both tables show membership. A tick is `PUT .../expenses` with ids to
+add or remove; re-adding a row already in the trip is a no-op, so a page
+of ticks can be resent without resetting anyone's edits. Per-row details
+change through `PATCH .../expenses/{tx_id}`, which only touches the
+fields sent.
+
+Rules that hold whatever gets ticked:
+
+- **One trip per row** — `transaction_id` is the primary key; a second
+  trip gets a 409.
+- **Money moving never counts.** Costs are negated to read positive, so
+  an inflow would quietly subtract. Only expense, uncategorized, refund
+  and reimbursement rows may join (`trips.COUNTABLE_KINDS`).
+- **Rows file onto stops by date**, both when ticked and when a stop is
+  added or moved, but only rows with no stop yet — an explicit choice is
+  never second-guessed. Deleting a stop leaves its rows on the trip.
+- **Deleting a transaction** removes its membership through the foreign
+  key's cascade, as for splits and tags.
+
+Totals follow `budgets.py`: `-(amount * personal_share) * share`,
+rounded per row so the rows add up to the total. Rounding is
+half-away-from-zero, explicitly: Decimal's default banker's rounding
+would make half of $28.01 $14.00 while the trip page — which computes
+each row's figure in exact integer arithmetic to show it — gets $14.01.
+The report groups by `group_name`, else the category name, else "Other",
+and splits each group across stops.
 
 ## Sankey
 
