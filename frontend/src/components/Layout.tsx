@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { NavLink, Outlet, useLocation } from "react-router";
+import { Link, matchPath, NavLink, Outlet, useLocation } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
 import { api, getTabProfile, PROFILE_GONE_EVENT, setTabProfile } from "../api/client";
@@ -7,27 +7,110 @@ import { Field } from "./Field";
 import { SidePanel } from "./SidePanel";
 import type { Profile, ProfileList } from "../api/types";
 
-const tabs: { to: string; label: string; end?: boolean; group?: "view" | "edit" }[] = [
-  // "View" tabs — read-mostly dashboards.
-  { to: "/", label: "Dashboard", end: true, group: "view" },
-  { to: "/transactions", label: "Transactions", group: "view" },
-  { to: "/networth", label: "Net Worth", group: "view" },
-  { to: "/planning", label: "Planning", group: "view" },
-  { to: "/budgets", label: "Budgets", group: "view" },
-  { to: "/trips", label: "Trips", group: "view" },
-  { to: "/analytics", label: "Analytics", group: "view" },
-  // "Fill data" tabs — workflows optimized for data entry.
-  { to: "/import", label: "Import", group: "edit" },
-  { to: "/reconcile", label: "Splits", group: "edit" },
-  { to: "/rules", label: "Rules", group: "edit" },
-  { to: "/organize", label: "Organize", group: "edit" },
-  { to: "/backups", label: "Backups", group: "edit" },
+type Page = { to: string; label: string; end?: boolean };
+type Workflow = { id: string; label: string; pages: Page[] };
+
+const page = {
+  dashboard: { to: "/", label: "Dashboard", end: true },
+  transactions: { to: "/transactions", label: "Transactions" },
+  networth: { to: "/networth", label: "Net Worth" },
+  planning: { to: "/planning", label: "Planning" },
+  budgets: { to: "/budgets", label: "Budgets" },
+  trips: { to: "/trips", label: "Trips" },
+  analytics: { to: "/analytics", label: "Analytics" },
+  import: { to: "/import", label: "Import" },
+  rules: { to: "/rules", label: "Rules" },
+  splits: { to: "/reconcile", label: "Splits" },
+  organize: { to: "/organize", label: "Organize" },
+  backups: { to: "/backups", label: "Backups" },
+} satisfies Record<string, Page>;
+
+// The top row picks a workflow; the second row holds that workflow's pages.
+// A page can sit in more than one workflow. You stay in the one you reached
+// it from, and the first one listing it is its home when you arrive some
+// other way, e.g. by a fresh link to a page outside the workflow you're in.
+const workflows: Workflow[] = [
+  { id: "overview", label: "Overview", pages: [page.dashboard, page.networth, page.planning, page.analytics] },
+  { id: "spending", label: "Spending", pages: [page.transactions, page.budgets, page.analytics, page.trips] },
+  {
+    id: "upkeep",
+    label: "Upkeep",
+    pages: [page.import, page.rules, page.transactions, page.splits, page.organize, page.backups],
+  },
 ];
+
+const pages: Page[] = Object.values(page);
+const pageAt = (pathname: string) =>
+  pages.find((p) => matchPath({ path: p.to, end: p.end ?? false }, pathname));
+
+// Per window, like the profile pin: which workflow you were last in, and
+// the last page you used in each so switching back lands where you left
+// off.
+const NAV_KEY = "deskbooks.nav";
+type NavMemory = { workflow: string | null; last: Record<string, string> };
+
+function readNavMemory(): NavMemory {
+  try {
+    const stored = JSON.parse(window.sessionStorage.getItem(NAV_KEY) ?? "null");
+    if (stored && typeof stored === "object") {
+      return { workflow: stored.workflow ?? null, last: stored.last ?? {} };
+    }
+  } catch {
+    // Unreadable or unavailable; start fresh.
+  }
+  return { workflow: null, last: {} };
+}
+
+function writeNavMemory(memory: NavMemory) {
+  try {
+    window.sessionStorage.setItem(NAV_KEY, JSON.stringify(memory));
+  } catch {
+    // sessionStorage unavailable — the choice just won't survive reloads.
+  }
+}
+
+function useWorkflowNav() {
+  const location = useLocation();
+  const [memory, setMemory] = useState(readNavMemory);
+  const current = pageAt(location.pathname);
+  // Header links say which workflow they navigate within, as location
+  // state, so the choice arrives together with the new page and comes back
+  // with it on Back and Forward. Links inside pages don't, and keep you in
+  // the workflow you were last in when the page belongs to it.
+  const via = (location.state as { workflow?: string } | null)?.workflow;
+  const holds = (id: string | null | undefined) =>
+    workflows.find((w) => w.id === id && (!current || w.pages.includes(current)));
+  const workflow =
+    holds(via) ?? holds(memory.workflow) ?? workflows.find((w) => current && w.pages.includes(current)) ?? workflows[0];
+  const here = location.pathname + location.search;
+
+  useEffect(() => {
+    setMemory((prev) => {
+      const inWorkflow = current !== undefined && workflow.pages.includes(current);
+      if (prev.workflow === workflow.id && (!inWorkflow || prev.last[workflow.id] === here)) return prev;
+      const next = {
+        workflow: workflow.id,
+        last: inWorkflow ? { ...prev.last, [workflow.id]: here } : prev.last,
+      };
+      writeNavMemory(next);
+      return next;
+    });
+  }, [workflow, current, here]);
+
+  return { workflow, target: (w: Workflow) => memory.last[w.id] ?? w.pages[0].to };
+}
+
+const workflowClass = (isActive: boolean) =>
+  clsx(
+    "whitespace-nowrap px-3 py-1.5 rounded-md transition-colors",
+    isActive ? "bg-brand-100 text-brand-800" : "text-ink-600 hover:bg-ink-100 hover:text-ink-900",
+  );
 
 export function Layout() {
   const queryClient = useQueryClient();
   const navRef = useRef<HTMLElement>(null);
   const location = useLocation();
+  const nav = useWorkflowNav();
   const [profileEditorOpen, setProfileEditorOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   // The profile this tab is pinned to (per-tab via sessionStorage). Every
@@ -116,12 +199,12 @@ export function Layout() {
     onError: surfaceError,
   });
 
-  // Below the `nav` breakpoint the tab strip scrolls sideways, so the tab
-  // you are actually on can start off-screen. Bring it into view.
+  // On a phone the Upkeep row scrolls sideways, so the page you are on can
+  // start off-screen. Bring it into view.
   useEffect(() => {
     const active = navRef.current?.querySelector("[aria-current='page']");
     active?.scrollIntoView({ block: "nearest", inline: "center" });
-  }, [location.pathname]);
+  }, [location.pathname, nav.workflow]);
 
   const stopApp = async () => {
     if (!confirm("Stop the local app servers?")) return;
@@ -246,35 +329,22 @@ export function Layout() {
             )}
           </div>
           <nav
-            ref={navRef}
+            aria-label="Workflows"
             className="no-scrollbar order-last -mx-4 flex w-full items-center gap-1 overflow-x-auto px-4 text-sm
               sm:-mx-6 sm:px-6 nav:order-none nav:mx-0 nav:w-auto nav:overflow-visible nav:px-0"
           >
-            {tabs.map((t, i) => {
-              // Visual gap between the "view" group and the "edit" group so
-              // the data-entry workflows feel like their own zone.
-              const prev = tabs[i - 1];
-              const showDivider = prev && prev.group !== t.group;
+            {workflows.map((w) => {
+              const isActive = w.id === nav.workflow.id;
               return (
-                <span key={t.to} className="flex shrink-0 items-center gap-1">
-                  {showDivider && (
-                    <span className="mx-1 h-5 w-px bg-ink-200" aria-hidden />
-                  )}
-                  <NavLink
-                    to={t.to}
-                    end={t.end}
-                    className={({ isActive }) =>
-                      clsx(
-                        "whitespace-nowrap px-3 py-1.5 rounded-md transition-colors",
-                        isActive
-                          ? "bg-brand-100 text-brand-800"
-                          : "text-ink-600 hover:bg-ink-100 hover:text-ink-900",
-                      )
-                    }
-                  >
-                    {t.label}
-                  </NavLink>
-                </span>
+                <Link
+                  key={w.id}
+                  to={nav.target(w)}
+                  state={{ workflow: w.id }}
+                  className={workflowClass(isActive)}
+                  aria-current={isActive ? "true" : undefined}
+                >
+                  {w.label}
+                </Link>
               );
             })}
           </nav>
@@ -286,6 +356,30 @@ export function Layout() {
             Stop app
           </button>
         </div>
+        <nav
+          ref={navRef}
+          aria-label={nav.workflow.label}
+          className="no-scrollbar flex gap-1 overflow-x-auto border-t border-ink-100 px-4 text-sm sm:px-6"
+        >
+          {nav.workflow.pages.map((p) => (
+            <NavLink
+              key={p.to}
+              to={p.to}
+              end={p.end}
+              state={{ workflow: nav.workflow.id }}
+              className={({ isActive }) =>
+                clsx(
+                  "shrink-0 whitespace-nowrap border-b-2 px-2 py-2 transition-colors sm:px-3",
+                  isActive
+                    ? "border-brand-600 text-brand-800"
+                    : "border-transparent text-ink-600 hover:border-ink-200 hover:text-ink-900",
+                )
+              }
+            >
+              {p.label}
+            </NavLink>
+          ))}
+        </nav>
       </header>
       {goneProfile && (
         <div className="flex flex-wrap items-center gap-3 border-b border-bad-500/30 bg-bad-500/10 px-4 py-2 text-sm text-bad-700 sm:px-6">

@@ -54,6 +54,17 @@ and `BACKEND_PORT` are accepted as aliases for `PORT` and `API_PORT`.
 
 ## App Panels
 
+The header groups the panels by workflow. Pick one on the top row and
+its panels fill the row below:
+
+- **Overview**: Dashboard, Net Worth, Planning, Analytics
+- **Spending**: Transactions, Budgets, Analytics, Trips
+- **Upkeep**: Import, Rules, Transactions, Splits & Netting, Organize,
+  Backups
+
+A panel in two workflows keeps you in the one you came from, and each
+workflow reopens on the panel you last used in it.
+
 ### Dashboard
 
 High-level view of current net worth, recent trends, and active goal
